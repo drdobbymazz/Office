@@ -609,9 +609,24 @@ export function OfficeFloor() {
         if (d) spawnHandoff(d.from, d.to, d.act, false);
       };
       window.addEventListener('cth:demo-handoff', onDemoHandoff);
+
+      // Game mode: the local-LLM director speaks a line above a character's head.
+      // We drive the thought cloud directly (and end any break it was on) so the
+      // dialogue isn't clobbered by the idle/wander refresh in applyState.
+      const onGameSay = (ev: Event) => {
+        const d = (ev as CustomEvent<{ id: string; text: string }>).detail;
+        if (!d) return;
+        const rt = runtimes.get(d.id);
+        if (!rt) return;
+        if (rt.brk) releaseBreak(rt);
+        rt.character.showThought(d.text);
+      };
+      window.addEventListener('cth:game-say', onGameSay);
+
       (app as any).__offMessage = () => {
         offMessage();
         window.removeEventListener('cth:demo-handoff', onDemoHandoff);
+        window.removeEventListener('cth:game-say', onGameSay);
       };
 
       // Keep two nearby thought clouds from covering each other: stack the

@@ -4,7 +4,9 @@ import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
 import type { HarnessConfig } from '@/store/config';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
 import { useHive } from '@/hooks/useHive';
+import { useDirector } from '@/game/useDirector';
 import { MemoryPanel } from '@/components/MemoryPanel';
+import { GameDirectorPanel } from '@/components/GameDirectorPanel';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AgentStrip } from '@/components/AgentStrip';
 import { AddAgentModal } from '@/components/AddAgentModal';
@@ -48,8 +50,15 @@ export function App() {
   // Quit warning subscription
   useEffect(() => window.cth.onCloseRequested((info) => setQuitWarn(info)), []);
 
+  const gameMode = config?.mode === 'game';
+
   // The hive: god-agent bootstrap, hook-driven avatars, idle-agent waking.
-  useHive(config);
+  // Disabled in game mode (pass null) so no Claude session is spawned.
+  useHive(gameMode ? null : config);
+
+  // Game mode: the local-LLM director seeds the cast and runs the office sandbox.
+  // Self-gates on config.mode === 'game'; returns the live transcript + controls.
+  const game = useDirector(config);
 
   // Pre-warm a persistent terminal for every live agent so its output is
   // buffered from spawn. Switching agents then re-attaches an already-rendered
@@ -58,12 +67,13 @@ export function App() {
     for (const a of agents) if (a.ptyId) acquireTerminal(a.ptyId);
   }, [agents]);
 
-  // Mock loop only after onboarding (skip during wizard)
+  // Mock loop only after onboarding (skip during wizard, and in game mode where
+  // the director — not the synthetic loop — drives the PTY-less NPC avatars).
   useEffect(() => {
-    if (!config?.onboardingComplete) return;
+    if (!config?.onboardingComplete || gameMode) return;
     startMockLoop();
     return () => stopMockLoop();
-  }, [config?.onboardingComplete]);
+  }, [config?.onboardingComplete, gameMode]);
 
   // Reconcile restored agents against the PTYs still alive in the main process.
   // After a renderer reload (e.g. the laptop slept and Vite reloaded the page),
@@ -151,9 +161,9 @@ export function App() {
       }}>
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
           <OfficeFloor />
-          <MemoryPanel />
-          {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
-          {agentCount === 0 && godStatus !== 'booting' && (
+          {!gameMode && <MemoryPanel />}
+          {!gameMode && agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
+          {!gameMode && agentCount === 0 && godStatus !== 'booting' && (
             <div style={{
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -187,7 +197,9 @@ export function App() {
           width: sidebarWidth, flexShrink: 0,
           minHeight: 0, display: 'flex', flexDirection: 'column'
         }}>
-          {agent ? (
+          {gameMode ? (
+            <GameDirectorPanel game={game} />
+          ) : agent ? (
             <AgentDetailPanel agent={agent} />
           ) : godStatus === 'booting' ? (
             <PixelPanel variant="default" noPadding style={{

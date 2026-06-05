@@ -11,6 +11,12 @@ export interface HarnessConfig {
   defaultModel?: string;
   semanticMemory: boolean;
   embeddingModel: 'minilm' | 'embeddinggemma';
+  /** App mode: 'harness' (Claude-Code multi-agent) or 'game' (Ollama sandbox). */
+  mode?: 'harness' | 'game';
+  /** Ollama server base URL for game mode (default http://127.0.0.1:11434). */
+  llmBaseUrl?: string;
+  /** Model tag driving the characters in game mode (e.g. 'llama3.1'). */
+  gameModel?: string;
 }
 
 /** The Sonnet model with the 1M-token context window — used for Michael's prep

@@ -44,6 +44,15 @@ export interface HarnessConfig {
   slackChannelId?: string;
   /** Local HTTP port the webhook server binds to (default 3847). */
   slackPort?: number;
+
+  // ─── Game mode (local-LLM roleplaying sandbox) ─────────────────────────────
+  /** App mode: 'harness' = the Claude-Code multi-agent harness (default),
+   *  'game' = the Ollama-driven emergent office sandbox. */
+  mode?: 'harness' | 'game';
+  /** Ollama server base URL for game mode (default http://127.0.0.1:11434). */
+  llmBaseUrl?: string;
+  /** Model tag used to drive the characters in game mode (e.g. 'llama3.1'). */
+  gameModel?: string;
 }
 
 const DEFAULTS: HarnessConfig = {
@@ -60,7 +69,10 @@ const DEFAULTS: HarnessConfig = {
   slackSigningSecret: undefined,
   slackBotToken: undefined,
   slackChannelId: undefined,
-  slackPort: undefined
+  slackPort: undefined,
+  mode: 'harness',
+  llmBaseUrl: undefined,
+  gameModel: undefined
 };
 
 function configPath(): string {

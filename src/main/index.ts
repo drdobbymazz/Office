@@ -19,6 +19,7 @@ import { enrichMessage } from './assistant';
 import { readAgentUsage } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer } from './slack';
+import { ollamaStatus, ollamaChat, type OllamaChatRequest } from './ollama';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 const ptyManager = new PtyManager();
@@ -573,6 +574,23 @@ ipcMain.handle('github:ciRuns', (_evt, cwd: unknown) =>
 
 // ─── IPC: desktop notifications toggle ──────────────────────────────────────
 ipcMain.handle('app:setNotifications', (_evt, val) => writeConfig({ notifications: val === true }));
+
+// ─── IPC: Ollama bridge (local-LLM game mode) ───────────────────────────────
+// The renderer's game director drives in-character dialogue through these. The
+// base URL falls back to the configured llmBaseUrl, then the Ollama default.
+ipcMain.handle('ollama:status', (_evt, baseUrl: unknown) =>
+  ollamaStatus(typeof baseUrl === 'string' && baseUrl ? baseUrl : readConfig().llmBaseUrl));
+ipcMain.handle('ollama:chat', (_evt, req: unknown) => {
+  const r = (req ?? {}) as Partial<OllamaChatRequest>;
+  return ollamaChat({
+    baseUrl: r.baseUrl || readConfig().llmBaseUrl,
+    model: typeof r.model === 'string' ? r.model : '',
+    messages: Array.isArray(r.messages) ? r.messages : [],
+    format: r.format,
+    options: r.options,
+    timeoutMs: typeof r.timeoutMs === 'number' ? r.timeoutMs : undefined
+  });
+});
 
 // ─── IPC: Slack integration ─────────────────────────────────────────────────
 ipcMain.handle('slack:start', () => startSlackServer());
