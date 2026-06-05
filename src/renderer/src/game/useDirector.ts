@@ -14,6 +14,7 @@ import { OFFICE_CAST, type OfficeCharacterName } from '@/scene/office/cast';
 import type { AccentColorName } from '@/design/tokens';
 import { Director, type Beat, type DirectorActor, type DirectorScene } from './director';
 import { personaFor } from './personas';
+import { loadWorld, saveWorld, clearWorld } from './worldState';
 
 const ACCENTS: AccentColorName[] = ['coral', 'mint', 'sky', 'lemon', 'lilac', 'peach'];
 const DEFAULT_PACE_SEC = 7;
@@ -52,6 +53,10 @@ export interface GameController {
   setScene: (patch: Partial<DirectorScene>) => void;
   /** Switch the active model live (and persist it to config). */
   setModel: (model: string) => void;
+  /** Roll the world over to a fresh day (keeps everyone's memory). */
+  newDay: () => void;
+  /** Wipe the persisted world and reset memory/transcript to a blank slate. */
+  resetWorld: () => void;
   /** Re-check the Ollama server + refresh the installed-model list. */
   refreshOllama: (baseUrl?: string) => void;
 }
@@ -67,6 +72,10 @@ export interface GameState {
   ollama: { checked: boolean; available: boolean; models: string[]; error?: string };
   model: string;
   actors: DirectorActor[];
+  /** Which simulated day it is. */
+  day: number;
+  /** Current "mind" line per actor id, for the panel's memory peek. */
+  minds: Record<string, string>;
 }
 
 export function useDirector(config: HarnessConfig | null): GameState {
@@ -86,6 +95,8 @@ export function useDirector(config: HarnessConfig | null): GameState {
   const [ollama, setOllama] = useState<GameState['ollama']>({
     checked: false, available: false, models: []
   });
+  const [day, setDay] = useState(1);
+  const [minds, setMinds] = useState<Record<string, string>>({});
 
   // Live override so picking a model in the panel takes effect without a reload
   // (App loads config once). Falls back to the persisted choice, then the first
@@ -100,6 +111,17 @@ export function useDirector(config: HarnessConfig | null): GameState {
     useStore.getState().agents
       .filter((a) => a.isNpc)
       .map((a) => ({ id: a.id, displayName: a.name, character: a.character }));
+
+  // Debounced world save — coalesces a burst of beats into one localStorage write.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSave = () => {
+    if (saveTimer.current) return;
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      const d = directorRef.current;
+      if (d) saveWorld(d.getSnapshot());
+    }, 1200);
+  };
 
   // 1) Seed the cast into the store when game mode turns on; clear it on exit.
   useEffect(() => {
@@ -129,6 +151,10 @@ export function useDirector(config: HarnessConfig | null): GameState {
         getActors,
         onBeat: (beat) => {
           setTranscript((prev) => [...prev, beat].slice(-PANEL_TRANSCRIPT_MAX));
+          // Refresh day + minds and schedule a debounced world save.
+          setDay(director.getDay());
+          setMinds(director.getMinds());
+          scheduleSave();
           if (beat.speakerId === 'director') return;
           // Speak above the avatar + mirror into the sidebar feed.
           window.dispatchEvent(new CustomEvent('cth:game-say', {
@@ -150,6 +176,17 @@ export function useDirector(config: HarnessConfig | null): GameState {
       }
     );
     directorRef.current = director;
+
+    // Resume a saved world if one exists, so a reload picks up where it left off.
+    const saved = loadWorld();
+    if (saved) {
+      const restored = director.hydrate(saved);
+      setTranscript(restored.slice(-PANEL_TRANSCRIPT_MAX));
+      setSceneState({ ...saved.scene });
+      setDay(director.getDay());
+      setMinds(director.getMinds());
+    }
+
     return () => { director.dispose(); directorRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
@@ -180,6 +217,15 @@ export function useDirector(config: HarnessConfig | null): GameState {
       setModelOverride(m);
       window.cth.updateConfig({ gameModel: m });
     },
+    newDay: () => {
+      directorRef.current?.newDay();
+      const d = directorRef.current;
+      if (d) { setTranscript(d.getTranscript().slice(-PANEL_TRANSCRIPT_MAX)); setDay(d.getDay()); saveWorld(d.getSnapshot()); }
+    },
+    resetWorld: () => {
+      clearWorld();
+      window.location.reload();
+    },
     refreshOllama: (baseUrl) => {
       window.cth.ollamaStatus(baseUrl ?? config?.llmBaseUrl).then((s) =>
         setOllama({ checked: true, available: s.available, models: s.models, error: s.error }));
@@ -191,5 +237,5 @@ export function useDirector(config: HarnessConfig | null): GameState {
         .map((a) => ({ id: a.id, displayName: a.name, character: a.character }))
     : [];
 
-  return { active, controller, transcript, busy, error, paused, scene, ollama, model, actors };
+  return { active, controller, transcript, busy, error, paused, scene, ollama, model, actors, day, minds };
 }

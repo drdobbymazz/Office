@@ -53,6 +53,27 @@ export interface DirectorConfig {
   basePaceSec: number;
 }
 
+/** What a single character carries between beats (and across reloads). */
+export interface NpcMemory {
+  /** Recent salient events from this character's point of view (capped). */
+  recent: string[];
+  /** A distilled "what's on their mind" line, refreshed by reflection. */
+  mind?: string;
+}
+
+/** A full save of the world — persisted to localStorage so a reload resumes. */
+export interface WorldSnapshot {
+  version: number;
+  day: number;
+  scene: DirectorScene;
+  transcript: Beat[];
+  /** Per-actor memory, keyed by actor id. */
+  memory: Record<string, NpcMemory>;
+  savedAt: number;
+}
+
+export const WORLD_VERSION = 1;
+
 interface DirectorDeps {
   /** Live roster of NPCs currently on the floor. */
   getActors: () => DirectorActor[];
@@ -66,6 +87,14 @@ interface DirectorDeps {
 
 const MAX_TRANSCRIPT = 200;
 const PROMPT_CONTEXT_BEATS = 14;
+/** How many recent events each character keeps in working memory. */
+const MAX_RECENT = 12;
+/** How many of those to surface in the prompt. */
+const MEMORY_IN_PROMPT = 6;
+/** Reflect a character's working memory into a "mind" line once it reaches this. */
+const REFLECT_AT = 10;
+/** Beats kept in a persisted snapshot (the transcript is trimmed for storage). */
+const SNAPSHOT_TRANSCRIPT = 80;
 
 /** JSON schema constraining each character's turn. */
 const TURN_SCHEMA = {
@@ -95,6 +124,12 @@ export class Director {
   };
 
   private transcript: Beat[] = [];
+  /** Per-actor long-term-ish memory (recent events + a distilled mind line). */
+  private memory = new Map<string, NpcMemory>();
+  /** Which day of the simulated office it is. */
+  private day = 1;
+  /** Actors currently being reflected on, so we never double-fire. */
+  private reflecting = new Set<string>();
   private paused = true;
   private generating = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -154,6 +189,8 @@ export class Director {
     const t = text.trim();
     if (!t) return;
     this.pendingNotes.push(t);
+    // Everyone present witnesses the event, so it enters their memory too.
+    for (const a of this.deps.getActors()) this.remember(a.id, `Something happened: ${t}`);
     const beat: Beat = {
       id: newBeatId(),
       speakerId: 'director',
@@ -259,7 +296,13 @@ export class Director {
           this.focus = { a: speaker.id, b: target.id, left: sceneLen };
         }
       }
+      this.recordMemory(speaker, beat, target);
       this.push(beat);
+      // Distil a character's mind once their working memory fills up (async,
+      // never blocks the beat loop).
+      if ((this.memory.get(speaker.id)?.recent.length ?? 0) >= REFLECT_AT) {
+        void this.reflectActor(speaker.id, speaker.displayName);
+      }
     } finally {
       this.generating = false;
       this.deps.onBusy?.(false);
@@ -340,10 +383,19 @@ export class Director {
     ].join('\n');
 
     const scene = [
-      `SCENE: ${this.scene.situation} — at ${this.scene.location}.`,
+      `SCENE: Day ${this.day}. ${this.scene.situation} — at ${this.scene.location}.`,
       `People present: ${present}.`,
       `Drama level: ${Math.round(this.scene.drama * 100)}% (higher = more heightened, chaotic, dramatic).`
     ];
+
+    // What this character carries with them — continuity across the session.
+    const mem = this.memory.get(speaker.id);
+    if (mem?.mind) scene.push('', `On your mind: ${mem.mind}`);
+    if (mem?.recent.length) {
+      scene.push('', 'You remember (most recent last):');
+      for (const r of mem.recent.slice(-MEMORY_IN_PROMPT)) scene.push(`- ${r}`);
+    }
+
     if (this.pendingNotes.length) {
       scene.push('', 'JUST HAPPENED (react to this): ' + this.pendingNotes.join(' '));
     }
@@ -362,6 +414,111 @@ export class Director {
       { role: 'system', content: system },
       { role: 'user', content: scene.join('\n') }
     ];
+  }
+
+  // ─── memory ─────────────────────────────────────────────────────────────────
+
+  private mem(id: string): NpcMemory {
+    let m = this.memory.get(id);
+    if (!m) { m = { recent: [] }; this.memory.set(id, m); }
+    return m;
+  }
+
+  /** Append an event to a character's working memory, capped to the most recent. */
+  private remember(id: string, event: string): void {
+    const m = this.mem(id);
+    m.recent.push(event);
+    if (m.recent.length > MAX_RECENT) m.recent = m.recent.slice(-MAX_RECENT);
+  }
+
+  /** Both participants remember a line of dialogue from their own POV. */
+  private recordMemory(speaker: DirectorActor, beat: Beat, target?: DirectorActor): void {
+    const to = target ? ` to ${target.displayName}` : '';
+    this.remember(speaker.id, `You said${to}: "${beat.text}"`);
+    if (target) this.remember(target.id, `${speaker.displayName} said to you: "${beat.text}"`);
+  }
+
+  /** Distil a character's recent events into a one-line "mind". Runs in the
+   *  background (never blocks beats), one per actor at a time, and is skipped
+   *  while a beat is generating so the two don't contend for the local model. */
+  private async reflectActor(id: string, name: string): Promise<void> {
+    if (this.reflecting.has(id) || this.generating) return;
+    const m = this.memory.get(id);
+    if (!m || m.recent.length === 0) return;
+    this.reflecting.add(id);
+    try {
+      const res = await window.cth.ollamaChat({
+        model: this.cfg.model,
+        baseUrl: this.cfg.baseUrl,
+        messages: [
+          { role: 'system', content: `Summarize, in ONE short sentence, what is on ${name}'s mind right now — their current mood, grudges, goals, and what just happened to them. Write it as a private note in ${name}'s own head. Output only the sentence.` },
+          { role: 'user', content: (m.mind ? `So far: ${m.mind}\n\n` : '') + 'Recent events:\n' + m.recent.map((r) => `- ${r}`).join('\n') }
+        ],
+        options: { temperature: 0.5 }
+      });
+      if (res.ok && res.content) {
+        m.mind = res.content.trim().replace(/^["']|["']$/g, '').slice(0, 240);
+        // Keep working memory lean once it's been folded into the mind line.
+        m.recent = m.recent.slice(-Math.floor(MAX_RECENT / 2));
+      }
+    } catch { /* reflection is best-effort */ } finally {
+      this.reflecting.delete(id);
+    }
+  }
+
+  // ─── day / persistence ──────────────────────────────────────────────────────
+
+  getDay(): number { return this.day; }
+
+  /** Current "mind" line per actor id (for the UI to peek at). */
+  getMinds(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [id, m] of this.memory) if (m.mind) out[id] = m.mind;
+    return out;
+  }
+
+  /** Roll over to a fresh day: clear the visible scene but KEEP every character's
+   *  memory, so yesterday's grudges and threads carry over. */
+  newDay(): void {
+    this.day += 1;
+    this.transcript = [];
+    this.lastSpeakerId = null;
+    this.focus = null;
+    this.pendingNotes = [];
+    for (const a of this.deps.getActors()) this.remember(a.id, `A new day (day ${this.day}) begins at the office.`);
+    this.push({
+      id: newBeatId(), speakerId: 'director', speakerName: 'Director',
+      text: `Day ${this.day} — a new morning at Dunder Mifflin.`, ts: Date.now()
+    });
+  }
+
+  /** Snapshot the whole world for persistence. */
+  getSnapshot(): WorldSnapshot {
+    const memory: Record<string, NpcMemory> = {};
+    for (const [id, m] of this.memory) memory[id] = { recent: m.recent.slice(), mind: m.mind };
+    return {
+      version: WORLD_VERSION,
+      day: this.day,
+      scene: { ...this.scene },
+      transcript: this.transcript.slice(-SNAPSHOT_TRANSCRIPT),
+      memory,
+      savedAt: Date.now()
+    };
+  }
+
+  /** Restore a saved world. Returns the transcript so the UI can repopulate. */
+  hydrate(s: WorldSnapshot): Beat[] {
+    if (!s || s.version !== WORLD_VERSION) return [];
+    this.day = s.day || 1;
+    this.scene = { ...this.scene, ...s.scene };
+    this.transcript = Array.isArray(s.transcript) ? s.transcript.slice() : [];
+    this.memory = new Map();
+    for (const [id, m] of Object.entries(s.memory ?? {})) {
+      this.memory.set(id, { recent: Array.isArray(m.recent) ? m.recent.slice(-MAX_RECENT) : [], mind: m.mind });
+    }
+    this.lastSpeakerId = null;
+    this.focus = null;
+    return this.transcript.slice();
   }
 
   private push(beat: Beat): void {

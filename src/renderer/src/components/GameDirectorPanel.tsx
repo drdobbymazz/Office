@@ -21,7 +21,7 @@ const field: React.CSSProperties = {
 };
 
 export function GameDirectorPanel({ game }: { game: GameState }) {
-  const { controller, transcript, busy, error, paused, scene, ollama, model, actors } = game;
+  const { controller, transcript, busy, error, paused, scene, ollama, model, actors, day, minds } = game;
   const [event, setEvent] = useState('');
   const [nudgeId, setNudgeId] = useState('');
   const [nudgeText, setNudgeText] = useState('');
@@ -106,6 +106,14 @@ export function GameDirectorPanel({ game }: { game: GameState }) {
       {/* ── Scene ───────────────────────────────────────────────────────── */}
       <PixelPanel variant="default" title="SCENE" noPadding>
         <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 11, color: 'var(--cth-ink-900)' }}>
+              DAY {day}
+            </span>
+            <PixelButton variant="ghost" size="sm" onClick={controller.newDay}>
+              new day →
+            </PixelButton>
+          </div>
           <div>
             <div style={label}>situation</div>
             <input
@@ -157,6 +165,15 @@ export function GameDirectorPanel({ game }: { game: GameState }) {
                 {actors.map((a) => <option key={a.id} value={a.id}>{a.displayName}</option>)}
               </select>
             </div>
+            {nudgeId && minds[nudgeId] && (
+              <div style={{
+                fontSize: 12, fontStyle: 'italic', color: 'var(--cth-ink-500)',
+                lineHeight: '16px', marginBottom: 6,
+                borderLeft: '3px solid var(--cth-mint)', paddingLeft: 8
+              }}>
+                on their mind: {minds[nudgeId]}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 style={{ ...field, flex: 1 }}

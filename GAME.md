@@ -16,6 +16,17 @@ The Office cast become LLM-driven NPCs that improvise and react to each other wh
 - Conversations stay coherent: a line aimed at a coworker opens a short two-person scene,
   and an `approach` walks the speaker over to whoever they addressed.
 
+## Memory & continuity
+
+- **Each character remembers.** Every line a character says or hears enters their working
+  memory, which is fed back into their next prompt — so grudges, jokes, and threads persist
+  through the session instead of resetting every beat. The cue panel shows what's *on a
+  character's mind* (a reflected one-line summary the model distils as their memory fills up).
+- **Days.** Press **new day →** to roll the world over: the visible scene clears but everyone
+  *keeps their memory*, so yesterday's drama carries into the morning.
+- **The world saves itself.** Scene, day, transcript, and every character's memory persist to
+  `localStorage` and resume automatically on reload. Wipe it from **Settings → reset world**.
+
 ## Run it locally (desktop, Electron)
 
 ```bash
