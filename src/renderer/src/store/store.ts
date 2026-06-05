@@ -64,6 +64,10 @@ export interface Agent {
   /** When git isolation is enabled, the dedicated worktree path the agent runs
    *  in (its own `agent/<id>` branch); undefined for shared-cwd agents. */
   worktreePath?: string;
+  /** Game mode: this "agent" is a local-LLM-driven NPC (one of the office cast),
+   *  not a real Claude-Code session. NPCs have no PTY and are driven by the
+   *  Director instead of the hive. */
+  isNpc?: boolean;
   /** True once this agent's terminal was closed. Archived agents are retained
    *  (in the store's `archivedAgents` list + the hive registry) but flagged and
    *  kept off the floor; only live-PTY agents are 'active'. */
@@ -127,6 +131,9 @@ interface State {
   updateAgent: (id: string, patch: Partial<Agent>) => void;
   pushFeed: (id: string, line: string) => void;
   addAgent: (agent: Agent) => void;
+  /** Game mode: replace the active roster with exactly these NPC characters,
+   *  preserving on-floor run-state for any that are already present. */
+  seedCast: (npcs: Agent[]) => void;
   removeAgent: (id: string) => void;
   /** Archive an agent (its terminal was closed): move it from the active roster
    *  into `archivedAgents` with its PTY cleared. Retained + flagged, NOT deleted. */
@@ -330,6 +337,21 @@ export const useStore = create<State>((set) => ({
         selectedId: agent.id,
         feeds: { ...s.feeds, [agent.id]: s.feeds[agent.id] ?? [] }
       };
+    }),
+  seedCast: (npcs) =>
+    set((s) => {
+      // Preserve any existing run-state for NPCs already on the floor so a re-seed
+      // (e.g. roster change) doesn't reset everyone's position/status.
+      const prevById = new Map(s.agents.map((a) => [a.id, a]));
+      const agents = npcs.map((n) => {
+        const prev = prevById.get(n.id);
+        return prev ? { ...n, status: prev.status, currentStation: prev.currentStation } : n;
+      });
+      const selectedId = agents.some((a) => a.id === s.selectedId) ? s.selectedId : null;
+      const feeds: Record<string, string[]> = {};
+      for (const a of agents) feeds[a.id] = s.feeds[a.id] ?? [];
+      persistAgents(agents, selectedId);
+      return { agents, feeds, selectedId };
     }),
   removeAgent: (id) =>
     set((s) => {

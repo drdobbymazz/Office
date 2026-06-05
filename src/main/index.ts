@@ -19,6 +19,7 @@ import { enrichMessage } from './assistant';
 import { readAgentUsage } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer } from './slack';
+import { ollamaStatus, ollamaChat, type OllamaChatRequest } from './ollama';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 const ptyManager = new PtyManager();
@@ -574,6 +575,23 @@ ipcMain.handle('github:ciRuns', (_evt, cwd: unknown) =>
 // ─── IPC: desktop notifications toggle ──────────────────────────────────────
 ipcMain.handle('app:setNotifications', (_evt, val) => writeConfig({ notifications: val === true }));
 
+// ─── IPC: Ollama bridge (local-LLM game mode) ───────────────────────────────
+// The renderer's game director drives in-character dialogue through these. The
+// base URL falls back to the configured llmBaseUrl, then the Ollama default.
+ipcMain.handle('ollama:status', (_evt, baseUrl: unknown) =>
+  ollamaStatus(typeof baseUrl === 'string' && baseUrl ? baseUrl : readConfig().llmBaseUrl));
+ipcMain.handle('ollama:chat', (_evt, req: unknown) => {
+  const r = (req ?? {}) as Partial<OllamaChatRequest>;
+  return ollamaChat({
+    baseUrl: r.baseUrl || readConfig().llmBaseUrl,
+    model: typeof r.model === 'string' ? r.model : '',
+    messages: Array.isArray(r.messages) ? r.messages : [],
+    format: r.format,
+    options: r.options,
+    timeoutMs: typeof r.timeoutMs === 'number' ? r.timeoutMs : undefined
+  });
+});
+
 // ─── IPC: Slack integration ─────────────────────────────────────────────────
 ipcMain.handle('slack:start', () => startSlackServer());
 ipcMain.handle('slack:stop', () => { stopSlackServer(); return { ok: true }; });
@@ -598,25 +616,11 @@ ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
 });
 
 app.whenReady().then(() => {
-  // Bootstrap the hive (if harnessHome is configured) and start the message router.
-  if (hive.enabled()) {
-    hive.ensureHive();
-    hive.startRouter();
-    syncMissions(); // arm recurring auto-dispatch missions now the router is live
-    hookServer.start();
-    memory.start(); // init shared palace + mine loop (no-op without mempalace)
-  }
+  // Local-LLM office sandbox: the Claude-Code hive, hook server, scheduler,
+  // memory loop, and Slack bridge are intentionally NOT started — the app runs
+  // fully local off the Ollama director in the renderer. (The IPC handlers
+  // remain registered but dormant; nothing in the game UI calls them.)
   createWindow();
-  // Auto-start the Slack webhook server when configured. Best-effort: a tunnel
-  // failure (offline) is logged, not fatal. The tunnel URL is ephemeral and
-  // changes per restart, so the user re-pastes it via Settings → Start.
-  const slackCfg = readConfig();
-  if (slackCfg.slackEnabled && slackCfg.slackSigningSecret) {
-    void startSlackServer().then((r) => {
-      if (!r.ok) console.error('[slack] auto-start failed:', r.error);
-      else console.log('[slack] webhook listening', r.url ? `(tunnel: ${r.url})` : '(no tunnel)');
-    });
-  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

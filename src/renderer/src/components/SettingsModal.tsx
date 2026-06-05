@@ -122,6 +122,18 @@ export function SettingsModal({ config, onClose }: SettingsModalProps) {
 
   const copyTunnel = () => { void window.cth.copyToClipboard(tunnelUrl); };
 
+  // ─── Mode (harness vs. local-LLM game) ─────────────────────────────────────
+  const gameMode = (config as HarnessConfig & { mode?: string }).mode === 'game';
+  const switchMode = async () => {
+    setBusy(true);
+    try {
+      await window.cth.updateConfig({ mode: gameMode ? 'harness' : 'game' });
+      // Mode flips which subsystems run (Claude hive vs. director), so reload to
+      // re-bootstrap cleanly rather than hot-swapping live effects.
+      window.location.reload();
+    } catch { setBusy(false); }
+  };
+
   const reset = async () => {
     setBusy(true);
     clearLocalState();
@@ -162,6 +174,28 @@ export function SettingsModal({ config, onClose }: SettingsModalProps) {
                   </div>
                 ))}
               </div>
+
+              {/* Mode: Claude harness vs. local-LLM office sandbox */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                    Local-LLM game mode
+                  </span>
+                  <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                    Turn the floor into an Ollama-driven office sandbox you direct. Reloads the app.
+                  </span>
+                </div>
+                <PixelButton
+                  variant={gameMode ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={switchMode}
+                  disabled={busy}
+                >
+                  {gameMode ? 'on' : 'off'}
+                </PixelButton>
+              </div>
+
+              <div style={{ height: 2, background: 'var(--cth-ink-300)' }} />
 
               {/* Desktop notifications toggle */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

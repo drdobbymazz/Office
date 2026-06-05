@@ -95,7 +95,29 @@ export interface HarnessConfig {
   embeddingModel: 'minilm' | 'embeddinggemma';
   missions?: ScheduledMission[];
   notifications?: boolean;
+  /** App mode: 'harness' (Claude-Code multi-agent) or 'game' (Ollama sandbox). */
+  mode?: 'harness' | 'game';
+  /** Ollama server base URL for game mode. */
+  llmBaseUrl?: string;
+  /** Model tag driving the characters in game mode. */
+  gameModel?: string;
 }
+
+// ─── Ollama (local-LLM game mode) ────────────────────────────────────────────
+export interface OllamaChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+export interface OllamaChatRequest {
+  baseUrl?: string;
+  model: string;
+  messages: OllamaChatMessage[];
+  format?: 'json' | Record<string, unknown>;
+  options?: Record<string, unknown>;
+  timeoutMs?: number;
+}
+export interface OllamaChatResult { ok: boolean; content?: string; error?: string }
+export interface OllamaStatus { available: boolean; models: string[]; baseUrl: string; error?: string }
 
 export interface MemoryStatus {
   available: boolean;
@@ -339,7 +361,15 @@ const api = {
   slackSetConfig: (patch: {
     signingSecret?: string; botToken?: string; channelId?: string; port?: number; enabled?: boolean;
   }): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke('slack:setConfig', patch)
+    ipcRenderer.invoke('slack:setConfig', patch),
+
+  // ─── Ollama (local-LLM game mode) ──────────────────────────────────────────
+  /** Probe the local Ollama server and list installed models. */
+  ollamaStatus: (baseUrl?: string): Promise<OllamaStatus> =>
+    ipcRenderer.invoke('ollama:status', baseUrl),
+  /** One non-streaming chat completion against the local Ollama server. */
+  ollamaChat: (req: OllamaChatRequest): Promise<OllamaChatResult> =>
+    ipcRenderer.invoke('ollama:chat', req)
 };
 
 contextBridge.exposeInMainWorld('cth', api);

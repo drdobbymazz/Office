@@ -1,8 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { hasElectronBridge, installWebCth } from './platform/cthWeb';
 import brandLogo from '@brand/logo.png?url';
 import './design/global.css';
+
+// Outside Electron (e.g. the Vercel web build) there is no preload bridge, so
+// install the browser adapter: config in localStorage, Ollama over direct fetch.
+if (!hasElectronBridge()) installWebCth();
 
 const favicon = document.createElement('link');
 favicon.rel = 'icon';

@@ -1,41 +1,21 @@
 import { useEffect, useState } from 'react';
-import { useStore, selectedAgent } from '@/store/store';
-import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
+import { useStore } from '@/store/store';
 import type { HarnessConfig } from '@/store/config';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
-import { useHive } from '@/hooks/useHive';
-import { MemoryPanel } from '@/components/MemoryPanel';
-import { AgentDetailPanel } from '@/components/AgentDetailPanel';
-import { AgentStrip } from '@/components/AgentStrip';
-import { AddAgentModal } from '@/components/AddAgentModal';
-import { MichaelBooting } from '@/components/MichaelBooting';
-import { OnboardingWizard } from '@/components/OnboardingWizard';
-import { QuitWarningModal } from '@/components/QuitWarningModal';
-import { SettingsModal } from '@/components/SettingsModal';
+import { useDirector } from '@/game/useDirector';
+import { GameDirectorPanel } from '@/components/GameDirectorPanel';
+import { GameSettingsModal } from '@/components/GameSettingsModal';
 import { PixelPanel } from '@/components/PixelPanel';
-import { PixelButton } from '@/components/PixelButton';
 import { Icon } from '@/components/Icon';
 import { SidebarSplitter } from '@/components/SidebarSplitter';
-import { acquireTerminal } from '@/components/terminalPool';
-import { FullscreenTerminal } from '@/components/FullscreenTerminal';
-import { FullscreenFileEditor } from '@/components/FullscreenFileEditor';
 import brandLogo from '@brand/logo.png?url';
 
 export function App() {
-  const agent = useStore(selectedAgent);
-  const agents = useStore(s => s.agents);
-  const agentCount = agents.length;
-  const addAgentOpen = useStore(s => s.addAgentOpen);
-  const setAddAgentOpen = useStore(s => s.setAddAgentOpen);
-  const godStatus = useStore(s => s.godStatus);
-  const fullscreenAgentId = useStore(s => s.fullscreenAgentId);
-  const fullscreenFilePath = useStore(s => s.fullscreenFilePath);
   const sidebarWidth = useStore(s => s.sidebarWidth);
   const setSidebarWidth = useStore(s => s.setSidebarWidth);
 
   const [config, setConfig] = useState<HarnessConfig | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [quitWarn, setQuitWarn] = useState<{ ptyCount: number } | null>(null);
   const [vpWidth, setVpWidth] = useState<number>(window.innerWidth);
 
   // Initial config load
@@ -45,38 +25,8 @@ export function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Quit warning subscription
-  useEffect(() => window.cth.onCloseRequested((info) => setQuitWarn(info)), []);
-
-  // The hive: god-agent bootstrap, hook-driven avatars, idle-agent waking.
-  useHive(config);
-
-  // Pre-warm a persistent terminal for every live agent so its output is
-  // buffered from spawn. Switching agents then re-attaches an already-rendered
-  // terminal instantly (with full history) instead of building a blank one.
-  useEffect(() => {
-    for (const a of agents) if (a.ptyId) acquireTerminal(a.ptyId);
-  }, [agents]);
-
-  // Mock loop only after onboarding (skip during wizard)
-  useEffect(() => {
-    if (!config?.onboardingComplete) return;
-    startMockLoop();
-    return () => stopMockLoop();
-  }, [config?.onboardingComplete]);
-
-  // Reconcile restored agents against the PTYs still alive in the main process.
-  // After a renderer reload (e.g. the laptop slept and Vite reloaded the page),
-  // this keeps agents whose process survived and drops any that truly died.
-  useEffect(() => {
-    if (!config?.onboardingComplete) return;
-    let cancelled = false;
-    window.cth.listPtys().then((list) => {
-      if (cancelled) return;
-      useStore.getState().reconcileWithLivePtys(list.map((p) => p.id));
-    }).catch(() => { /* ignore — keep restored agents as-is */ });
-    return () => { cancelled = true; };
-  }, [config?.onboardingComplete]);
+  // The local-LLM director: seeds the cast and runs the office sandbox.
+  const game = useDirector(config);
 
   // Track viewport width for splitter clamping
   useEffect(() => {
@@ -87,10 +37,6 @@ export function App() {
 
   if (!config) {
     return <div style={{ width: '100vw', height: '100vh', background: 'var(--cth-cream-100)' }} />;
-  }
-
-  if (!config.onboardingComplete) {
-    return <OnboardingWizard onComplete={(next) => setConfig(next)} />;
   }
 
   return (
@@ -124,7 +70,7 @@ export function App() {
           fontSize: 14,
           color: 'var(--cth-ink-500)'
         }}>
-          v0.1 · {config.autoMode ? 'auto mode on' : 'auto mode off'}
+          local-LLM office sandbox
         </span>
         <button
           className="cth-titlebar-nodrag"
@@ -151,25 +97,24 @@ export function App() {
       }}>
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
           <OfficeFloor />
-          <MemoryPanel />
-          {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
-          {agentCount === 0 && godStatus !== 'booting' && (
+          {!game.ollama.available && game.ollama.checked && (
             <div style={{
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               pointerEvents: 'none'
             }}>
-              <div style={{ pointerEvents: 'auto', width: 360 }}>
-                <PixelPanel variant="dialog" title="EMPTY FLOOR" noPadding>
-                  <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ pointerEvents: 'auto', width: 380 }}>
+                <PixelPanel variant="dialog" title="NO LOCAL MODEL" noPadding>
+                  <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <p style={{ margin: 0, fontSize: 14, lineHeight: '20px' }}>
-                      No agents on the floor yet. Spawn one to see real claude output stream in here.
+                      The cast is powered by a local model via Ollama. Start it, then press
+                      <b> refresh</b> in the Director panel.
                     </p>
-                    <PixelButton variant="primary" size="md" onClick={() => setAddAgentOpen(true)}>
-                      <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                        <Icon name="plus" /> add agent
-                      </span>
-                    </PixelButton>
+                    <pre style={{
+                      margin: 0, fontSize: 12, padding: 8, overflowX: 'auto',
+                      background: 'var(--cth-cream-50)', border: '2px solid var(--cth-ink-900)'
+                    }}>{`ollama serve
+ollama pull danger   # or any model`}</pre>
                   </div>
                 </PixelPanel>
               </div>
@@ -187,67 +132,13 @@ export function App() {
           width: sidebarWidth, flexShrink: 0,
           minHeight: 0, display: 'flex', flexDirection: 'column'
         }}>
-          {agent ? (
-            <AgentDetailPanel agent={agent} />
-          ) : godStatus === 'booting' ? (
-            <PixelPanel variant="default" noPadding style={{
-              padding: 16, height: '100%',
-              display: 'flex', flexDirection: 'column',
-              justifyContent: 'center', alignItems: 'center', gap: 12
-            }}>
-              <div style={{
-                fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px',
-                color: 'var(--cth-ink-500)'
-              }}>WAKING THE FLOOR</div>
-              <p style={{ margin: 0, fontSize: 14, textAlign: 'center', color: 'var(--cth-ink-700)' }}>
-                Michael is clocking in.<br />
-                The terminal will land here once he's seated.
-              </p>
-            </PixelPanel>
-          ) : (
-            <PixelPanel variant="default" noPadding style={{
-              padding: 16, height: '100%',
-              display: 'flex', flexDirection: 'column',
-              justifyContent: 'center', alignItems: 'center', gap: 12
-            }}>
-              <div style={{
-                fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px',
-                color: 'var(--cth-ink-500)'
-              }}>NO AGENT SELECTED</div>
-              <p style={{ margin: 0, fontSize: 14, textAlign: 'center', color: 'var(--cth-ink-700)' }}>
-                Spawn an agent from the strip below.<br />
-                The terminal and command bar will land here.
-              </p>
-              <PixelButton variant="secondary" size="md" onClick={() => setAddAgentOpen(true)}>
-                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <Icon name="plus" /> add agent
-                </span>
-              </PixelButton>
-            </PixelPanel>
-          )}
+          <GameDirectorPanel game={game} />
         </div>
       </div>
 
-      <AgentStrip />
-
-      {addAgentOpen && (
-        <AddAgentModal onClose={() => setAddAgentOpen(false)} config={config} />
-      )}
-
       {settingsOpen && (
-        <SettingsModal config={config} onClose={() => setSettingsOpen(false)} />
+        <GameSettingsModal config={config} onClose={() => setSettingsOpen(false)} />
       )}
-
-      {quitWarn && (
-        <QuitWarningModal
-          ptyCount={quitWarn.ptyCount}
-          onCancel={() => { window.cth.cancelClose(); setQuitWarn(null); }}
-          onConfirm={async () => { await window.cth.confirmClose(); }}
-        />
-      )}
-
-      {fullscreenAgentId && <FullscreenTerminal />}
-      {fullscreenFilePath && <FullscreenFileEditor />}
     </div>
   );
 }
