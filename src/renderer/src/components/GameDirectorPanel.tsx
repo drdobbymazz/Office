@@ -69,9 +69,12 @@ export function GameDirectorPanel({ game }: { game: GameState }) {
               value={model}
               onChange={(e) => controller.setModel(e.target.value)}
               style={field}
-              disabled={!ollama.available}
             >
-              {ollama.models.length === 0 && <option value="">— no models —</option>}
+              {/* Always show the configured model, even if it isn't installed yet. */}
+              {model && !ollama.models.includes(model) && (
+                <option value={model}>{model}{ollama.checked && ' (not installed)'}</option>
+              )}
+              {ollama.models.length === 0 && !model && <option value="">— no models —</option>}
               {ollama.models.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>

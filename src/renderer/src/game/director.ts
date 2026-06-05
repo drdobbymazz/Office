@@ -99,6 +99,10 @@ export class Director {
   private generating = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastSpeakerId: string | null = null;
+  /** An active two-person scene: the director keeps the exchange between this
+   *  pair for `left` more beats before opening the floor back up. Gives
+   *  conversations a coherent back-and-forth instead of scattered one-liners. */
+  private focus: { a: string; b: string; left: number } | null = null;
   /** A character the player forced to speak next, with an optional instruction. */
   private forced: { id: string; instruction?: string } | null = null;
   /** Pending director notes (injected events) to weave into the next turn. */
@@ -245,6 +249,16 @@ export class Director {
       };
       this.lastSpeakerId = speaker.id;
       this.pendingNotes = []; // consumed into this turn
+      // A line aimed at someone opens (or extends) a two-person scene between
+      // them, so the next few beats stay a coherent back-and-forth.
+      if (target) {
+        const sceneLen = 2 + Math.round(this.scene.drama * 3);
+        if (this.focus && this.focusHas(speaker.id) && this.focusHas(target.id)) {
+          this.focus.left = Math.max(this.focus.left, sceneLen);
+        } else {
+          this.focus = { a: speaker.id, b: target.id, left: sceneLen };
+        }
+      }
       this.push(beat);
     } finally {
       this.generating = false;
@@ -252,13 +266,32 @@ export class Director {
     }
   }
 
-  /** Pick who speaks next: a forced choice, else someone in the last speaker's
-   *  orbit (for back-and-forth), else a fresh voice — never twice in a row. */
+  private focusHas(id: string): boolean {
+    return !!this.focus && (this.focus.a === id || this.focus.b === id);
+  }
+
+  /** Pick who speaks next: a forced choice, else the other half of an active
+   *  two-person scene, else someone in the last speaker's orbit (for
+   *  back-and-forth), else a fresh voice — never twice in a row. */
   private pickSpeaker(actors: DirectorActor[]): DirectorActor | null {
     if (this.forced) {
       const f = actors.find((a) => a.id === this.forced!.id);
       if (f) return f;
     }
+
+    // In a focused scene, bounce the line back to the other participant.
+    if (this.focus) {
+      const a = actors.find((x) => x.id === this.focus!.a);
+      const b = actors.find((x) => x.id === this.focus!.b);
+      if (a && b) {
+        this.focus.left -= 1;
+        const next = this.lastSpeakerId === this.focus.a ? b : a;
+        if (this.focus.left <= 0) this.focus = null;
+        return next;
+      }
+      this.focus = null; // a participant wandered off — end the scene
+    }
+
     const pool = actors.length > 1
       ? actors.filter((a) => a.id !== this.lastSpeakerId)
       : actors;

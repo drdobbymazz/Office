@@ -623,10 +623,36 @@ export function OfficeFloor() {
       };
       window.addEventListener('cth:game-say', onGameSay);
 
+      // Game mode: walk a character over to whoever they just addressed and turn
+      // to face them — the physical "approach" beat from the director.
+      const onGameMove = (ev: Event) => {
+        const d = (ev as CustomEvent<{ id: string; toId: string }>).detail;
+        if (!d) return;
+        const rt = runtimes.get(d.id);
+        const target = runtimes.get(d.toId);
+        if (!rt || !target || rt === target) return;
+        if (rt.brk) releaseBreak(rt);
+        const tt = target.character.getTilePosition();
+        // Stand on the first walkable tile next to the target.
+        const dest = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const)
+          .map(([dx, dy]) => ({ x: tt.x + dx, y: tt.y + dy }))
+          .find((t) => mapRenderer.isWalkable(t.x, t.y));
+        if (!dest) return;
+        rt.character.walkToAndThen(dest, () => {
+          const me = rt.character.getTilePosition();
+          const dir = Math.abs(tt.x - me.x) > Math.abs(tt.y - me.y)
+            ? (tt.x > me.x ? 'right' : 'left')
+            : (tt.y > me.y ? 'down' : 'up');
+          rt.character.faceDirection(dir);
+        });
+      };
+      window.addEventListener('cth:game-move', onGameMove);
+
       (app as any).__offMessage = () => {
         offMessage();
         window.removeEventListener('cth:demo-handoff', onDemoHandoff);
         window.removeEventListener('cth:game-say', onGameSay);
+        window.removeEventListener('cth:game-move', onGameMove);
       };
 
       // Keep two nearby thought clouds from covering each other: stack the

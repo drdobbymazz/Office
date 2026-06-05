@@ -56,7 +56,7 @@ export interface HarnessConfig {
 }
 
 const DEFAULTS: HarnessConfig = {
-  onboardingComplete: false,
+  onboardingComplete: true,
   harnessHome: null,
   registeredRepos: [],
   autoMode: true,
@@ -70,9 +70,9 @@ const DEFAULTS: HarnessConfig = {
   slackBotToken: undefined,
   slackChannelId: undefined,
   slackPort: undefined,
-  mode: 'harness',
+  mode: 'game',
   llmBaseUrl: undefined,
-  gameModel: undefined
+  gameModel: 'danger'
 };
 
 function configPath(): string {

@@ -70,7 +70,9 @@ export interface GameState {
 }
 
 export function useDirector(config: HarnessConfig | null): GameState {
-  const active = !!config?.onboardingComplete && config.mode === 'game';
+  // The app is local-LLM-only now, so the director is active as soon as config
+  // has loaded (mode is always 'game').
+  const active = !!config?.onboardingComplete;
 
   const [transcript, setTranscript] = useState<Beat[]>([]);
   const [busy, setBusy] = useState(false);
@@ -136,10 +138,10 @@ export function useDirector(config: HarnessConfig | null): GameState {
             recentAssistantText: beat.text,
             recentTextTs: Date.now()
           });
-          // An "approach" beat flies a paper envelope to the target for flair.
+          // An "approach" beat walks the speaker over to whoever they addressed.
           if (beat.action === 'approach' && beat.targetId) {
-            window.dispatchEvent(new CustomEvent('cth:demo-handoff', {
-              detail: { from: beat.speakerId, to: beat.targetId, act: 'inform' }
+            window.dispatchEvent(new CustomEvent('cth:game-move', {
+              detail: { id: beat.speakerId, toId: beat.targetId }
             }));
           }
         },
