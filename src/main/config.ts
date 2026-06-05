@@ -71,7 +71,9 @@ const DEFAULTS: HarnessConfig = {
   slackChannelId: undefined,
   slackPort: undefined,
   mode: 'game',
-  llmBaseUrl: undefined,
+  // Default to the user's Tailscale-served LLM laptop (reachable only while that
+  // machine is online on the tailnet). Override in Settings → Ollama server.
+  llmBaseUrl: 'https://msi.tail780d1f.ts.net',
   gameModel: 'danger'
 };
 

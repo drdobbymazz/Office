@@ -65,7 +65,7 @@ export function GameSettingsModal({ config, onClose }: GameSettingsModalProps) {
                   style={{ ...inputStyle, flex: 1 }}
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="http://127.0.0.1:11434"
+                  placeholder="https://msi.tail780d1f.ts.net"
                 />
                 <PixelButton variant="primary" size="md" onClick={save}>
                   {saved ? 'saved' : 'save'}

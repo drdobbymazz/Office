@@ -12,7 +12,9 @@
 
 import type { HarnessConfig } from '@/store/config';
 
-const DEFAULT_OLLAMA = 'http://127.0.0.1:11434';
+// The user's Tailscale-served LLM laptop — the default model host. Reachable
+// only while that machine is online on the tailnet; override in Settings.
+const DEFAULT_OLLAMA = 'https://msi.tail780d1f.ts.net';
 const CONFIG_KEY = 'cthweb.config';
 
 const DEFAULT_CONFIG: HarnessConfig = {
@@ -24,7 +26,7 @@ const DEFAULT_CONFIG: HarnessConfig = {
   semanticMemory: false,
   embeddingModel: 'minilm',
   mode: 'game',
-  llmBaseUrl: undefined,
+  llmBaseUrl: DEFAULT_OLLAMA,
   gameModel: 'danger'
 };
 
