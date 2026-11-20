@@ -19,3 +19,5 @@ export { ryan } from './voices/ryan';
 export { toby } from './voices/toby';
 export { creed } from './voices/creed';
 export { meredith } from './voices/meredith';
+export { chaosLine, fillText } from './fill';
+export type { TextVars } from './fill';
