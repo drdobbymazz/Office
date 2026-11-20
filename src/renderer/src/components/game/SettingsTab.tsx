@@ -58,7 +58,10 @@ function BrainSection() {
     }).catch(() => setResult({ ok: false, text: 'Could not connect.' })).finally(() => setTesting(false));
   };
 
-  const modelList = models.includes(brain.model) || !brain.model ? models : [brain.model, ...models];
+  // "name" and "name:latest" are the same model to the server, so they are the same here too.
+  const bare = (m: string): string => m.replace(/:latest$/, '');
+  const current = models.find((m) => bare(m) === bare(brain.model)) ?? brain.model;
+  const modelList = models.includes(current) || !current ? models : [current, ...models];
   return (
     <Section title="BRAIN" accent="lilac">
       <Label>Who plays the staff</Label>
@@ -82,8 +85,8 @@ function BrainSection() {
           )}
           <Label>Model</Label>
           {modelList.length > 0 ? (
-            <select className="gu-field gu-hit" value={brain.model} onChange={(e) => game.updateBrain({ model: e.target.value })}>
-              {modelList.map((m) => <option key={m} value={m}>{m}{models.length && !models.includes(m) ? ' (not found)' : ''}</option>)}
+            <select className="gu-field gu-hit" value={current} onChange={(e) => game.updateBrain({ model: e.target.value })}>
+              {modelList.map((m) => <option key={m} value={m}>{bare(m)}{models.length && !models.includes(m) ? ' (not found)' : ''}</option>)}
             </select>
           ) : (
             <input className="gu-field gu-hit" value={brain.model} spellCheck={false} autoCapitalize="off"

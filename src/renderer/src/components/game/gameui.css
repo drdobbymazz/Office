@@ -195,6 +195,11 @@ select.gu-field {
   font-size: 14px;
   line-height: 17px;
   color: var(--cth-ink-700);
+  /* The typewriter splits the line into two runs of text. With kerning on, the two runs
+     are a pixel wider than the whole line was when the box was measured, and the last
+     letters drop to a new line. A pixel font needs no kerning, so it is switched off. */
+  font-kerning: none;
+  font-variant-ligatures: none;
   overflow-wrap: break-word;
   /* one-pixel corner notches: the pixel "rounded corner" of DESIGN.md 6.3 */
   clip-path: polygon(1px 0, calc(100% - 1px) 0, calc(100% - 1px) 1px, 100% 1px, 100% calc(100% - 1px),

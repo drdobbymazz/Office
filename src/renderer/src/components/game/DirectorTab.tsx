@@ -26,10 +26,13 @@ export function ModelStatus({ compact }: { compact?: boolean }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <Light color={l.color} blink={l.blink || b.thinking} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>{l.text}</div>
+        {/* The speed sits with the status, so a long model name cannot push it out of sight. */}
+        <div style={{ fontSize: 14, lineHeight: '16px', color: 'var(--cth-ink-700)', whiteSpace: 'nowrap' }}>
+          {l.text}
+          {b.state === 'online' && b.tps ? <span style={{ color: 'var(--cth-ink-500)' }}> · {b.tps.toFixed(1)} tok/s</span> : null}
+        </div>
         <div style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '18px', color: 'var(--cth-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {b.state === 'instinct' ? 'no model' : b.model}
-          {b.state === 'online' && b.tps ? <span style={{ color: 'var(--cth-ink-500)' }}> · {b.tps.toFixed(1)} tok/s</span> : null}
         </div>
       </div>
       {!compact && (
@@ -71,7 +74,8 @@ export function DirectorTab() {
         <ModelStatus />
         {s.error && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p style={{ margin: 0, fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{s.error}</p>
+            {/* Set in the terminal face: the advice includes a setting to type, and its asterisk must be readable. */}
+            <p style={{ margin: 0, fontFamily: 'var(--cth-font-mono)', fontSize: 17, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>{s.error}</p>
             <Btn size="md" variant="secondary" icon="gear" onClick={() => nav.go('settings')} sound="open">Open brain settings</Btn>
           </div>
         )}

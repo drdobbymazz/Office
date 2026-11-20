@@ -3,6 +3,7 @@
 // misbehaves is ended rather than left hanging.
 
 import type { ChaosId, ChaosTarget, CharId, RoomId } from '@/game/core/types';
+import { chaosLine } from '@/game/core/content/fill';
 import { TARGET_ROOMS } from '@/game/core/types';
 import { CHAOS } from '@/game/core/chaos';
 import type { ChaosRun, ChaosScript } from '@/game/core/simApi';
@@ -109,7 +110,11 @@ export class ChaosRegistry {
     core.bus.emit('chaosStart', { id, target: t, label: run.label, room: room as RoomId | undefined });
     core.bumpChaos(def.chaos);
     if (def.incident) core.incident();
-    if (!run.ownStartLine) core.narrate(run.label, { icon: id, kind: 'overseer', room: room as RoomId | undefined });
+    // A script that does not write its own opening line gets the catalogue's sentence for it.
+    if (!run.ownStartLine) {
+      const line = chaosLine(id, 'start', { room: (room as RoomId | undefined) ?? null, who: t.who ?? null, other: t.other ?? null });
+      core.narrate(line || run.label, { icon: id, kind: 'overseer', room: room as RoomId | undefined });
+    }
     return null;
   }
 

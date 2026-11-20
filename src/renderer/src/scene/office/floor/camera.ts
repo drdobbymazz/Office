@@ -360,7 +360,7 @@ export class FloorCamera {
       const want = Math.min(u.w / r.w, u.h / r.h) * 0.9;
       // Small talk earns a gentle push-in; only the things that matter get the full close-up.
       const home = this.homeZoom();
-      const cap = it.weight >= 0.55 ? this.roomZoom() : Math.max(home, this.crisp(home + (this.roomZoom() - home) * 0.4));
+      const cap = it.weight >= 0.55 ? this.roomZoom() : Math.max(home, this.crisp(home + (this.roomZoom() - home) * 0.5));
       this.tz = clamp(this.crisp(want), home, cap);
       this.tx = r.x + r.w / 2;
       this.ty = r.y + r.h / 2;

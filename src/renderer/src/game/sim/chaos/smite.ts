@@ -10,6 +10,8 @@ const WITNESS_RADIUS = 96;
 
 class SmiteRun implements ChaosRun {
   readonly label: string;
+  /** Writes its own line in the log when it happens. */
+  readonly ownStartLine = true;
   readonly room: RoomId | null;
   done = false;
   private t = 0;

@@ -2,7 +2,7 @@
 // toasts (top-centre), the subtitle line (bottom-centre) and the offline banner.
 // Only real controls take touches; the rest lets them through to the floor.
 
-import { CSSProperties } from 'react';
+import { CSSProperties, useEffect, useState } from 'react';
 import { CHAOS } from '@/game/core/chaos';
 import { formatClock } from '@/game/core/types';
 import { GIcon } from './icons';
@@ -147,7 +147,14 @@ export function Subtitle({ right, bottom }: { right: number; bottom: number }) {
 
 export function OfflineBanner({ left, onFix }: { left: string; onFix: () => void }) {
   const offline = useUi((s) => s.brain.state === 'offline');
-  if (!offline) return null;
+  // Said once, then out of the way: the red light on the Director tab keeps saying it.
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    if (!offline) { setSeen(false); return; }
+    const t = window.setTimeout(() => setSeen(true), 14000);
+    return () => window.clearTimeout(t);
+  }, [offline]);
+  if (!offline || seen) return null;
   return (
     <div className="gu-hit gu-drop" data-avoid style={{
       position: 'absolute', top: 80, left, width: STRIP_W, display: 'flex', alignItems: 'center', gap: 8,

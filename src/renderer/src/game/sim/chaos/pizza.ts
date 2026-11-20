@@ -15,6 +15,8 @@ let pizzaCount = 0;
 
 class PizzaRun implements ChaosRun {
   readonly label = 'Free pizza in the break room';
+  /** Writes its own line in the log when it happens. */
+  readonly ownStartLine = true;
   readonly room: RoomId = 'kitchen';
   done = false;
   private t = 0;
