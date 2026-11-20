@@ -78,8 +78,10 @@ export class Director {
   private opts: DirectorOptions;
   private queue: Pending[] = [];
   private running: Running | null = null;
-  /** A non-scene request (minds / interpret / report) is in flight. */
-  private side = false;
+  /** How many non-scene requests (minds / interpret / report) are in flight. */
+  private sideN = 0;
+  /** Lets a round of private thoughts be dropped the moment the player does something. */
+  private mindsAbort: AbortController | null = null;
   private ambientAt = 6;
   private mindsAt = 40;
   private musingAt = 9;
@@ -90,6 +92,10 @@ export class Director {
   private lastTopic = '';
   /** Sim time each pair last finished talking, so the same two do not hog the floor. */
   private pairAt = new Map<string, number>();
+  /** Facts already seen, and the newest one while it is still news. */
+  private knownFacts = new Set<string>();
+  private breaking: { fact: string; at: number; scenes: number } | null = null;
+  private factsAt = 0;
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   /** Free-text events currently on the floor, to be cleared when their time is up. */
@@ -124,10 +130,12 @@ export class Director {
     this.musingAt = this.api.time + 10;
     this.scenesSinceMinds = 0;
     this.pairAt.clear();
+    this.knownFacts.clear();
+    this.breaking = null;
   }
 
   get thinking(): boolean {
-    return (this.running !== null && this.running.result === null && !this.running.failed) || this.side;
+    return (this.running !== null && this.running.result === null && !this.running.failed) || this.sideN > 0;
   }
 
   /**
@@ -142,11 +150,25 @@ export class Director {
 
   // ── things the player does ─────────────────────────────────────────────────
 
+  /**
+   * The player has done something: whatever the model is writing in the
+   * background (private thoughts, small talk, the tail of a finished chat) is
+   * dropped so the answer to the player comes first.
+   */
+  private clearTheWay(): void {
+    this.mindsAbort?.abort();
+    this.mindsAbort = null;
+    // Any conversation the player did not ask for gives way, whatever it was about.
+    const r = this.running;
+    if (r && !r.fromPlayer) this.stopScene(true);
+  }
+
   /** Put a thought in someone's head. */
   whisper(who: CharId, text: string): void {
     const p = this.api.person(who);
     const thought = tidy(text, 160);
     if (!p || !thought) return;
+    this.clearTheWay();
     this.api.emote(who, 'idea');
     this.api.feel(who, 'surprised', 0.7, 3);
     this.api.setThought(who, thought);
@@ -168,6 +190,7 @@ export class Director {
   announce(text: string): void {
     const said = tidy(text, 200);
     if (!said) return;
+    this.clearTheWay();
     this.api.sfx('paChime');
     this.api.narrate(`Over the loudspeaker: "${said}"`, { kind: 'overseer', icon: 'announce' });
     this.api.remember('all', `A voice over the loudspeaker said: "${said}"`);
@@ -193,6 +216,7 @@ export class Director {
     const p = this.api.person(who);
     const what = tidy(instruction, 160);
     if (!p || !what) return;
+    this.clearTheWay();
     this.api.emote(who, 'alert');
     this.api.narrate(`You nudge ${p.name}: ${what}`, { kind: 'overseer', icon: 'tell', room: p.room });
     // If the instruction names someone else, bring them into it.
@@ -213,13 +237,14 @@ export class Director {
   customEvent(text: string): void {
     const what = tidy(text, 180);
     if (!what) return;
+    this.clearTheWay();
     this.api.narrate(`You make it happen: ${what}`, { kind: 'overseer', icon: 'anything' });
     const rooms = TARGET_ROOMS.map((id) => ({
       id: id as string,
       name: roomDef(id).name,
       people: this.api.peopleIn(id).filter((p) => p.present).map((p) => p.name)
     }));
-    this.side = true;
+    this.sideN += 1;
     this.report();
     void this.brain
       .interpret({ id: nextId('interpret'), text: what, rooms })
@@ -229,7 +254,7 @@ export class Director {
       })
       .catch((err) => console.warn('[director] custom event failed', err))
       .finally(() => {
-        this.side = false;
+        this.sideN = Math.max(0, this.sideN - 1);
         this.report();
       });
   }
@@ -244,6 +269,11 @@ export class Director {
     this.pruneQueue(now);
     if (this.customs.length) this.expireCustoms(now);
 
+    if (now >= this.factsAt) {
+      this.factsAt = now + 1;
+      this.watchFacts(now);
+    }
+
     if (this.running) this.advanceScene(now);
     else this.startNext(now);
 
@@ -252,7 +282,7 @@ export class Director {
       this.musingAt = now + 9 + this.api.rng() * 9;
       void this.musing();
     }
-    if (!this.running && !this.side && now >= this.mindsAt) {
+    if (!this.running && this.sideN === 0 && now >= this.mindsAt) {
       // Conversations come first. A round of private thoughts costs a slow model
       // twenty seconds, so it waits for a quiet moment and happens less often.
       const slow = this.slow;
@@ -266,6 +296,29 @@ export class Director {
     }
   }
 
+  /**
+   * When something new becomes true on the floor (a fire, a puppy, someone shrunk),
+   * it is news: small talk in progress gives way, and the next conversations are
+   * about it. The first entry of facts() is only the time, so it is skipped.
+   */
+  private watchFacts(now: number): void {
+    const facts = this.sim.facts().slice(1);
+    let fresh: string | null = null;
+    for (const f of facts) {
+      if (this.knownFacts.has(f)) continue;
+      this.knownFacts.add(f);
+      fresh ??= f;
+    }
+    // Forget what is no longer true, so the same thing happening again counts as news again.
+    for (const f of this.knownFacts) if (!facts.includes(f)) this.knownFacts.delete(f);
+    if (!fresh) return;
+    this.breaking = { fact: fresh, at: now, scenes: 0 };
+    const r = this.running;
+    if (r && r.ask.trigger === 'ambient' && !r.fromPlayer && !r.releasedAt) this.stopScene(true);
+    this.ambientAt = Math.min(this.ambientAt, now + 0.8);
+    this.idleAt = Math.min(this.idleAt, now + 0.8);
+  }
+
   // ── queue ──────────────────────────────────────────────────────────────────
 
   private enqueue(ask: SceneAsk, fromPlayer: boolean): void {
@@ -275,8 +328,10 @@ export class Director {
     this.queue.sort((a, b) => b.ask.priority - a.ask.priority || a.at - b.at);
     if (this.queue.length > 12) this.queue.length = 12;
     // Something important should not wait behind small talk.
+    // The same goes for a conversation that is over and only waiting for its summary:
+    // the player should not wait for paperwork.
     const r = this.running;
-    if (r && ask.priority >= 8 && r.ask.priority <= 3) this.stopScene(true);
+    if (r && ask.priority >= 8 && (r.ask.priority <= 3 || r.releasedAt > 0)) this.stopScene(true);
     this.report();
   }
 
@@ -287,7 +342,7 @@ export class Director {
   }
 
   private startNext(now: number): void {
-    if (this.side) return;
+    if (this.sideN > 0) return;
     while (this.queue.length) {
       const next = this.queue[0];
       const ambient = next.ask.priority <= 2;
@@ -313,10 +368,19 @@ export class Director {
    */
   private smallTalk(now: number): SceneAsk | null {
     const clock = this.api.clock;
-    if (clock < 9 * 60 + 2 || clock > 16 * 60 + 50 || this.api.chaos > 70) return null;
+    if (clock < 9 * 60 + 2 || clock > 16 * 60 + 50) return null;
+    // Something that has just happened is worth two conversations, while it is fresh.
+    const news = this.breaking && now - this.breaking.at < 50 && this.breaking.scenes < 2 ? this.breaking : null;
+    // Otherwise, in the thick of it, the events' own scenes do the talking.
+    if (!news && this.api.chaos > 70) return null;
     const rng = this.api.rng;
-    const free = this.api.people().filter((p) => p.isCast && p.present && p.available && !p.plan && !p.speaking && this.canSpeak(p.id));
-    if (!free.length) return null;
+    const everyone = this.api.people().filter((p) => p.isCast && p.present && p.available && !p.urgent && !p.plan && !p.speaking && this.canSpeak(p.id));
+    if (!everyone.length) return null;
+    // News is best discussed by the people standing in it.
+    const text = news?.fact.toLowerCase() ?? '';
+    const where = news ? TARGET_ROOMS.find((id) => text.includes(roomDef(id).name.toLowerCase())) : undefined;
+    const local = where ? everyone.filter((p) => p.room === where) : [];
+    const free = local.length ? local : everyone;
     const quiet = (p: SimPerson): number => now - (this.lastSpoke.get(p.id) ?? -999);
     // A little noise, so people who have all been silent equally long are not always taken in the same order.
     const turn = new Map(free.map((p) => [p.id, quiet(p) + rng() * 40]));
@@ -334,6 +398,14 @@ export class Director {
       .sort((x, y) => y.score - x.score);
 
     if (!near.length) {
+      if (news) {
+        news.scenes += 1;
+        this.lastTopic = 'news';
+        return {
+          people: [a.id], room: a.room, trigger: 'event', priority: 6, minLines: 1, maxLines: 1, gather: false,
+          why: `This is happening right now: ${news.fact} ${a.name} says something about it out loud.`
+        };
+      }
       // Alone in the room: a line down the phone or under the breath.
       if (quiet(a) < 45) return null;
       return {
@@ -346,6 +418,15 @@ export class Director {
     const people = [a.id, b.id];
     // Now and then a third joins in, when the model is quick enough to afford it.
     if (!this.slow && near.length > 1 && rng() < 0.25) people.push(near[1].o.id);
+
+    if (news) {
+      news.scenes += 1;
+      this.lastTopic = 'news';
+      return {
+        people, room: a.room, trigger: 'event', priority: 6, minLines: 2, maxLines: 3, gather: dist > 110,
+        why: `This is happening right now: ${news.fact} ${people.map((id) => this.api.person(id)?.name ?? id).join(' and ')} are reacting to it.`
+      };
+    }
 
     const bond = this.api.bond(a.id, b.id);
     // The first fact is only the day and the time; the rest are things that have happened, newest first.
@@ -517,7 +598,7 @@ export class Director {
     r.abort.abort();
     r.handle.close();
     this.running = null;
-    if (tellPeople && r.spoken > 0) this.api.remember(r.people, 'A conversation was cut short.');
+    if (tellPeople && r.spoken > 0 && !r.releasedAt) this.api.remember(r.people, 'A conversation was cut short.');
     this.report();
   }
 
@@ -558,8 +639,10 @@ export class Director {
     for (const p of free) this.lastMinded.set(p.id, now);
     const ids = free.map((p) => p.id);
     const others = this.api.people().filter((p) => p.present).map((p) => ({ id: p.id, name: p.name, place: roomDef(p.room).name }));
-    this.side = true;
+    this.sideN += 1;
     this.report();
+    const abort = new AbortController();
+    this.mindsAbort = abort;
     void this.brain
       .minds({
         id: nextId('minds'),
@@ -570,13 +653,14 @@ export class Director {
         allowed: [...PLAN_KINDS],
         others,
         chaos: Math.min(1, this.api.chaos / 100)
-      })
+      }, abort.signal)
       .then((minds) => {
-        if (!this.disposed) this.applyMinds(minds);
+        if (!this.disposed && !abort.signal.aborted) this.applyMinds(minds);
       })
       .catch(() => undefined)
       .finally(() => {
-        this.side = false;
+        if (this.mindsAbort === abort) this.mindsAbort = null;
+        this.sideN = Math.max(0, this.sideN - 1);
         this.report();
       });
   }
@@ -726,7 +810,7 @@ export class Director {
       stats,
       people: this.api.people().filter((p) => p.isCast).map((p) => ({ id: p.id, name: p.name, mood: p.emotion }))
     };
-    this.side = true;
+    this.sideN += 1;
     this.report();
     let res: ReportResult;
     try {
@@ -735,7 +819,7 @@ export class Director {
     } catch {
       res = await this.instinct.report(req);
     } finally {
-      this.side = false;
+      this.sideN = Math.max(0, this.sideN - 1);
       this.report();
     }
     this.sim.setTakeaways(res.takeaways.filter((t) => isCastId(t.who) && !!t.text));
@@ -811,7 +895,7 @@ export class Director {
 
   private report(): void {
     const r = this.running;
-    const waiting = (r !== null && r.result === null && !r.failed) || this.side;
+    const waiting = (r !== null && r.result === null && !r.failed) || this.sideN > 0;
     const source = r?.result ? r.result.source : waiting ? 'model' : null;
     this.opts.onBusy?.({ thinking: waiting, queued: this.queue.length, source });
   }

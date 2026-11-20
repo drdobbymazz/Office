@@ -94,6 +94,23 @@ class FireRun implements ChaosRun {
     this.panic(true);
   }
 
+  /** The alarm reaches the whole floor: everyone else looks up, and one or two say it out loud. */
+  private alarmHeard(): void {
+    const sim = this.sim;
+    let barks = 2;
+    for (const p of sim.people()) {
+      if (!p.present || !p.isCast || p.room === this.target || this.fled.has(p.id) || p.id === this.fixer) continue;
+      sim.react(p.id, 'startle', 0.8);
+      if (barks > 0 && p.available && !p.speaking && sim.rng() < 0.3) {
+        sim.chaosBark(p.id, 'fire');
+        barks--;
+      } else {
+        sim.emote(p.id, 'alert');
+      }
+      sim.feel(p.id, 'surprised', 0.7, 6);
+    }
+  }
+
   /** Everyone in the room reacts and runs out. */
   private panic(first: boolean): void {
     const sim = this.sim;
@@ -126,6 +143,7 @@ class FireRun implements ChaosRun {
         this.alarm = true;
         sim.addEffect({ id: `${this.key}:alarm`, kind: 'alarm' });
         sim.loop('alarm', true);
+        this.alarmHeard();
       }
       if (this.size > 0.6 && this.blocked.length === 1) this.spread();
       // Anyone who wanders in (or was busy when it started) gets out.

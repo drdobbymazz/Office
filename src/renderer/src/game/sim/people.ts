@@ -234,6 +234,12 @@ export class Person implements SimPerson {
     return this.speech !== null;
   }
 
+  /** In the middle of something that should not be interrupted for a chat. */
+  get urgent(): boolean {
+    const k = this.job?.kind;
+    return k === 'flee' || k === 'evacuate' || k === 'task' || k === 'go' || k === 'trapped' || k === 'home' || k === 'arrive';
+  }
+
   get walking(): boolean {
     return this.walk !== null;
   }

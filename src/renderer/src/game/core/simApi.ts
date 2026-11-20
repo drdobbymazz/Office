@@ -47,6 +47,8 @@ export interface SimPerson {
   /** Id of the scene they are speaking in, if any. */
   readonly sceneId: string | null;
   readonly speaking: boolean;
+  /** Running from danger, fixing something, or sent somewhere by an event: not the moment for a chat. */
+  readonly urgent: boolean;
 }
 
 /** Somewhere to go. */
