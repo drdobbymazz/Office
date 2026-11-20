@@ -487,6 +487,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     }
   };
   document.addEventListener('visibilitychange', onVisibility);
+  // Closing the tab or reloading: phones fire this more reliably than anything else.
+  const onPageHide = (): void => { saveJson(SAVE_KEY, sim.serialize()); };
+  window.addEventListener('pagehide', onPageHide);
 
   // ── the public surface ─────────────────────────────────────────────────────
 
@@ -633,6 +636,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       running = false;
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onPageHide);
       for (const t of timers) clearTimeout(t);
       for (const off of offs) off();
       saveJson(SAVE_KEY, sim.serialize());

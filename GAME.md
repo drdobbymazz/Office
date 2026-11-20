@@ -24,7 +24,9 @@ You are the **Overseer**. The staff do not know you exist.
 - **Tap** someone to see their mood, what they are thinking, who they like and dislike, what they remember, and (once it comes out) their secret.
 
 The staff remember what happens, hold grudges, form plans and act on them. Each office day runs
-09:00 to 17:00 and ends with a written report. The world saves itself in the browser.
+09:00 to 17:00 and ends with a written report. The world saves itself in the browser: grudges,
+memories, the share price and the day number carry over. If you close the game part-way through a
+day, that day starts again from the morning.
 
 ### Touch controls
 
@@ -82,6 +84,20 @@ and model, and press **Test**: the message says what is wrong in plain words.
 
 A 16 GB model can take up to a minute to load the first time it is asked something.
 
+### If the lines come out wrong
+
+- **People talk out of character, or ignore who they are.** The model is probably reading only the
+  end of the prompt. Each request is about 2,000 tokens (the day's report about 2,800), so the model
+  needs a context window of 4,096 or more. Current Ollama defaults to that; older versions default
+  to 2,048. Check with `ollama show artemis-custom`, and if needed add `PARAMETER num_ctx 4096` to
+  its Modelfile and rebuild it. The game never sends this setting itself, because that would make
+  Ollama reload the model.
+- **Long silences before anyone speaks.** The first request has to read the whole cast (about
+  1,600 tokens). After that only the new part is read, as long as nothing else uses the model in
+  between. Another program talking to the same model throws that saved work away each time.
+- **Odd symbols or half sentences.** The game already repairs or drops broken replies and retries
+  once. If it happens a lot, lower **Wildness** in Settings > Brain.
+
 ## Development
 
 ```bash
@@ -95,8 +111,8 @@ npm run mock-llm
 ```
 
 runs a stand-in for Ollama on port 11500 that answers in the right format at 7 tokens a second
-(point Settings > Brain at `http://localhost:11500`). It also has deliberately broken "models" for
-testing how the game copes.
+(point Settings > Brain at `http://localhost:11500`). It prints how much text each request sent,
+and it has deliberately broken "models" for testing how the game copes.
 
 ```bash
 npm test
@@ -131,6 +147,16 @@ runs the logic tests (map, simulation, brain, written lines).
   then answered from the written fallback, so the game never stalls.
 - Reflexes ("FIRE!") come from hand-written lines at once; the model's fuller reaction follows a
   few seconds later.
+- When nothing else is happening, the director starts small talk between two people who are free,
+  about something recent, how they feel about each other, or the time of day. Whoever has been
+  quiet longest goes first, and the same two do not talk twice in a row.
+- A slow model spends its time on dialogue. Rounds of private thoughts and plans happen about once
+  every minute and a half instead of every half minute, and people go back to work as soon as the
+  last line is spoken rather than waiting for the summary to finish.
+
+In a test against a stand-in server at 7 tokens a second, the first conversation started about
+20 seconds into the day and a new three-line conversation followed roughly every 25 to 30 seconds,
+with hand-written thought bubbles and reactions in between.
 
 ## Notes
 

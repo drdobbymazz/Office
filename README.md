@@ -34,6 +34,13 @@ you talk to, and visualized as avatars at work on a shared office floor.
 
 ---
 
+> [!IMPORTANT]
+> **This fork is now a game.** The office floor has become *the living office*: fifteen office
+> workers voiced by a local language model, with you as the unseen overseer who makes strange
+> things happen to them. It is made to be played on a phone held sideways. Start with
+> [GAME.md](./GAME.md): what you can do, how to get it on your phone, and how it is put together.
+> Everything below describes the original multi-agent harness this fork came from.
+
 > [!NOTE]
 > **The world's best agents. The world's worst paper company.**
 > Munder Difflin takes the `claude` CLI sessions you already run in your terminal and turns them

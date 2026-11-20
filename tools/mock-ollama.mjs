@@ -26,6 +26,7 @@
 //   mock-slow      1 token per second
 //   mock-404       "model not found" (as does any unknown model)
 //   mock-fences    wraps the JSON in a markdown code fence with chatter around it
+//   mock-oldjson   (Ollama path) rejects a schema object in `format` with HTTP 400, as Ollama before 0.5 does
 //   mock-noschema  (OpenAI path) rejects json_schema with HTTP 400
 //   mock-strict400 (OpenAI path) rejects json_schema and json_object with HTTP 400
 
@@ -33,7 +34,7 @@ import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 
 const BASE_MODELS = ['artemis-custom:latest', 'danger:latest'];
-const SPECIAL = ['mock-garbage', 'mock-truncate', 'mock-thinker', 'mock-nothink', 'mock-drop', 'mock-slow', 'mock-fences', 'mock-noschema', 'mock-strict400'];
+const SPECIAL = ['mock-garbage', 'mock-truncate', 'mock-thinker', 'mock-nothink', 'mock-drop', 'mock-slow', 'mock-fences', 'mock-oldjson', 'mock-noschema', 'mock-strict400'];
 const KNOWN = [...BASE_MODELS, ...SPECIAL.map((m) => `${m}:latest`)];
 
 const norm = (m) => String(m || '').trim().toLowerCase().replace(/:latest$/, '');
@@ -267,6 +268,9 @@ export async function startMockOllama(options = {}) {
     const model = body.model;
     if (!isKnown(model)) return send(res, 404, { error: `model "${model}" not found, try pulling it first` });
     if (norm(model) === 'mock-nothink' && 'think' in body) return send(res, 400, { error: `"${model}" does not support thinking` });
+    if (norm(model) === 'mock-oldjson' && body.format && typeof body.format === 'object') {
+      return send(res, 400, { error: 'json: cannot unmarshal object into Go struct field ChatRequest.format of type string' });
+    }
     const started = Date.now();
     const out = compose(model, body.format, body.messages, body.think);
     const cap = body.options?.num_predict > 0 ? body.options.num_predict : Infinity;
@@ -369,7 +373,13 @@ export async function startMockOllama(options = {}) {
         }
       }
       requests.push({ method: req.method, path, body, headers: req.headers, at: Date.now() });
-      if (!opts.quiet) console.log(`${req.method} ${path}${body.model ? ` (${body.model})` : ''}`);
+      if (!opts.quiet) {
+        // For a chat request, say how much text was sent: it shows what the real model would have to read.
+        const sizes = Array.isArray(body.messages)
+          ? '  ' + body.messages.map((m) => `${m.role} ${String(m.content ?? '').length} chars`).join(', ') + (body.options?.num_predict ? `, up to ${body.options.num_predict} tokens back` : '')
+          : '';
+        console.log(`${req.method} ${path}${body.model ? ` (${body.model})` : ''}${sizes}`);
+      }
       try {
         if ((req.method === 'GET' || req.method === 'HEAD') && path === '/') return send(res, 200, 'Ollama is running', 'text/plain; charset=utf-8');
         if (req.method === 'GET' && path === '/api/version') return send(res, 200, { version: '0.12.0-mock' });

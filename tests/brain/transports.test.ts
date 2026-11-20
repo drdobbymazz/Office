@@ -91,6 +91,17 @@ describe('Ollama transport', () => {
     expect(body.think).toBe(false);
   });
 
+  it('falls back to plain JSON mode on a server too old for schemas', async () => {
+    const t = ollama('mock-oldjson');
+    const r1 = await t.chat(req());
+    expect(parseLoose(r1.text)).toBeTruthy();
+    const sent = mock.requests.filter((r) => r.path === '/api/chat').map((r) => (r.body as Record<string, unknown>).format);
+    expect(sent.slice(-2)).toEqual([schema, 'json']);
+    // and it remembers, so the next request does not waste a round trip
+    await t.chat(req());
+    expect((mock.requests.filter((r) => r.path === '/api/chat').pop()!.body as Record<string, unknown>).format).toBe('json');
+  });
+
   it('drops think again when the server rejects it', async () => {
     const t = ollama('mock-nothink');
     const r1 = await t.chat(req());

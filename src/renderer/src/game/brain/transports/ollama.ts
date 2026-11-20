@@ -62,6 +62,8 @@ export class OllamaTransport implements ChatTransport {
   /** Has any call produced a token yet? Until then the model may still be loading. */
   private warm = false;
   private think: 'omit' | 'false' | 'never' = 'omit';
+  /** Ollama before 0.5 takes only the word "json" as a format, not a schema. Found out by asking. */
+  private plainJson = false;
   private readonly t: typeof DEFAULT_TIMEOUTS;
 
   constructor(
@@ -93,7 +95,7 @@ export class OllamaTransport implements ChatTransport {
       model: this.settings.model,
       messages: req.messages,
       stream: true,
-      format: req.schema,
+      format: this.plainJson ? 'json' : req.schema,
       keep_alive: this.settings.keepAlive || '30m',
       options: {
         temperature: req.temperature,
@@ -109,6 +111,13 @@ export class OllamaTransport implements ChatTransport {
       if (e instanceof BrainError && e.kind === 'http' && 'think' in body && /think/i.test(e.message)) {
         this.think = 'never';
         delete body.think;
+        return await this.once(body, req);
+      }
+      // An older server that does not know schemas: plain JSON mode still works, because
+      // the reply format is spelled out in the instructions as well.
+      if (e instanceof BrainError && e.kind === 'http' && e.status === 400 && !this.plainJson && /format|unmarshal|schema/i.test(e.message)) {
+        this.plainJson = true;
+        body.format = 'json';
         return await this.once(body, req);
       }
       throw e;
