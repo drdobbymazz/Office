@@ -271,6 +271,14 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         return;
       }
     }
+    // Opened inside Claude but without leave to ask it anything: a model server cannot be
+    // reached from there either, so the written lines are the honest default.
+    const framed = typeof (window as unknown as { claude?: { use?: unknown } }).claude?.use === 'function';
+    if (!inArtifact && framed && (settings.brain.provider === 'ollama' || settings.brain.provider === 'openai')) {
+      patchSettings({ brain: { ...settings.brain, provider: 'instinct' } });
+      rebuildBrain();
+      return;
+    }
     if (settings.brain.provider !== 'ollama') {
       void refreshStatus();
       return;

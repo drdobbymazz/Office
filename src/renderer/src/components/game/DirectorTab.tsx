@@ -19,7 +19,9 @@ export function brainLight(state: string): { color: string; text: string; blink:
 
 export function ModelStatus({ compact }: { compact?: boolean }) {
   const game = useGame();
-  const b = useUi((s) => ({ state: s.brain.state, model: s.brain.model, tps: s.brain.tokPerSec, thinking: s.brain.thinking, queued: s.brain.queued }));
+  const b = useUi((s) => ({ state: s.brain.state, provider: s.brain.provider, model: s.brain.model, tps: s.brain.tokPerSec, thinking: s.brain.thinking, queued: s.brain.queued }));
+  // Inside Claude, Claude writes only what follows from the player's own actions.
+  const claude = b.provider === 'claude' && b.state === 'online';
   const [testing, setTesting] = useState(false);
   const l = brainLight(b.state);
   return (
@@ -28,11 +30,11 @@ export function ModelStatus({ compact }: { compact?: boolean }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* The speed sits with the status, so a long model name cannot push it out of sight. */}
         <div style={{ fontSize: 14, lineHeight: '16px', color: 'var(--cth-ink-700)', whiteSpace: 'nowrap' }}>
-          {l.text}
-          {b.state === 'online' && b.tps ? <span style={{ color: 'var(--cth-ink-500)' }}> · {b.tps.toFixed(1)} tok/s</span> : null}
+          {claude ? 'Claude answers what you do' : l.text}
+          {b.state === 'online' && !claude && b.tps ? <span style={{ color: 'var(--cth-ink-500)' }}> · {b.tps.toFixed(1)} tok/s</span> : null}
         </div>
         <div style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '18px', color: 'var(--cth-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {b.state === 'instinct' ? 'no model' : b.model}
+          {b.state === 'instinct' ? 'no model' : claude ? 'the rest is instinct' : b.model}
         </div>
       </div>
       {!compact && (
