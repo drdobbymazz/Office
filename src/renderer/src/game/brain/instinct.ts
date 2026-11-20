@@ -13,7 +13,7 @@ import type {
 import { cleanSay, lineKey, SOCIAL_PLANS } from './clean';
 import {
   ACT_FOR_FEEL, CHAOS_NOUN, DISASTERS, EVERYWHERE_RE, FIX_FOR, INTENSE_RE, MILD_RE, STATE_BARKS, THING_RULES, TREATS,
-  VIBE_FEEL, chaosFeel, detectChaos
+  VIBE_FEEL, chaosFeel, detectChaos, guestLookFor, kindFor, powerFor
 } from './instinctRules';
 import type { ThingRule } from './instinctRules';
 import { NameMap, normName } from './names';
@@ -140,6 +140,26 @@ function guessNoun(text: string): string {
   let noun = m ? m[1] : 'something';
   noun = noun.replace(/\s+(walks|appears|arrives|comes|falls|starts|is|are|flies|runs|bursts|turns|takes)$/, '');
   return noun || 'something';
+}
+
+/**
+ * A whisper is written to the person ("you will replace Michael"); said out loud
+ * it should be in their own words ("I will replace Michael"). Rough, but enough
+ * for written lines; the model rewrites it properly.
+ */
+export function firstPerson(text: string): string {
+  return text
+    .replace(/\byou are\b/gi, 'I am')
+    .replace(/\byou're\b/gi, "I'm")
+    .replace(/\byou were\b/gi, 'I was')
+    .replace(/\byou've\b/gi, "I've")
+    .replace(/\byou'll\b/gi, "I'll")
+    .replace(/\byou'd\b/gi, "I'd")
+    .replace(/\byourself\b/gi, 'myself')
+    .replace(/\byours\b/gi, 'mine')
+    .replace(/\byour\b/gi, 'my')
+    .replace(/(^|[.!?;,]\s*|\b(?:and|but|so|that|because|if|when)\s+)you\b/gi, (_m, pre: string) => `${pre}I`)
+    .replace(/\byou\b/gi, 'me');
 }
 
 function firstThought(why: string): string {
@@ -297,7 +317,7 @@ export class InstinctBrain implements Brain, Reflexes {
             feel = pick(['surprised', 'confused', 'suspicious'] as const, rng);
             break;
           case 'whisper':
-            raw = fill(this.draw(sp.id, 'whispered', this.list(sp.id, (v) => v.whispered)), { thought: firstThought(req.why), other: listener ? names.name(listener.id) : undefined });
+            raw = fill(this.draw(sp.id, 'whispered', this.list(sp.id, (v) => v.whispered)), { thought: firstPerson(firstThought(req.why)), other: listener ? names.name(listener.id) : undefined });
             feel = pick(['determined', 'suspicious', 'surprised'] as const, rng);
             act = 'none';
             break;
@@ -305,6 +325,16 @@ export class InstinctBrain implements Brain, Reflexes {
             raw = this.draw(sp.id, 'bark', this.list(sp.id, (v) => v.barks?.[moodBark(sp.mood)]));
             break;
           default:
+            // Someone holding a whispered idea opens with it more often than not.
+            if (sp.conviction && rng() < 0.7) {
+              raw = fill(this.draw(sp.id, 'whispered', this.list(sp.id, (v) => v.whispered)), {
+                thought: firstPerson(sp.conviction.text),
+                other: listener ? names.name(listener.id) : undefined
+              });
+              feel = 'determined';
+              act = rng() < 0.5 ? 'point' : 'step_closer';
+              break;
+            }
             raw = fill(this.draw(sp.id, 'openers', this.list(sp.id, (v) => v.openers)), { other: listener ? names.name(listener.id) : 'everyone' });
             act = req.trigger === 'ambient' ? (rng() < 0.4 ? 'wave' : 'none') : rng() < 0.5 ? 'step_closer' : 'point';
             break;
@@ -537,6 +567,9 @@ export class InstinctBrain implements Brain, Reflexes {
       reaction: rule?.reaction ?? 'investigate',
       look: rule?.look ?? 'sparkles',
       moves: rule?.moves ?? false,
+      ...kindFor(text, rule, noun),
+      power: powerFor(text),
+      guest: guestLookFor(text),
       source: 'instinct'
     };
   }

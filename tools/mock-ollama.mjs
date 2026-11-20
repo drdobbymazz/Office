@@ -150,6 +150,16 @@ function generate(schema, ctx) {
           const hit = en.find((r) => r !== 'everywhere' && event.toLowerCase().includes(r));
           return hit || en[0];
         }
+        // A typed event: who or what it is, what it sets off, and how a character looks.
+        case 'kind':
+          return /superman|batman|santa|elvis|wizard|ghost|pirate|\b(man|woman|king|queen|chef)\b/i.test(event) ? 'character'
+            : /horse|dog|goat|cat|duck|bear|dragon|dinosaur|raccoon|cow|pig/i.test(event) ? 'creature' : 'thing';
+        case 'power': return /dragon|fire|flame/i.test(event) && en.includes('fire') ? 'fire' : /dj|disco/i.test(event) && en.includes('disco') ? 'disco' : 'none';
+        case 'skin': return 'light';
+        case 'hair': return 'black';
+        case 'outfit': return /superman/i.test(event) ? 'blue' : pick(en, event);
+        case 'trim': return /superman/i.test(event) ? 'red' : pick(en, `${event}!`);
+        case 'style': return /superman|batman|elvis/i.test(event) ? 'suit' : pick(en, event);
         default: return pick(en, key);
       }
     }
@@ -167,7 +177,12 @@ function generate(schema, ctx) {
         const room = rooms.find((r) => r !== 'everywhere' && event.toLowerCase().includes(r)) || rooms[0] || 'office';
         return `${noun[0].toUpperCase()}${noun.slice(1)} in the ${room}`;
       }
-      case 'emoji': return /horse/i.test(event) ? '\u{1F434}' : /dog|pupp/i.test(event) ? '\u{1F436}' : '✨';
+      case 'emoji': return /horse/i.test(event) ? '\u{1F434}' : /dog|pupp/i.test(event) ? '\u{1F436}' : /superman|hero/i.test(event) ? '\u{1F9B8}' : /dragon/i.test(event) ? '\u{1F409}' : '✨';
+      case 'name': {
+        const noun = event.replace(/^(a|an|the)\s+/i, '').split(/\s+/)[0] || 'Visitor';
+        const n = `${noun[0].toUpperCase()}${noun.slice(1)}`;
+        return /superman|batman|santa|elvis/i.test(noun) ? n : `The ${n}`;
+      }
       case 'fact': return `${event[0].toUpperCase()}${event.slice(1)}.`;
       case 'headline': return 'Stapler Crisis Grips Office; Nobody Blames the Printer';
       case 'paragraph': return `It was a long day. ${names.slice(0, 2).join(' and ') || 'Everyone'} fell out over a stapler, and the kettle broke twice.`;

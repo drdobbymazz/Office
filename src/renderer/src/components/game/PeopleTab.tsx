@@ -55,6 +55,24 @@ function ThoughtBox({ text }: { text: string }) {
   );
 }
 
+/** The whispered idea they have held all day, marked in the whisper colour. */
+function ConvictionBox({ text, since }: { text: string; since: number }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px',
+      background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 2px var(--cth-lilac), inset 4px 0 0 var(--cth-lilac)'
+    }}>
+      <GIcon name="whisper" px={16} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px', letterSpacing: 0.5, color: 'var(--cth-ink-500)' }}>
+          SURE OF IT SINCE {formatClock(since)}
+        </div>
+        <div style={{ fontSize: 15, lineHeight: '18px', color: 'var(--cth-ink-900)' }}>{cap(text)}</div>
+      </div>
+    </div>
+  );
+}
+
 function StatBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -112,7 +130,9 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
             </div>
           </div>
         </div>
-        <ThoughtBox text={d.thought} />
+        {/* Right after a whisper the thought and the conviction are the same words: show them once. */}
+        {(!d.conviction || d.thought.trim() !== d.conviction.text.trim()) && <ThoughtBox text={d.thought} />}
+        {d.conviction && <ConvictionBox text={d.conviction.text} since={d.conviction.since} />}
         <StatBar label="Mood" value={moodPct} color={d.mood >= 0 ? 'var(--cth-mint)' : 'var(--cth-coral)'} />
         <StatBar label="Energy" value={d.energy} color="var(--cth-lemon)" />
         <StatBar label="Stress" value={d.stress} color="var(--cth-coral)" />

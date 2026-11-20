@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHAOS_IDS, EMOTIONS, LINE_ACTS, PLAN_KINDS, SHIFT_KINDS } from '@/game/core/types';
 import { BARK_KINDS, CUSTOM_LOOKS, CUSTOM_REACTIONS, CUSTOM_VIBES } from '@/game/brain/api';
 import type { SceneTrigger } from '@/game/brain/api';
-import { InstinctBrain, toneOf } from '@/game/brain/instinct';
+import { InstinctBrain, firstPerson, toneOf } from '@/game/brain/instinct';
 import { createReflexes } from '@/game/brain/index';
 import { BANK, WORLD, mindsReq, person, sceneReq, seeded } from './fixtures';
 
@@ -180,5 +180,27 @@ describe('Reflexes', () => {
     const r = createReflexes({ fern: { barks: {} as never } }, WORLD);
     expect(r.bark('fern', 'angry').length).toBeGreaterThan(0);
     expect(createReflexes({}).chaosBark('x', 'fire').length).toBeGreaterThan(0);
+  });
+});
+
+describe('typed events without a model', () => {
+  const rooms = [{ id: 'shop', name: 'the shop', people: ['Fern'] }, { id: 'yard', name: 'the yard', people: [] }];
+  it('tells a character from a creature, a thing and a happening', () => {
+    const b = new InstinctBrain(BANK, WORLD, seeded(3));
+    const superman = b.interpretNow({ id: 'a', text: 'superman enters the office', rooms });
+    expect(superman.kind).toBe('character');
+    expect(superman.name).toBe('Superman');
+    expect(superman.guest.outfit).toBe('blue');
+    expect(b.interpretNow({ id: 'b', text: 'a horse walks in', rooms }).kind).toBe('creature');
+    expect(b.interpretNow({ id: 'c', text: 'a visit from Taylor Swift', rooms })).toMatchObject({ kind: 'character', name: 'Taylor Swift' });
+    expect(b.interpretNow({ id: 'd', text: 'a dragon bursts through the wall', rooms }).power).toBe('fire');
+    expect(b.interpretNow({ id: 'e', text: 'a strange smell fills the room', rooms }).kind).toBe('happening');
+    expect(b.interpretNow({ id: 'f', text: 'a giant rubber duck statue appears', rooms }).power).toBe('none');
+  });
+
+  it('says a whisper back in the first person', () => {
+    expect(firstPerson('you will replace Michael as manager')).toBe('I will replace Michael as manager');
+    expect(firstPerson('Jim has hidden your stapler')).toBe('Jim has hidden my stapler');
+    expect(firstPerson("you're the best and they know it")).toBe("I'm the best and they know it");
   });
 });

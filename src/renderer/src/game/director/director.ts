@@ -14,9 +14,10 @@
 
 import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger } from '@/game/brain/api';
 import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
-import type { CharId, RoomId, ShiftKind, TargetRoomId } from '@/game/core/types';
+import type { CharId, Plan, RoomId, ShiftKind, TargetRoomId } from '@/game/core/types';
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
-import { feetOf, room as roomDef, roomCentrePx, walkableTilesIn } from '@/game/core/world';
+import { room as roomDef } from '@/game/core/world';
+import { Guests } from './guests';
 
 export interface DirectorOptions {
   sim: DirectorSimApi;
@@ -96,10 +97,13 @@ export class Director {
   private knownFacts = new Set<string>();
   private breaking: { fact: string; at: number; scenes: number } | null = null;
   private factsAt = 0;
+  /** People holding a whispered idea: when they next act on it, and how often they have. */
+  private drives = new Map<CharId, { nextAt: number; acts: number }>();
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   /** Free-text events currently on the floor, to be cleared when their time is up. */
-  private customs: { key: string; lookId: string; until: number; x: number; y: number; poof: boolean }[] = [];
+  /** What the Anything power put on the floor: guests, creatures, things (director/guests.ts). */
+  private guests: Guests;
   private disposed = false;
 
   constructor(opts: DirectorOptions) {
@@ -108,6 +112,7 @@ export class Director {
     this.api = opts.sim;
     this.brain = opts.brain;
     this.instinct = opts.instinct;
+    this.guests = new Guests({ sim: opts.sim, scene: (ask, fromPlayer) => this.enqueue(ask, fromPlayer), slow: () => this.slow });
   }
 
   setBrain(brain: Brain): void {
@@ -118,13 +123,14 @@ export class Director {
     this.disposed = true;
     this.stopScene(false);
     this.queue.length = 0;
+    this.guests.clear();
   }
 
   /** A fresh day: drop anything left over from yesterday. */
   reset(): void {
     this.stopScene(false);
     this.queue.length = 0;
-    this.expireCustoms(Infinity);
+    this.guests.clear();
     this.ambientAt = this.api.time + 8;
     this.mindsAt = this.api.time + (this.slow ? 45 : 22);
     this.musingAt = this.api.time + 10;
@@ -132,6 +138,7 @@ export class Director {
     this.pairAt.clear();
     this.knownFacts.clear();
     this.breaking = null;
+    this.drives.clear();
   }
 
   get thinking(): boolean {
@@ -172,7 +179,10 @@ export class Director {
     this.api.emote(who, 'idea');
     this.api.feel(who, 'surprised', 0.7, 3);
     this.api.setThought(who, thought);
-    this.api.remember([who], `A thought came into your head from nowhere, and it feels like your own: "${thought}"`);
+    // It sticks: for the rest of the day they are sure of it and act on it (see driveConvictions).
+    this.api.convince(who, thought);
+    this.drives.set(who, { nextAt: this.api.time + 30 + this.api.rng() * 15, acts: 0 });
+    this.api.remember([who], `A thought came into your head from nowhere, and it feels like your own: "${thought}"`, 2.5);
     this.api.narrate(`You whisper to ${p.name}: "${thought}"`, { kind: 'overseer', icon: 'whisper', room: p.room });
     const near = this.companions(p, 1);
     this.enqueue({
@@ -246,14 +256,16 @@ export class Director {
     }));
     this.sideN += 1;
     this.report();
+    const brewing = this.guests.brew(what);
     void this.brain
       .interpret({ id: nextId('interpret'), text: what, rooms })
       .catch(() => this.instinct.interpret({ id: nextId('interpret'), text: what, rooms }))
       .then((res) => {
-        if (!this.disposed) this.stageCustom(what, res);
+        if (!this.disposed) this.guests.stage(what, res, brewing);
       })
       .catch((err) => console.warn('[director] custom event failed', err))
       .finally(() => {
+        this.api.removeEffect(brewing.key);
         this.sideN = Math.max(0, this.sideN - 1);
         this.report();
       });
@@ -267,11 +279,12 @@ export class Director {
     const now = this.api.time;
     for (const ask of this.sim.takeSceneAsks()) this.enqueue(ask, false);
     this.pruneQueue(now);
-    if (this.customs.length) this.expireCustoms(now);
+    this.guests.update(dt);
 
     if (now >= this.factsAt) {
       this.factsAt = now + 1;
       this.watchFacts(now);
+      this.driveConvictions(now);
     }
 
     if (this.running) this.advanceScene(now);
@@ -317,6 +330,61 @@ export class Director {
     if (r && r.ask.trigger === 'ambient' && !r.fromPlayer && !r.releasedAt) this.stopScene(true);
     this.ambientAt = Math.min(this.ambientAt, now + 0.8);
     this.idleAt = Math.min(this.idleAt, now + 0.8);
+  }
+
+  /**
+   * A whispered idea is not a passing thought: every minute or so the person
+   * does something about it (goes to have it out with whoever it names, tells
+   * someone else, takes over a room), until the day ends.
+   */
+  private driveConvictions(now: number): void {
+    for (const [who, d] of this.drives) {
+      const p = this.api.person(who);
+      if (!p || !p.conviction) {
+        this.drives.delete(who);
+        continue;
+      }
+      if (now < d.nextAt) continue;
+      if (!p.present || !p.available || p.urgent || p.plan || p.sceneId || p.speaking) {
+        d.nextAt = now + 4;
+        continue;
+      }
+      const plan = this.convictionPlan(p, p.conviction.text, d.acts);
+      d.acts += 1;
+      d.nextAt = now + (this.slow ? 70 : 50) + this.api.rng() * 30;
+      if (!plan) continue;
+      this.api.emote(who, 'idea');
+      this.api.feel(who, 'determined', 0.7, 10);
+      this.api.setPlan(who, plan);
+    }
+  }
+
+  /** What someone does next about their idea. Turns go: act on it, tell someone, act on it again... */
+  private convictionPlan(p: SimPerson, text: string, acts: number): Plan | null {
+    const about = `"${text.length > 90 ? `${text.slice(0, 88)}...` : text}"`;
+    const others = this.api.people().filter((o) => o.isCast && o.present && o.id !== p.id);
+    if (!others.length) return null;
+    const named = others.filter((o) => mentions(text, o.name));
+    const nearest = (list: SimPerson[]): SimPerson | undefined =>
+      list.slice().sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
+    const t = text.toLowerCase();
+    const kind: Plan['kind'] =
+      /\b(love|loves|fancy|fancies|crush|kiss|marry|date|dating|attractive|soulmate|adore)\b/.test(t) ? 'flirt'
+        : /\b(prank|trick)\b/.test(t) ? 'prank'
+          : /\b(hate|hates|steal|stole|stolen|lie|lies|lying|liar|cheat|cheating|betray|blame|sabotag\w*|fire|fired|replace|enemy|plot|plotting|against|took|hid|hidden|ruin|spy|spying|fake|wrong|owes?)\b/.test(t) ? 'confront'
+            : /\b(secret|rumou?r|heard|affair|pregnant|quitting|leaving)\b/.test(t) ? 'gossip'
+              : 'talk';
+    // Every second turn they spread the word to someone the idea is not about.
+    if (acts % 2 === 1) {
+      const listener = nearest(others.filter((o) => !named.includes(o)));
+      if (listener) return { kind: 'gossip', target: listener.id, about };
+    }
+    // An idea about running the place sends them to sit in the boss's office now and then.
+    if (acts % 4 === 2 && /\b(manager|boss|in charge|promot\w*|run the (office|branch|place))\b/.test(t)) {
+      return { kind: 'wander', target: 'boss', about: `trying out the boss's office: ${about}` };
+    }
+    const target = named.length ? named[acts % named.length] : nearest(others);
+    return target ? { kind, target: target.id, about } : null;
   }
 
   // ── queue ──────────────────────────────────────────────────────────────────
@@ -436,6 +504,14 @@ export class Director {
     if (bond <= -20) topics.push(['feud', `${a.name} and ${b.name} do not get on. ${a.name} has found something small to pick at.`]);
     if (bond >= 30) topics.push(['pals', `${a.name} and ${b.name} get on well. They are having a quiet word instead of working.`]);
     if (a.thought) topics.push(['thought', `${a.name} keeps thinking: "${a.thought}" Now ${a.name} says something about it to ${b.name}.`]);
+    // A whispered idea is what they most want to talk about, all day.
+    const sure = a.conviction ?? b.conviction;
+    if (sure) {
+      const who = a.conviction ? a : b;
+      const other = who === a ? b : a;
+      const line: [string, string] = ['conviction', `${who.name} has been sure all day that "${sure.text}", and brings it up with ${other.name} again.`];
+      topics.push(line, line);
+    }
     topics.push(['doing', `A quiet moment in ${place}. ${a.name} is ${a.doing} and ${b.name} is ${b.doing}.`]);
     if (clock < 10 * 60) topics.push(['early', `It is early and nobody in ${place} has done any work yet. ${a.name} says so to ${b.name}.`]);
     else if (clock >= 11 * 60 + 30 && clock < 13 * 60) topics.push(['lunch', `It is nearly lunch. ${a.name} and ${b.name} are talking about anything except work.`]);
@@ -561,9 +637,10 @@ export class Director {
     this.scenesSinceMinds += 1;
     if (res) {
       const onlookers = this.api.peopleIn(r.room).filter((p) => p.present && !r.people.includes(p.id)).map((p) => p.id);
-      if (res.summary) this.api.remember([...r.people, ...onlookers], res.summary);
+      // Memories and feelings are for the staff: a guest from the Anything power comes and goes.
+      if (res.summary) this.api.remember([...r.people, ...onlookers].filter((id) => isCastId(id)), res.summary);
       for (const s of res.shifts) {
-        if (s.who === s.about) continue;
+        if (s.who === s.about || !isCastId(s.who) || !isCastId(s.about)) continue;
         this.api.shiftBond(s.who, s.about, SHIFT_DELTA[s.change] ?? 0, res.summary);
       }
       // One plan per conversation, and one follow-up at most: a plan to go straight
@@ -571,7 +648,7 @@ export class Director {
       // same two people would hold the floor all day.
       const followUp = r.ask.trigger === 'plan';
       for (const p of res.plans) {
-        if (!this.api.person(p.who)?.present) continue;
+        if (!isCastId(p.who) || !this.api.person(p.who)?.present) continue;
         const again = typeof p.plan.target === 'string' && r.people.includes(p.plan.target);
         if (again && followUp) continue;
         this.api.setPlan(p.who, p.plan);
@@ -633,7 +710,7 @@ export class Director {
     const free = this.api
       .people()
       .filter((p) => p.present && p.available && p.isCast && !p.plan && now - (this.lastMinded.get(p.id) ?? -999) > 50)
-      .sort((a, b) => (this.lastMinded.get(a.id) ?? -999) - (this.lastMinded.get(b.id) ?? -999))
+      .sort((a, b) => (b.conviction ? 1 : 0) - (a.conviction ? 1 : 0) || (this.lastMinded.get(a.id) ?? -999) - (this.lastMinded.get(b.id) ?? -999))
       .slice(0, count);
     if (free.length < 2) return;
     for (const p of free) this.lastMinded.set(p.id, now);
@@ -711,91 +788,6 @@ export class Director {
   }
 
   // ── free-text events ───────────────────────────────────────────────────────
-
-  private stageCustom(text: string, res: InterpretResult): void {
-    const everywhere = res.room === 'everywhere' || !(TARGET_ROOMS as readonly string[]).includes(res.room);
-    const room = (everywhere ? this.busiestRoom() : res.room) as TargetRoomId;
-    const tiles = walkableTilesIn(room);
-    const spot = tiles.length ? feetOf(tiles[Math.floor(this.api.rng() * tiles.length)]) : roomCentrePx(room);
-    const key = nextId('custom');
-    const seconds = 26 + res.intensity * 8;
-    const title = res.title || text;
-
-    // One plain sentence in the feed: what is now true.
-    const fact = sentence(res.fact || text);
-    this.api.narrate(fact, { kind: 'event', icon: 'anything', room });
-    this.api.setFact(key, fact);
-    this.api.bumpChaos(6 + res.intensity * 6);
-    this.api.remember(everywhere ? 'all' : room, fact);
-    this.api.bus.emit('focus', { x: spot.x - 60, y: spot.y - 50, w: 120, h: 90, weight: 0.8, holdMs: 5000 });
-
-    if (res.emoji) {
-      this.api.fx({ kind: 'poof', x: spot.x, y: spot.y - 8 });
-      this.api.addEffect({ id: key, kind: 'emoji', emoji: res.emoji, x: spot.x, y: spot.y, size: 16 + res.intensity * 5, bob: res.moves });
-    }
-    const lookId = `${key}-look`;
-    switch (res.look) {
-      case 'shake': this.api.shake(0.25 * res.intensity, 900); break;
-      case 'flash': this.api.fx({ kind: 'flash', color: 0xffffff, alpha: 0.6, ms: 260 }); break;
-      case 'sparkles': this.api.addEffect({ id: lookId, kind: 'cloud', what: 'magic', x: spot.x, y: spot.y - 10, radius: 26 }); break;
-      case 'smoke': this.api.addEffect({ id: lookId, kind: 'smoke', room, density: 0.25 * res.intensity }); break;
-      case 'confetti': this.api.addEffect({ id: lookId, kind: 'rain', room, what: 'confetti', rate: 0.5 }); break;
-      case 'darken': this.api.addEffect({ id: lookId, kind: 'dark', rooms: [room], level: 0.25 * res.intensity, emergency: false }); break;
-      case 'drip': this.api.addEffect({ id: lookId, kind: 'sprinklers', room }); break;
-      case 'hearts': this.api.fx({ kind: 'burst', what: 'hearts', x: spot.x, y: spot.y - 16, count: 14 }); break;
-      case 'stink': this.api.addEffect({ id: lookId, kind: 'cloud', what: 'stink', x: spot.x, y: spot.y - 8, radius: 30 }); break;
-      case 'gloom': this.api.addEffect({ id: lookId, kind: 'cloud', what: 'gloom', x: spot.x, y: spot.y - 8, radius: 34 }); break;
-      case 'cash': this.api.addEffect({ id: lookId, kind: 'rain', room, what: 'cash', rate: 0.5 }); break;
-      case 'paper': this.api.addEffect({ id: lookId, kind: 'rain', room, what: 'paper', rate: 0.5 }); break;
-      default: break;
-    }
-
-    const witnesses = (everywhere ? this.api.people() : this.api.peopleIn(room)).filter((p) => p.present && p.available);
-    for (const p of witnesses) {
-      this.api.face(p.id, spot);
-      switch (res.reaction) {
-        case 'flee': this.api.feel(p.id, 'scared', 0.8, 8); this.api.fleeFrom(p.id, room); break;
-        case 'cower': this.api.feel(p.id, 'scared', 0.7, 6); this.api.react(p.id, 'cower', 3); break;
-        case 'freeze': this.api.feel(p.id, 'surprised', 0.8, 5); this.api.react(p.id, 'startle', 1.2); break;
-        case 'cheer': this.api.feel(p.id, 'excited', 0.8, 6); this.api.react(p.id, 'cheer', 2.2); break;
-        case 'dance': this.api.feel(p.id, 'happy', 0.7, 6); this.api.react(p.id, 'dance', 4); break;
-        case 'laugh': this.api.feel(p.id, 'amused', 0.8, 5); this.api.react(p.id, 'laugh', 2); break;
-        case 'argue': this.api.feel(p.id, 'angry', 0.6, 6); this.api.react(p.id, 'stomp', 1.2); break;
-        case 'gather':
-        case 'investigate': this.api.feel(p.id, 'surprised', 0.6, 5); this.api.goTo(p.id, { tile: { x: Math.floor(spot.x / 16), y: Math.floor((spot.y - 1) / 16) } }, { doing: `going to look at ${title.toLowerCase()}` }); break;
-        default: this.api.react(p.id, 'startle', 0.6); break;
-      }
-    }
-
-    const speakers = witnesses.filter((p) => p.isCast).sort(() => this.api.rng() - 0.5).slice(0, 3).map((p) => p.id);
-    if (speakers.length) {
-      this.enqueue({
-        people: speakers,
-        room,
-        trigger: 'custom',
-        why: fact,
-        priority: 9,
-        minLines: Math.min(3, speakers.length + 1),
-        maxLines: 4,
-        staleAfter: 45
-      }, true);
-    }
-
-    // It does not last for ever: update() clears it away after a while.
-    this.customs.push({ key, lookId, until: this.api.time + seconds, x: spot.x, y: spot.y, poof: !!res.emoji });
-  }
-
-  private expireCustoms(now: number): void {
-    for (let i = this.customs.length - 1; i >= 0; i--) {
-      const c = this.customs[i];
-      if (now < c.until) continue;
-      this.api.removeEffect(c.key);
-      this.api.removeEffect(c.lookId);
-      this.api.setFact(c.key, null);
-      if (c.poof) this.api.fx({ kind: 'poof', x: c.x, y: c.y - 8 });
-      this.customs.splice(i, 1);
-    }
-  }
 
   // ── the end of the day ─────────────────────────────────────────────────────
 

@@ -650,6 +650,13 @@ export class SimCore implements DirectorSimApi {
     if (p) p.thought = String(thought ?? '').slice(0, 200);
   }
 
+  convince(who: CharId, text: string | null): void {
+    const p = this.map.get(who);
+    if (!p) return;
+    const t = String(text ?? '').trim().slice(0, 200);
+    p.conviction = t ? { text: t, since: this.clock } : null;
+  }
+
   setProp(who: CharId, prop: HeldProp | null): void {
     const p = this.map.get(who);
     if (!p) return;
@@ -960,8 +967,8 @@ export class SimCore implements DirectorSimApi {
     this.chaosReg.register(script);
   }
 
-  startChaos(id: ChaosId, target: ChaosTarget = {}): string | null {
-    return this.chaosReg.start(id, target);
+  startChaos(id: ChaosId, target: ChaosTarget = {}, opts: { force?: boolean } = {}): string | null {
+    return this.chaosReg.start(id, target, !!opts.force);
   }
 
   // ── Save ───────────────────────────────────────────────────────────────────

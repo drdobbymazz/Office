@@ -56,6 +56,8 @@ export interface PersonDetail extends PersonUi {
   secret: string | null;
   /** Latest private thought (from the model). */
   thought: string;
+  /** A whispered idea they hold for the rest of the day, and since when (clock minutes). */
+  conviction: { text: string; since: number } | null;
   plan: Plan | null;
   /** -1..1 */
   mood: number;

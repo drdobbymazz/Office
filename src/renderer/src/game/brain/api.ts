@@ -116,6 +116,10 @@ export interface PersonBrief {
   secret?: string;
   /** Set when a mind swap is active: speak with THIS person's personality instead. */
   mindOf?: CharId;
+  /** A whispered idea they have been sure of all day ("10:42"), which drives what they do. */
+  conviction?: { text: string; since: string };
+  /** For a visitor: who they are, in one line. */
+  about?: string;
 }
 
 export type SceneTrigger =
@@ -208,6 +212,25 @@ export const CUSTOM_VIBES = ['scary', 'funny', 'gross', 'wonderful', 'weird', 'a
 export type CustomVibe = (typeof CUSTOM_VIBES)[number];
 export const CUSTOM_REACTIONS = ['flee', 'gather', 'freeze', 'cower', 'cheer', 'ignore', 'investigate', 'dance', 'argue', 'laugh'] as const;
 export type CustomReaction = (typeof CUSTOM_REACTIONS)[number];
+/** What the player conjured: someone who talks, an animal or monster, an object, or something with no body. */
+export const CUSTOM_KINDS = ['character', 'creature', 'thing', 'happening'] as const;
+export type CustomKind = (typeof CUSTOM_KINDS)[number];
+/** Office events a typed event can set off for real (a dragon starts a fire). */
+export const CUSTOM_POWERS = ['none', 'fire', 'flood', 'blackout', 'quake', 'fireDrill', 'wifiDown', 'snackStorm', 'zeroG', 'timeFreeze', 'disco', 'bees', 'pizza', 'moneyRain', 'sleep', 'meeting'] as const;
+export type CustomPower = (typeof CUSTOM_POWERS)[number];
+/** A character's look, in words the model can choose from. */
+export const GUEST_SKINS = ['light', 'tan', 'brown', 'dark', 'green', 'grey', 'blue'] as const;
+export const GUEST_COLOURS = ['black', 'white', 'grey', 'silver', 'red', 'orange', 'yellow', 'gold', 'green', 'blue', 'navy', 'purple', 'pink', 'brown', 'blonde'] as const;
+export const GUEST_STYLES = ['suit', 'shirt', 'polo', 'sweater', 'cardigan', 'blouse'] as const;
+export type GuestColour = (typeof GUEST_COLOURS)[number];
+export interface GuestLookWords {
+  skin: (typeof GUEST_SKINS)[number];
+  hair: GuestColour;
+  outfit: GuestColour;
+  trim: GuestColour;
+  style: (typeof GUEST_STYLES)[number];
+}
+
 export const CUSTOM_LOOKS = ['none', 'shake', 'flash', 'sparkles', 'smoke', 'confetti', 'darken', 'drip', 'hearts', 'stink', 'gloom', 'cash', 'paper'] as const;
 export type CustomLook = (typeof CUSTOM_LOOKS)[number];
 
@@ -228,6 +251,13 @@ export interface InterpretResult {
   look: CustomLook;
   /** Does the thing move about? */
   moves: boolean;
+  kind: CustomKind;
+  /** What to call a character or creature on the floor: "Superman", "The Horse". Empty for the rest. */
+  name: string;
+  /** An office event it sets off for real, or 'none'. */
+  power: CustomPower;
+  /** How a character looks. */
+  guest: GuestLookWords;
   source: 'model' | 'instinct';
 }
 

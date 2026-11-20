@@ -11,6 +11,7 @@ import { MutableRefObject, useEffect, useRef } from 'react';
 import type { Speech } from '@/game/core/types';
 import { useGame } from './ctx';
 import { readableOnCream } from './words';
+import { displayName } from '@/game/core/cast';
 
 export interface Bounds { left: number; right: number; top: number; bottom: number }
 
@@ -110,7 +111,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       let c = colorCache.get(id);
       if (!c) {
         const p = game.store.getState().people.find((x) => x.id === id);
-        c = { name: p?.name ?? id.replace(/^visitor:/, ''), color: p ? readableOnCream(p.color) : 'var(--cth-ink-700)' };
+        c = { name: p?.name ?? displayName(id), color: p ? readableOnCream(p.color) : 'var(--cth-ink-700)' };
         if (p) colorCache.set(id, c);
       }
       return c;

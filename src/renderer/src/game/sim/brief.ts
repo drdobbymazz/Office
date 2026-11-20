@@ -3,7 +3,7 @@
 
 import type { CharId, EmotionId, StatusEffect } from '@/game/core/types';
 import { formatClock, isCastId } from '@/game/core/types';
-import { CAST } from '@/game/core/cast';
+import { CAST, VISITORS } from '@/game/core/cast';
 import type { PersonBrief } from '@/game/brain/api';
 import type { Person } from './people';
 import type { SimCore } from './core';
@@ -96,6 +96,8 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
   };
   if (isCastId(who) && p && (p.has('truth') || core.secretOut(who))) brief.secret = CAST[who].persona.secret;
   if (mindOf) brief.mindOf = mindOf;
+  if (p?.conviction) brief.conviction = { text: p.conviction.text, since: formatClock(p.conviction.since) };
+  if (!isCastId(who) && VISITORS[who]?.summary) brief.about = VISITORS[who].summary;
   return brief;
 }
 

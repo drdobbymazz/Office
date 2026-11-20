@@ -90,6 +90,8 @@ export class Person implements SimPerson {
   statuses: StatusEffect[] = [];
   plan: Plan | null = null;
   thought = '';
+  /** A whispered idea they hold for the rest of the day (since = clock minutes). */
+  conviction: { text: string; since: number } | null = null;
   doing = '';
   sceneId: string | null = null;
   speech: Speech | null = null;

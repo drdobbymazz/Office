@@ -40,7 +40,8 @@ export class ChaosRegistry {
   }
 
   /** null on success, else a plain reason. */
-  start(id: ChaosId, target: ChaosTarget = {}): string | null {
+  /** force: set off by something else (a typed event), so cooldowns neither block it nor start. */
+  start(id: ChaosId, target: ChaosTarget = {}, force = false): string | null {
     const core = this.core;
     const def = CHAOS[id];
     if (!def) return 'There is no such power.';
@@ -49,7 +50,7 @@ export class ChaosRegistry {
     const phase = core.clockState.phase;
     if (phase === 'leaving' || phase === 'over') return 'Everyone is going home.';
     if (!core.list.some((p) => p.isCast && p.onFloor)) return 'Nobody is in the office yet.';
-    if (!this.sandbox) {
+    if (!this.sandbox && !force) {
       const ready = this.readyAt.get(id) ?? 0;
       if (core.time < ready) return `Still cooling down (${Math.ceil(ready - core.time)} s).`;
     }
@@ -105,7 +106,7 @@ export class ChaosRegistry {
     }
     const key = `${id}#${++this.counter}`;
     this.runs.push({ key, id, run, startedAt: core.time, maxLife: Math.max(90, def.duration * 3), ended: false });
-    if (!this.sandbox) this.readyAt.set(id, core.time + def.cooldown);
+    if (!this.sandbox && !force) this.readyAt.set(id, core.time + def.cooldown);
     const room = run.room ?? t.room ?? undefined;
     core.bus.emit('chaosStart', { id, target: t, label: run.label, room: room as RoomId | undefined });
     core.bumpChaos(def.chaos);

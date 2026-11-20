@@ -151,7 +151,7 @@ export type EffectInstance =
   /** A thing that has appeared on the floor. */
   | { id: string; kind: 'item'; item: 'pizzaBoxes' | 'cake' | 'gift' | 'cashPile' | 'puddle' | 'scorch' | 'paperPile' | 'wetFloorSign' | 'foam' | 'snackPile'; x: number; y: number }
   /** Something summoned by a free-text event, drawn as a big emoji standing on the floor. */
-  | { id: string; kind: 'emoji'; emoji: string; x: number; y: number; size: number; bob: boolean }
+  | { id: string; kind: 'emoji'; emoji: string; x: number; y: number; size: number; bob: boolean; /** Pixels above the ground (no shadow): a badge over someone's head. */ lift?: number }
   /** Time is stopped: a cool tint and hanging sparkles. level 0..1. */
   | { id: string; kind: 'timeFreeze'; level: number }
   /** No gravity: drifting dust and small office objects. level 0..1. */

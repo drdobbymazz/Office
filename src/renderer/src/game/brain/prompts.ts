@@ -8,7 +8,7 @@
 
 import { EMOTIONS, LINE_ACTS } from '@/game/core/types';
 import type { InterpretRequest, MindsRequest, PersonBrief, ReportRequest, SceneRequest } from './api';
-import { CUSTOM_LOOKS, CUSTOM_REACTIONS, CUSTOM_VIBES } from './api';
+import { CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES } from './api';
 import { NameMap, firstName } from './names';
 import type { BrainPersona } from './world';
 import { WorldIndex } from './world';
@@ -136,7 +136,12 @@ export class PromptBook {
         `- reaction (how people nearby react with their bodies): ${CUSTOM_REACTIONS.join(', ')}.`,
         `- look (visual effect in the room): ${CUSTOM_LOOKS.join(', ')}.`,
         '- moves: true if the thing walks, flies or drifts about.',
-        '- room: the room it names, or the best fit. Use everywhere only if it fills the whole building.'
+        '- room: the room it names, or the best fit. Use everywhere only if it fills the whole building.',
+        '- kind: character (anyone who can talk: a person, a celebrity, a hero, a ghost, a talking animal), ' +
+          'creature (an animal or monster that cannot talk), thing (an object that stays put), or happening (weather, a smell, a sound, a mood: no single body).',
+        '- name: for a character or creature, what to call it in 1 to 3 words (Superman, The Horse). Empty for a thing or happening.',
+        `- power: an office event this really sets off, if it clearly does (a dragon breathing fire: fire). Usually none. One of: ${CUSTOM_POWERS.join(', ')}.`,
+        '- skin, hair, outfit, trim, style: how a character looks (pick the nearest; ignored for anything else).'
       ].join('\n'),
       report: [
         'YOUR TASK',
@@ -171,7 +176,7 @@ export class PromptBook {
   private personLines(p: PersonBrief, names: NameMap, extra?: string): string {
     const name = names.name(p.id);
     const parts: string[] = [`- ${name}${extra ? `, ${extra}` : ''}.`];
-    if (!this.index.person(p.id) && p.name) parts.push(`(${p.name}, a visitor.)`);
+    if (!this.index.person(p.id) && p.name) parts.push(p.about ? `(${p.name}, a visitor: ${sentence(p.about)})` : `(${p.name}, a visitor.)`);
     if (p.mindOf) {
       const mind = this.index.nameOf(p.mindOf);
       parts.push(
@@ -180,6 +185,13 @@ export class PromptBook {
       );
     }
     parts.push(`Mood: ${p.mood}.`);
+    if (p.conviction) {
+      const idea = sentence(p.conviction.text.replace(/^./, (c) => c.toUpperCase()));
+      parts.push(
+        `Since ${p.conviction.since} ${name} has been sure of this, as if it were ${name}'s own idea: "${idea}" ` +
+          `It drives what ${name} says and does all day, and ${name} brings it up whenever possible.`
+      );
+    }
     if (p.state.length) parts.push(sentence(p.state.join(', ')).replace(/^./, (c) => c.toUpperCase()));
     if (p.goal) parts.push(`Wants: ${sentence(p.goal)}`);
     for (const f of p.feelings) if (f.text) parts.push(`About ${this.nameFor(f.about, names)}: ${sentence(f.text)}`);

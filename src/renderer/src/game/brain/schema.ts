@@ -5,7 +5,7 @@
 
 import { EMOTIONS, LINE_ACTS, PLAN_KINDS, SHIFT_KINDS, TARGET_ROOMS } from '@/game/core/types';
 import type { PlanKind } from '@/game/core/types';
-import { CUSTOM_LOOKS, CUSTOM_REACTIONS, CUSTOM_VIBES } from './api';
+import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES } from './api';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -104,7 +104,15 @@ export function interpretSchema(rooms: readonly string[]): JsonSchema {
     intensity: { type: 'integer', enum: [1, 2, 3] },
     reaction: oneOf(CUSTOM_REACTIONS),
     look: oneOf(CUSTOM_LOOKS),
-    moves: { type: 'boolean' }
+    moves: { type: 'boolean' },
+    kind: oneOf(CUSTOM_KINDS),
+    name: str(30),
+    power: oneOf(CUSTOM_POWERS),
+    skin: oneOf(GUEST_SKINS),
+    hair: oneOf(GUEST_COLOURS),
+    outfit: oneOf(GUEST_COLOURS),
+    trim: oneOf(GUEST_COLOURS),
+    style: oneOf(GUEST_STYLES)
   });
 }
 

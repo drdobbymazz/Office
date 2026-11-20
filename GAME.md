@@ -19,9 +19,16 @@ You are the **Overseer**. The staff do not know you exist.
   - *Weird*: abduction, haunting, zero gravity, time freeze, smite, shrink ray, embiggen, body swap, disco fever, bees, raccoon.
   - *Treats*: pizza party, office puppy, bonus rain, surprise party, triple espresso.
   - *Mind games*: Cupid's arrow, grudge, truth serum, nap attack, paranoia, layoff rumour, all-hands, inspection, boss for a day, leak a secret.
-- **Whisper** a thought into one person's head. They think it is their own idea.
+- **Whisper** a thought into one person's head. They think it is their own idea, and it sticks for
+  the rest of the day: every minute or so they act on it (go and have it out with whoever it names,
+  tell someone else, take over the boss's office), they keep bringing it up, and their card in
+  People shows what they are sure of and since when.
 - **Announce** something over the loudspeaker to everyone.
-- **Anything**: type any event at all ("a horse walks into the office"). The model works out what it is, it appears on the floor, and the staff have to deal with it.
+- **Anything**: type any event at all ("a horse walks into the office"). The model works out what it is
+  and it stays for a few minutes. A character ("Superman enters the office") becomes a person on the
+  floor who talks, walks up to people one by one, and leaves by the front door; a creature wanders
+  about and goes up to people; a thing stays where it appeared. It can set off a real event (a dragon
+  starts a fire), people who saw it make plans about it, and afterwards the ones it met talk it over.
 - **Pick people up**: press on someone, then drag. Let go to drop them, or fling them.
 - **Tap** someone to see their mood, what they are thinking, who they like and dislike, what they remember, and (once it comes out) their secret.
 

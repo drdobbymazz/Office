@@ -727,9 +727,12 @@ export class Emoji extends Lasting<Of<'emoji'>> {
     const k = this.vis;
     const pop = this.dying ? k : easeOutBack(Math.min(1, k));
     const bob = inst.bob ? Math.round(2 + Math.sin(this.t * 2.6) * 2) : 0;
+    const lift = inst.lift ?? 0;
     this.box.x = Math.round(inst.x);
-    this.box.y = Math.round(inst.y - bob);
-    this.box.zIndex = inst.y;
+    this.box.y = Math.round(inst.y - lift - bob);
+    // A badge floats over whoever it belongs to, so it is drawn after them.
+    this.box.zIndex = inst.y + (lift ? 2 : 0);
+    this.shadow.visible = !lift;
     // A hop of squash on the bob's low point, then integer scale at rest.
     const sq = inst.bob ? Math.max(0, -Math.sin(this.t * 2.6)) * 0.08 : 0;
     this.sprite.scale.set(this.scaleN * pop * (1 + sq), this.scaleN * pop * (1 - sq));

@@ -1,6 +1,7 @@
 // LOG: the old Scene Transcript. Everything that has happened, newest at the
 // bottom, with a filter by person.
 
+import { displayName } from '@/game/core/cast';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FeedItem } from '@/game/core/types';
 import { formatClock } from '@/game/core/types';
@@ -98,7 +99,7 @@ export function LogTab() {
           {shown.map((f) => {
             const m = f.who ? meta.get(f.who) : undefined;
             const o = f.other ? meta.get(f.other) : undefined;
-            return <Line key={f.id} f={f} name={m?.name ?? f.who ?? ''} color={m?.color ?? 'var(--cth-ink-700)'} otherName={o?.name ?? f.other ?? ''} />;
+            return <Line key={f.id} f={f} name={m?.name ?? (f.who ? displayName(f.who) : '')} color={m?.color ?? 'var(--cth-ink-700)'} otherName={o?.name ?? (f.other ? displayName(f.other) : '')} />;
           })}
           <div ref={end} />
         </div>

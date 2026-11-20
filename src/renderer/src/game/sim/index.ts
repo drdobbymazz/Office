@@ -88,7 +88,7 @@ export interface Sim extends DirectorSimApi {
   // ── chaos ──
   registerChaos(script: ChaosScript): void;
   /** null on success, else a plain reason. */
-  startChaos(id: ChaosId, target?: ChaosTarget): string | null;
+  startChaos(id: ChaosId, target?: ChaosTarget, opts?: { force?: boolean }): string | null;
   /** Seconds until a power can be used again (0 = ready). */
   cooldownLeft(id: ChaosId): number;
   cooldowns(): Partial<Record<ChaosId, CooldownUi>>;

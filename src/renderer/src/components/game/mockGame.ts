@@ -465,7 +465,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       return {
         ...personUi(m), fullName: c.fullName, age: 30 + (c.name.length * 7) % 25, summary: c.persona.summary,
         wants: c.persona.wants, fears: c.persona.fears, quirk: c.persona.quirk,
-        secret: revealed.has(m.id) ? c.persona.secret : null, thought: m.thought,
+        secret: revealed.has(m.id) ? c.persona.secret : null, thought: m.thought, conviction: null,
         plan: { kind: 'coffee', target: 'kitchen', about: 'a third cup' },
         mood: m.mood, energy: m.energy, stress: m.stress, bonds,
         memories: [

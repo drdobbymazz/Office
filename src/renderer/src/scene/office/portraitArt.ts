@@ -8,6 +8,7 @@
 // recolor in cast.ts; this module only powers the static portraits in the UI.
 
 import type { OfficeCharacterName } from './cast';
+import { VISITORS } from '@/game/core/cast';
 
 export const PORTRAIT_W = 18;
 export const PORTRAIT_H = 28;
@@ -65,6 +66,10 @@ export const SKIN: Record<string, SkinPal> = {
   tan:   { hi: [232, 182, 136], base: [214, 162, 116], sh: [176, 126, 86],  line: [138, 92, 60] },
   brown: { hi: [180, 130, 94],  base: [158, 112, 78],  sh: [124, 86, 58],   line: [90, 60, 40] },
   dark:  { hi: [142, 98, 70],   base: [120, 80, 56],   sh: [94, 62, 42],    line: [64, 42, 28] },
+  // For guests the player makes up: aliens, monsters, the undead.
+  green: { hi: [168, 220, 140], base: [132, 196, 108], sh: [96, 156, 78],   line: [60, 108, 48] },
+  grey:  { hi: [214, 214, 220], base: [186, 186, 196], sh: [148, 148, 160], line: [100, 100, 112] },
+  blue:  { hi: [150, 190, 240], base: [116, 160, 222], sh: [84, 124, 184],  line: [52, 82, 132] },
 };
 
 // ─── head + face ─────────────────────────────────────────────────────────────
@@ -552,9 +557,26 @@ const VISITOR_RECIPES: Record<string, Recipe> = {
 /** Anyone unknown: a plain office worker. */
 const DEFAULT_RECIPE: Recipe = { skin: 'tan', hairc: [70, 52, 36], hair: 'styleShort', hairargs: { part: 'L' }, cloth: 'dressshirt', c1: [150, 166, 186], tie: [80, 90, 120], brow: 'flat', mouth: 'neutral' };
 
+/** Guests made up by the player, drawn from the look the model gave them. */
+const guestRecipes = new Map<string, Recipe>();
+function guestRecipe(sprite: string): Recipe | undefined {
+  const look = VISITORS[sprite]?.look;
+  if (!look) return undefined;
+  let r = guestRecipes.get(sprite);
+  if (!r) {
+    r = {
+      skin: SKIN[look.skin] ? look.skin : 'light', hairc: look.hair, hair: look.hairStyle, cloth: look.style, c1: look.outfit,
+      c2: look.trim, tie: look.style === 'suit' || look.style === 'dressshirt' ? look.trim : undefined,
+      brow: 'flat', mouth: 'smile', shortSleeves: look.style === 'polo'
+    };
+    guestRecipes.set(sprite, r);
+  }
+  return r;
+}
+
 /** The recipe for a cast name, a visitor id, or the default person. */
 export function recipeFor(sprite: string): Recipe {
-  return (RECIPES as Record<string, Recipe | undefined>)[sprite] ?? VISITOR_RECIPES[sprite] ?? DEFAULT_RECIPE;
+  return (RECIPES as Record<string, Recipe | undefined>)[sprite] ?? VISITOR_RECIPES[sprite] ?? guestRecipe(sprite) ?? DEFAULT_RECIPE;
 }
 
 /** The face/hair group (head → face → facial hair → hair → glasses), no clothing. */

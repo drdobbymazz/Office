@@ -33,7 +33,12 @@ describe('schemas', () => {
     expect(minds.maxItems).toBe(2);
     expect(minds.items.properties.plan.enum).toEqual(['work', 'talk']);
     const i = interpretSchema(['shop', 'yard']) as unknown as Obj;
-    expect(Object.keys(i.properties)).toEqual(['title', 'emoji', 'room', 'fact', 'vibe', 'intensity', 'reaction', 'look', 'moves']);
+    expect(Object.keys(i.properties)).toEqual([
+      'title', 'emoji', 'room', 'fact', 'vibe', 'intensity', 'reaction', 'look', 'moves',
+      'kind', 'name', 'power', 'skin', 'hair', 'outfit', 'trim', 'style'
+    ]);
+    expect(i.properties.kind.enum).toEqual(['character', 'creature', 'thing', 'happening']);
+    expect(i.properties.power.enum).toContain('none');
     expect(i.properties.room.enum).toEqual(['shop', 'yard', 'everywhere']);
     const r = reportSchema(['Fern']) as unknown as Obj;
     expect(Object.keys(r.properties)).toEqual(['headline', 'paragraphs', 'awards', 'takeaways']);

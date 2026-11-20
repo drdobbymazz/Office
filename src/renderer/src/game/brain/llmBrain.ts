@@ -19,7 +19,8 @@ import type {
   Brain, BrainSettings, BrainStatus, ChatStats, ChatTransport, InterpretRequest, InterpretResult, MindResult, MindsRequest,
   ReportRequest, ReportResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult
 } from './api';
-import { CUSTOM_LOOKS, CUSTOM_REACTIONS, CUSTOM_VIBES } from './api';
+import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES } from './api';
+import type { CustomPower } from './api';
 import { cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanShifts, cleanText, lineKey } from './clean';
 import type { LineContext } from './clean';
 import { InstinctBrain } from './instinct';
@@ -427,7 +428,7 @@ export class LlmBrain implements Brain {
       user: this.book.interpretUser(req),
       schema: interpretSchema(roomIds),
       temperature: this.temp(0.5),
-      maxTokens: 170,
+      maxTokens: 240,
       signal,
       parse: (text) => {
         const v = parseLoose(text)?.value;
@@ -450,6 +451,16 @@ export class LlmBrain implements Brain {
           reaction: oneOf(CUSTOM_REACTIONS, v.reaction, base.reaction),
           look: oneOf(CUSTOM_LOOKS, v.look, base.look),
           moves: typeof v.moves === 'boolean' ? v.moves : base.moves,
+          kind: oneOf(CUSTOM_KINDS, v.kind, base.kind),
+          name: cleanText(v.name, 30) || base.name,
+          power: (CUSTOM_POWERS as readonly string[]).includes(String(v.power)) ? (v.power as CustomPower) : 'none',
+          guest: {
+            skin: oneOf(GUEST_SKINS, v.skin, base.guest.skin),
+            hair: oneOf(GUEST_COLOURS, v.hair, base.guest.hair),
+            outfit: oneOf(GUEST_COLOURS, v.outfit, base.guest.outfit),
+            trim: oneOf(GUEST_COLOURS, v.trim, base.guest.trim),
+            style: oneOf(GUEST_STYLES, v.style, base.guest.style)
+          },
           source: 'model'
         };
       },

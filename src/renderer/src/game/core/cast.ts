@@ -455,6 +455,17 @@ export const BOND_SEEDS: readonly BondSeed[] = [
 
 // ── Visitors: people who turn up for an event and leave again ────────────────
 
+/** How a guest conjured by the player looks, drawn in the same pixel style as the cast. */
+export interface GuestLook {
+  skin: 'light' | 'tan' | 'brown' | 'dark' | 'green' | 'grey' | 'blue';
+  hair: [number, number, number];
+  outfit: [number, number, number];
+  /** A second colour: tie, collar or trim. */
+  trim: [number, number, number];
+  style: 'suit' | 'dressshirt' | 'polo' | 'blouse' | 'cardigan' | 'sweater';
+  hairStyle: 'styleShort' | 'styleFloppy' | 'styleFrame' | 'styleBun' | 'styleCurly' | 'styleMessy' | 'styleRecede' | 'styleSpiky' | 'styleBald';
+}
+
 export interface VisitorDef {
   id: string;
   name: string;
@@ -463,6 +474,8 @@ export interface VisitorDef {
   voice: VoiceDef;
   /** One line for prompts. */
   summary: string;
+  /** Guests the player makes up have no hand-drawn recipe: they are drawn from this. */
+  look?: GuestLook;
 }
 
 export const VISITORS: Record<string, VisitorDef> = {
@@ -477,6 +490,11 @@ export const VISITORS: Record<string, VisitorDef> = {
     summary: 'Dee, a pizza courier who has seen this office on worse days and only wants a signature.'
   }
 };
+
+/** Add a visitor while the game runs (a guest from the Anything power). Ids are never reused. */
+export function registerVisitor(def: VisitorDef): void {
+  VISITORS[def.id] = def;
+}
 
 /** First name for anyone on the floor (cast or visitor). */
 export function displayName(id: CharId): string {

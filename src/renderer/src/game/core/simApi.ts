@@ -42,6 +42,8 @@ export interface SimPerson {
   readonly statuses: readonly StatusEffect[];
   readonly plan: Plan | null;
   readonly thought: string;
+  /** A whispered idea they are sure of for the rest of the day, and since when (clock minutes). */
+  readonly conviction: { text: string; since: number } | null;
   /** A few plain words: "typing at his desk", "running from the fire". */
   readonly doing: string;
   /** Id of the scene they are speaking in, if any. */
@@ -196,6 +198,8 @@ export interface SimApi {
   hasStatus(who: CharId, kind: StatusKind): boolean;
   setPlan(who: CharId, plan: Plan | null): void;
   setThought(who: CharId, thought: string): void;
+  /** Make a whispered idea stick for the rest of the day (null forgets it). */
+  convince(who: CharId, text: string | null): void;
   setProp(who: CharId, prop: HeldProp | null): void;
   setHeadgear(who: CharId, gear: Headgear | null): void;
   /** Move instantly to a tile. */
@@ -274,6 +278,8 @@ export interface SceneHandle {
 export interface DirectorSimApi extends SimApi {
   /** Queued scene asks, highest priority first. Clears the queue. */
   takeSceneAsks(): SceneAsk[];
+  /** Set off one of the powers. null on success, else a plain reason. force: ignore and skip the cooldown. */
+  startChaos(id: ChaosId, target?: ChaosTarget, opts?: { force?: boolean }): string | null;
   /** null if anyone is unavailable (or the id is already open). */
   openScene(opts: OpenSceneOpts): SceneHandle | null;
   briefFor(who: CharId, others: readonly CharId[]): PersonBrief;

@@ -3,7 +3,7 @@
 import type { ChaosId, EmotionId, LineAct } from '@/game/core/types';
 
 export type FixSkill = 'fire' | 'flood' | 'power' | 'wifi' | 'machine' | 'door' | 'pest';
-import type { BarkKind, CustomLook, CustomReaction, CustomVibe } from './api';
+import type { BarkKind, CustomKind, CustomLook, CustomPower, CustomReaction, CustomVibe, GuestLookWords } from './api';
 
 /** Spot which event a sentence is about ("Fire breaks out in the Break Room."). Order matters: specific first. */
 export const CHAOS_KEYWORDS: readonly [ChaosId, RegExp][] = [
@@ -245,3 +245,84 @@ export const STATE_BARKS: readonly [RegExp, BarkKind][] = [
   [/dark/i, 'dark'],
   [/sleep|tired/i, 'sleepy']
 ];
+
+// ── What a typed event is, without a model ──────────────────────────────────
+
+/** Words that mean someone who can talk. */
+const CHARACTER_RE = /\b(man|woman|guy|girl|lady|gentleman|person|hero|superhero|villain|celebrity|singer|actor|actress|king|queen|prince|princess|president|prime minister|chef|pirate|ninja|cowboy|knight|doctor|nurse|policeman|policewoman|police officer|cop|firefighter|santa|elf|ghost|clown|vampire|witch|wizard|alien|robot|mime|magician|astronaut|ceo|lawyer|intern|influencer|rapper|footballer|wrestler|baby|toddler|grandma|grandpa|granny|nun|monk|sailor|soldier|spy|detective|mermaid|caveman|time traveller|superman|batman|spider-?man|wonder woman|elvis|shrek|gandalf|dracula|sherlock|darth vader|yoda)\b/i;
+/** Things that happen rather than appear. */
+const HAPPENING_RE = /\b(fire|flames?|lava|storm|thunder|lightning|tornado|whirlwind|rain|snow|fog|smell|stench|noise|music|silence|heatwave|cold snap|darkness|earthquake|flood)\b/i;
+
+const POWER_RULES: readonly [RegExp, CustomPower][] = [
+  [/\b(dragons?|flames?|lava|volcano|arson|on fire)\b/i, 'fire'],
+  [/\b(flood(s|ed|ing)?|burst pipe|tsunami|sharks?)\b/i, 'flood'],
+  [/\b(power cut|blackout|eclipse|lights go out)\b/i, 'blackout'],
+  [/\b(earthquake|quake|stampede|meteor|asteroid|explosion|explodes)\b/i, 'quake'],
+  [/\b(alarm|bomb|evacuat\w*|gas leak)\b/i, 'fireDrill'],
+  [/\b(wi-?fi|internet|hackers?|computer virus)\b/i, 'wifiDown'],
+  [/\b(dj|disco|rave|dance party)\b/i, 'disco'],
+  [/\b(bees|wasps|hornets|swarm)\b/i, 'bees'],
+  [/\b(pizza|donuts|doughnuts|buffet|free food|tacos|burgers)\b/i, 'pizza'],
+  [/\b(money|cash|banknotes|gold coins|lottery)\b/i, 'moneyRain'],
+  [/\b(sleeping gas|lullaby|hypnotis\w*|hypnotiz\w*)\b/i, 'sleep'],
+  [/\b(zero gravity|anti-?gravity|everyone floats)\b/i, 'zeroG'],
+  [/\b(time stops|time freezes|freezes time)\b/i, 'timeFreeze']
+];
+
+/** Looks for well-known characters; anyone else gets one from their name. */
+const KNOWN_LOOKS: readonly [RegExp, GuestLookWords][] = [
+  [/superman/i, { skin: 'light', hair: 'black', outfit: 'blue', trim: 'red', style: 'suit' }],
+  [/batman/i, { skin: 'light', hair: 'black', outfit: 'black', trim: 'grey', style: 'suit' }],
+  [/spider-?man/i, { skin: 'light', hair: 'brown', outfit: 'red', trim: 'blue', style: 'sweater' }],
+  [/santa|father christmas/i, { skin: 'light', hair: 'white', outfit: 'red', trim: 'white', style: 'cardigan' }],
+  [/elvis/i, { skin: 'light', hair: 'black', outfit: 'white', trim: 'gold', style: 'suit' }],
+  [/shrek|ogre|zombie|alien|martian/i, { skin: 'green', hair: 'black', outfit: 'brown', trim: 'grey', style: 'shirt' }],
+  [/ghost|spirit|phantom/i, { skin: 'grey', hair: 'white', outfit: 'white', trim: 'grey', style: 'shirt' }],
+  [/robot|android|cyborg/i, { skin: 'grey', hair: 'silver', outfit: 'silver', trim: 'blue', style: 'suit' }],
+  [/vampire|dracula/i, { skin: 'grey', hair: 'black', outfit: 'black', trim: 'red', style: 'suit' }],
+  [/pirate/i, { skin: 'tan', hair: 'black', outfit: 'red', trim: 'gold', style: 'shirt' }],
+  [/chef|doctor|nurse|scientist/i, { skin: 'tan', hair: 'brown', outfit: 'white', trim: 'blue', style: 'shirt' }],
+  [/king|queen|prince|princess/i, { skin: 'light', hair: 'blonde', outfit: 'purple', trim: 'gold', style: 'suit' }]
+];
+
+function hashText(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+export function guestLookFor(text: string): GuestLookWords {
+  const known = KNOWN_LOOKS.find(([re]) => re.test(text));
+  if (known) return { ...known[1] };
+  const h = hashText(text.toLowerCase());
+  const skins = ['light', 'tan', 'brown', 'dark'] as const;
+  const hairs = ['black', 'brown', 'blonde', 'grey', 'red'] as const;
+  const outfits = ['red', 'blue', 'green', 'purple', 'orange', 'navy', 'pink', 'yellow', 'grey'] as const;
+  const styles = ['suit', 'shirt', 'polo', 'sweater', 'cardigan', 'blouse'] as const;
+  return {
+    skin: skins[h % skins.length],
+    hair: hairs[(h >>> 3) % hairs.length],
+    outfit: outfits[(h >>> 7) % outfits.length],
+    trim: outfits[(h >>> 11) % outfits.length],
+    style: styles[(h >>> 15) % styles.length]
+  };
+}
+
+export function powerFor(text: string): CustomPower {
+  return POWER_RULES.find(([re]) => re.test(text))?.[1] ?? 'none';
+}
+
+/** Character, creature, thing or happening, and what to call it. */
+export function kindFor(text: string, rule: ThingRule | null, noun: string): { kind: CustomKind; name: string } {
+  const title = (s: string): string => s.replace(/\b\w/g, (c) => c.toUpperCase());
+  const character = CHARACTER_RE.exec(text);
+  // A capitalised word after the first is probably a name: "a visit from Taylor Swift".
+  const proper = /\s((?:[A-Z][a-z'-]+)(?:\s+[A-Z][a-z'-]+)*)/.exec(text);
+  if (character || proper) {
+    const name = proper ? proper[1] : character && /^(superman|batman|spider-?man|wonder woman|elvis|shrek|gandalf|dracula|sherlock|darth vader|yoda|santa)$/i.test(character[1]) ? title(character[1]) : `The ${title(character ? character[1] : noun)}`;
+    return { kind: 'character', name: name.slice(0, 30) };
+  }
+  if (rule?.moves) return { kind: 'creature', name: `The ${title(rule.noun)}`.slice(0, 30) };
+  if (HAPPENING_RE.test(text)) return { kind: 'happening', name: '' };
+  return { kind: 'thing', name: '' };
+}

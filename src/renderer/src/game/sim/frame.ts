@@ -164,6 +164,7 @@ export function personDetail(core: SimCore, who: CharId, ages: Record<CastId, nu
     quirk: def ? def.persona.quirk : '',
     secret: def && core.secretOut(def.id) ? def.persona.secret : null,
     thought: p.thought,
+    conviction: p.conviction ? { ...p.conviction } : null,
     plan: p.plan,
     mood: p.mood,
     energy: p.energy,
