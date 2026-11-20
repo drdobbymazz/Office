@@ -65,7 +65,7 @@ const PLAN_LIST =
 const HOUSE_RULES =
   'HOUSE RULES\n' +
   'Workplace comedy for a general audience. Cartoon slapstick only: nobody is really hurt. ' +
-  'Nothing sexual, hateful or gory. Never mention being an AI, a model, a game or a prompt.';
+  'Never mention being an AI, a model, a game or a prompt.';
 
 /** Builds the messages for one world. Construct once and reuse: the system text is cached. */
 export class PromptBook {
