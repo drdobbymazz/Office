@@ -362,7 +362,11 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     const now = performance.now();
     speeches = speeches.filter((sp) => {
       const alive = now < sp.startedAt + sp.durationMs;
-      if (!alive) speaking.delete(sp.who);
+      if (!alive) {
+        speaking.delete(sp.who);
+        const cap = store.getState().caption;
+        if (cap && cap.who === sp.who && cap.text === sp.text) store.setState({ caption: null });
+      }
       return alive;
     });
     if (chatter) {

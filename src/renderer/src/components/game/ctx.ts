@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { shallow } from 'zustand/shallow';
+import { useStoreWithEqualityFn } from 'zustand/traditional';
 import type { GameApi, UiState } from '@/game/app/gameApi';
 import type { Suggestions, Tips } from '@/game/core/content/types';
 
@@ -26,7 +27,7 @@ export function useContent(): { suggestions: Suggestions; tips: Tips } {
 /** Narrow subscription to the UI store, compared shallowly. */
 export function useUi<T>(sel: (s: UiState) => T): T {
   const game = useGame();
-  return game.store(sel, shallow);
+  return useStoreWithEqualityFn(game.store, sel, shallow);
 }
 
 /** Re-render every `ms` while mounted (cooldown counters, typing effects). Returns performance.now(). */

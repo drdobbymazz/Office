@@ -275,7 +275,7 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
       <TextTool coach="whisper" autoFocus={autoFocus}
         hint="Only they hear it. They think it is their own idea."
         placeholder={target ? `A thought for ${target.name}...` : 'Pick someone above first'}
-        suggestions={target ? list : []} disabled={!target} sendLabel="Whisper"
+        suggestions={target ? list : []} disabled={!target} sendLabel="Send whisper"
         onSend={(t) => { if (!target) return; game.whisper(target.id, t); setSent(`Whispered to ${target.name}.`); }} />
       {sent && <Sent text={sent} />}
     </>

@@ -30,6 +30,7 @@ interface Node {
   shown: number;
   /** Smoothed extra lift from the overlap pass. */
   lift: number;
+  slide: number;
   x: number;
   y: number;
   flipped: boolean;
@@ -152,7 +153,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       const h = Math.ceil(box.offsetHeight);
       box.style.width = `${w}px`;
       if (sp.kind === 'shout') inner.insertBefore(shoutBg(w, h), box);
-      const n: Node = { sp, el, rev, rest, tail, w, h, shown: 0, lift: 0, x: -999, y: -999, flipped: false, dying: false };
+      const n: Node = { sp, el, rev, rest, tail, w, h, shown: 0, lift: 0, slide: 0, x: -999, y: -999, flipped: false, dying: false };
       setTail(n, false, w / 2);
       return n;
     }
@@ -216,7 +217,10 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
         const left = Math.max(minX, Math.min(maxX - n.w, head.x - n.w / 2));
         placed.push({ n, hx: head.x, hy: head.y, left, top, flipped, tailH });
       }
-      // Nudge apart: walk from the lowest bubble up, lifting any that overlap one already placed.
+      // Keep bubbles apart and off the HUD. Lowest bubble first; for each, try a handful of
+      // spots (where it wants to be, above or below each thing already placed, slid
+      // sideways) and take the one with the least overlap and the least travel. The tail
+      // must still reach the head, so the bubble always spans the head's x.
       placed.sort((a, b2) => b2.top - a.top);
       if (now - avoidAt > 500) {
         avoidAt = now;
@@ -227,34 +231,47 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       }
       const done: { l: number; t: number; r: number; b: number }[] = avoid.slice();
       for (const p of placed) {
-        let target = p.top;
-        for (let pass = 0; pass < 4; pass++) {
-          let moved = false;
-          for (const d of done) {
-            const overlapX = p.left < d.r + 2 && p.left + p.n.w > d.l - 2;
-            const overlapY = target < d.b + 2 && target + p.n.h > d.t - 2;
-            if (overlapX && overlapY) {
-              const up = d.t - p.n.h - 4;
-              target = p.flipped || up < minY ? d.b + 4 : up;
-              moved = true;
-            }
-          }
-          if (!moved) break;
+        const w = p.n.w, h = p.n.h;
+        const below = p.hy + 40 + p.tailH;
+        const tops = [p.top, below];
+        const lefts = [p.left];
+        for (const d of done) {
+          tops.push(d.t - h - 4, d.b + 4);
+          lefts.push(d.l - w - 4, d.r + 4);
         }
-        if (!p.flipped && target < minY) target = minY;
-        if (p.flipped && target + p.n.h > maxY) target = maxY - p.n.h;
+        let best = { l: p.left, t: p.top, score: Infinity };
+        for (const t0 of tops) {
+          const t = Math.max(minY, Math.min(maxY - h, t0));
+          // above the head or below it, never on top of it
+          if (t + h > p.hy - p.tailH + 2 && t < p.hy + 30) continue;
+          // and close enough that it still reads as theirs: better a small overlap than a stray bubble
+          if (t < p.hy ? p.hy - (t + h) > 100 : t - p.hy > 130) continue;
+          for (const l0 of lefts) {
+            const l = Math.max(minX, Math.min(maxX - w, Math.max(p.hx - w + 12, Math.min(p.hx - 12, l0))));
+            let overlap = 0;
+            for (const d of done) {
+              const ox = Math.min(l + w, d.r + 2) - Math.max(l, d.l - 2);
+              const oy = Math.min(t + h, d.b + 2) - Math.max(t, d.t - 2);
+              if (ox > 0 && oy > 0) overlap += ox * oy;
+            }
+            const score = overlap * 1.5 + Math.abs(t - p.top) + Math.abs(l - p.left) * 0.7 + (t > p.hy ? 30 : 0);
+            if (score < best.score) best = { l, t, score };
+          }
+        }
+        done.push({ l: best.l, t: best.t, r: best.l + w, b: best.t + h });
         // Ease the nudge so bubbles slide rather than jump.
-        const want = target - p.top;
-        p.n.lift += (want - p.n.lift) * 0.3;
-        if (Math.abs(want - p.n.lift) < 0.5) p.n.lift = want;
+        const wantY = best.t - p.top, wantX = best.l - p.left;
+        p.n.lift += (wantY - p.n.lift) * 0.3;
+        p.n.slide += (wantX - p.n.slide) * 0.3;
+        if (Math.abs(wantY - p.n.lift) < 0.5) p.n.lift = wantY;
+        if (Math.abs(wantX - p.n.slide) < 0.5) p.n.slide = wantX;
         const top = Math.round(p.top + p.n.lift);
-        done.push({ l: p.left, t: target, r: p.left + p.n.w, b: target + p.n.h });
-        const x = Math.round(p.left);
+        const x = Math.round(p.left + p.n.slide);
         if (x !== p.n.x || top !== p.n.y) {
           p.n.x = x; p.n.y = top;
           p.n.el.style.transform = `translate3d(${x}px, ${top}px, 0)`;
         }
-        setTail(p.n, p.flipped, p.hx - x);
+        setTail(p.n, best.t > p.hy, p.hx - x);
       }
     }
     raf = requestAnimationFrame(frame);

@@ -19,10 +19,13 @@ const MAX_Y = Math.max(...PLAN.map((r) => r.rect.y + r.rect.h));
 const TOP = PLAN.filter((r) => r.rect.y < 11).sort((a, b) => a.rect.x - b.rect.x);
 const BOTTOM = PLAN.filter((r) => r.rect.y >= 11).sort((a, b) => a.rect.x - b.rect.x);
 const LAYOUT = new Map<string, { x: number; w: number }>();
+// The conference room gives a little width to the accounting corner so "Accounts" fits.
+const WEIGHT: Record<string, number> = { meeting: -2, accounts: 1 };
 for (const band of [TOP, BOTTOM]) {
-  const total = band.reduce((n, r) => n + r.rect.w, 0);
+  const wOf = (r: (typeof PLAN)[number]) => r.rect.w + (WEIGHT[r.id] ?? 0);
+  const total = band.reduce((n, r) => n + wOf(r), 0);
   let x = 0;
-  for (const r of band) { LAYOUT.set(r.id, { x: (x / total) * 100, w: (r.rect.w / total) * 100 }); x += r.rect.w; }
+  for (const r of band) { LAYOUT.set(r.id, { x: (x / total) * 100, w: (wOf(r) / total) * 100 }); x += wOf(r); }
 }
 
 function RoomCell({ id, name, rect, people, selected, accent, onPick }: {

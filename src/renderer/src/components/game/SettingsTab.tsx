@@ -43,7 +43,8 @@ function BrainSection() {
   const [testing, setTesting] = useState(false);
   const providers = PROVIDERS.filter((p) => p.id !== 'claude' || inArtifact)
     .filter((p) => !inArtifact || p.id === 'claude' || p.id === 'instinct');
-  const needsServer = brain.provider === 'ollama' || brain.provider === 'openai';
+  // Inside an artifact there is no network, so server settings never apply.
+  const needsServer = !inArtifact && (brain.provider === 'ollama' || brain.provider === 'openai');
 
   const test = () => {
     setTesting(true);
