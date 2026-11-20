@@ -2,7 +2,7 @@
   "name": "munder-difflin",
   "version": "0.1.8",
   "private": true,
-  "description": "Local multi-agent harness for Claude Code: autonomous agents that message, route, and remember — coordinated by a GOD orchestrator and visualized as avatars at work.",
+  "description": "Local multi-agent harness for Claude Code: autonomous agents that message, route, and remember \u2014 coordinated by a GOD orchestrator and visualized as avatars at work.",
   "main": "out/main/index.js",
   "author": "Chaitanya Giri",
   "homepage": "https://munderdiffl.in/",
@@ -24,7 +24,10 @@
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && electron-builder --linux",
+    "test": "vitest run",
+    "serve": "node serve.mjs",
+    "mock-llm": "node tools/mock-ollama.mjs"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",

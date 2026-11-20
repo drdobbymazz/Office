@@ -1,77 +1,139 @@
-# Local-LLM Office Sandbox
+# Munder Difflin: the living office
 
-The floor is now a **director / god-mode roleplaying sandbox** powered entirely by a
-**local model via [Ollama](https://ollama.com/)** — no Claude, no cloud, no API keys.
-The Office cast become LLM-driven NPCs that improvise and react to each other while
-*you* set the scene, inject events, nudge individual characters, and dial the drama.
+A pixel-art office whose fifteen staff think for themselves, and you are the unseen force that
+makes things happen to them. Played on a phone held sideways (it also works in a desktop browser
+and in the Electron app).
+
+Every worker is played by **your own local model through [Ollama](https://ollama.com/)**
+(default: `artemis-custom`). No cloud, no API key. The model writes what each person says, what
+they feel, what they decide to do next, and how they feel about each other afterwards.
 
 ## What you do
 
-- **Run the scene** — the Director picks characters, builds a prompt from their persona +
-  the current scene + the recent transcript, asks your local model for their next line,
-  and plays it out as dialogue (a thought cloud over the avatar) + movement on the floor.
-- **Set the scene** — situation text + a drama slider (higher = faster, more heightened).
-- **Inject an event** — "the printer bursts into flames" — and watch the room react.
-- **Cue a character** — force someone to speak next, optionally with a private instruction.
-- Conversations stay coherent: a line aimed at a coworker opens a short two-person scene,
-  and an `approach` walks the speaker over to whoever they addressed.
+You are the **Overseer**. The staff do not know you exist.
 
-## Memory & continuity
+- **Powers**: 34 events in four groups.
+  - *Disasters*: fire, burst pipe, blackout, earthquake, fire drill, locked in, Wi-Fi down, snack storm.
+  - *Weird*: abduction, haunting, zero gravity, time freeze, smite, shrink ray, embiggen, body swap, disco fever, bees, raccoon.
+  - *Treats*: pizza party, office puppy, bonus rain, surprise party, triple espresso.
+  - *Mind games*: Cupid's arrow, grudge, truth serum, nap attack, paranoia, layoff rumour, all-hands, inspection, boss for a day, leak a secret.
+- **Whisper** a thought into one person's head. They think it is their own idea.
+- **Announce** something over the loudspeaker to everyone.
+- **Anything**: type any event at all ("a horse walks into the office"). The model works out what it is, it appears on the floor, and the staff have to deal with it.
+- **Pick people up**: press on someone, then drag. Let go to drop them, or fling them.
+- **Tap** someone to see their mood, what they are thinking, who they like and dislike, what they remember, and (once it comes out) their secret.
 
-- **Each character remembers.** Every line a character says or hears enters their working
-  memory, which is fed back into their next prompt — so grudges, jokes, and threads persist
-  through the session instead of resetting every beat. The cue panel shows what's *on a
-  character's mind* (a reflected one-line summary the model distils as their memory fills up).
-- **Days.** Press **new day →** to roll the world over: the visible scene clears but everyone
-  *keeps their memory*, so yesterday's drama carries into the morning.
-- **The world saves itself.** Scene, day, transcript, and every character's memory persist to
-  `localStorage` and resume automatically on reload. Wipe it from **Settings → reset world**.
+The staff remember what happens, hold grudges, form plans and act on them. Each office day runs
+09:00 to 17:00 and ends with a written report. The world saves itself in the browser.
 
-## Run it locally (desktop, Electron)
+### Touch controls
 
-```bash
-# 1. Start your local model server and pull a model
-ollama serve
-ollama pull danger            # the default model name; use any tag you like
+| Gesture | What it does |
+|---|---|
+| Drag empty floor | Pan |
+| Pinch | Zoom |
+| Double tap | Zoom in on that spot, or back out |
+| Tap a person | Select and follow them |
+| Press a person, then drag | Pick them up; release to drop or fling |
 
-# 2. Run the app
-npm install                   # rebuilds node-pty for Electron
-npm run dev
-```
+## Playing on your phone
 
-Open the **Director** panel (right side), pick your model, and press **run scene**.
-Point at a non-default server or model in **Settings** (gear icon).
+The page has to be able to reach the laptop that runs Ollama. There are two good ways.
 
-## Run it on the web / deploy to Vercel
+### A. Serve it from the laptop (simplest at home)
 
-The game UI is a plain static SPA, so it deploys to Vercel as-is. It talks to **your own
-local Ollama** directly from the browser.
+On the laptop that runs Ollama:
 
 ```bash
-npm run dev:web               # local dev server
-npm run build:web             # static build → dist-web/
+npm install --ignore-scripts
 ```
 
-Deploy: import the repo on Vercel (config is in [`vercel.json`](./vercel.json) — build
-`npm run build:web`, output `dist-web`). Because the page runs over HTTPS but reaches
-`http://localhost:11434`, you must start Ollama allowing the page's origin:
+```bash
+npm run build:web
+```
+
+```bash
+npm run serve
+```
+
+It prints addresses such as `http://MSI.local:8787`. Open one on your phone (same Wi-Fi), turn the
+phone sideways, and press **Start the day**. This small server hands out the game and forwards
+model requests to Ollama on the same machine, so there is nothing to configure in Ollama and no
+browser security settings to fight. Options: `--port 8787`, `--ollama http://127.0.0.1:11434`.
+
+### B. Hosted page plus Tailscale (works away from home)
+
+Deploy the web build anywhere static (the repo's `vercel.json` already builds it for Vercel:
+`npm run build:web`, output `dist-web`). Because a hosted page is `https`, the model address must be
+`https` too: use the laptop's Tailscale Serve address (the default in Settings is
+`https://msi.tail780d1f.ts.net`). Ollama must allow the page's origin:
 
 ```bash
 OLLAMA_ORIGINS=https://your-app.vercel.app ollama serve
-# (for local web dev: OLLAMA_ORIGINS=http://localhost:5173 ollama serve)
 ```
 
-> Chromium browsers allow an HTTPS page to reach `http://localhost` / `http://127.0.0.1`
-> (the localhost secure-context exception), so the local model is reachable without a tunnel.
-> Each visitor uses the Ollama running on *their own* machine — fully local, nothing leaves it.
+The phone must be on the tailnet, and Tailscale must be signed in on the laptop.
 
-## Architecture (game mode)
+### If it says the model is offline
 
-| Piece | Role |
-|---|---|
-| `src/main/ollama.ts` | Ollama HTTP bridge (Electron) — model list + JSON-constrained chat. |
-| `src/renderer/src/platform/cthWeb.ts` | Browser adapter — config in `localStorage`, Ollama over `fetch`. Installed when there's no Electron preload. |
-| `src/renderer/src/game/personas.ts` | Voice cards for all 15 cast members. |
-| `src/renderer/src/game/director.ts` | The engine: beat scheduler, prompt assembly, two-person scene focus. |
-| `src/renderer/src/game/useDirector.ts` | Seeds the cast as NPCs, runs the Director, pipes beats to the floor. |
-| `src/renderer/src/components/GameDirectorPanel.tsx` | God-mode control surface. |
+The game keeps running: the staff fall back to hand-written lines ("instinct") until the model
+answers, and it retries by itself every 20 seconds. Open **Settings > Brain**, check the address
+and model, and press **Test**: the message says what is wrong in plain words.
+
+A 16 GB model can take up to a minute to load the first time it is asked something.
+
+## Development
+
+```bash
+npm run dev:web
+```
+
+runs the web game at `http://localhost:5173`.
+
+```bash
+npm run mock-llm
+```
+
+runs a stand-in for Ollama on port 11500 that answers in the right format at 7 tokens a second
+(point Settings > Brain at `http://localhost:11500`). It also has deliberately broken "models" for
+testing how the game copes.
+
+```bash
+npm test
+```
+
+runs the logic tests (map, simulation, brain, written lines).
+
+`npm run dev` still runs the Electron build.
+
+## How it is put together
+
+| Piece | Where | Role |
+|---|---|---|
+| Map, rooms, desks | `src/renderer/src/game/core/world.ts` | The existing Tiled map as logic: walkable tiles, rooms, named spots, paths. |
+| The fifteen people | `src/renderer/src/game/core/cast.ts` | Personas, temperaments, voices, how they feel about each other on day one. |
+| Powers | `src/renderer/src/game/core/chaos.ts`, `game/sim/chaos/` | The catalogue, and one script per event. |
+| Simulation | `src/renderer/src/game/sim/` | Headless and deterministic: movement, routines, the working day, being picked up, memory, relationships, meters, saving. |
+| Brain | `src/renderer/src/game/brain/` | Ollama / OpenAI-compatible / Claude transports with streaming, prompts, tolerant parsing, the instinct fallback, health tracking. |
+| Director | `src/renderer/src/game/director/` | Decides when the model is asked for something and plays what it writes on the floor. |
+| Floor | `src/renderer/src/scene/office/floor/`, `actor/`, `fx/` | The original map renderer plus expressive sprites, pixel effects, and a touch camera. |
+| Interface | `src/renderer/src/components/game/` | The phone-landscape UI in the original cream pixel style. |
+| Sound | `src/renderer/src/game/audio/` | Everything synthesized at runtime: effects, each person's talking blips, adaptive music. |
+| Game | `src/renderer/src/game/game.ts` | Wires all of the above together behind one `GameApi`. |
+
+### How the model is used at 7 tokens a second
+
+- One request at a time. A **scene** (a few lines between people who are together) streams, so the
+  first line is spoken while the rest is still being written.
+- The long, unchanging part of every prompt (the setting, the fifteen people, the rules) is
+  identical between calls, so Ollama reuses it and only reads the new part.
+- Replies are constrained to a JSON shape and capped in length. Anything unusable is retried once,
+  then answered from the written fallback, so the game never stalls.
+- Reflexes ("FIRE!") come from hand-written lines at once; the model's fuller reaction follows a
+  few seconds later.
+
+## Notes
+
+- The characters and office are a parody of a well-known TV comedy, and the tile art is LimeZu's
+  free pack, which is licensed for non-commercial use only (`src/renderer/src/assets/ATTRIBUTION.md`).
+  Fine for a personal project; both would need replacing before any commercial release.

@@ -8,13 +8,13 @@
 //
 // On the laptop that runs Ollama:
 //
-//   npm run build
+//   npm run build:web
 //   node serve.mjs                # then open the printed address on your phone
 //
 // Options (flags or environment variables):
 //   --port 8787            PORT          port to listen on
 //   --ollama http://127.0.0.1:11434   OLLAMA_URL   where Ollama is
-//   --dir dist             folder with the built game
+//   --dir dist-web         folder with the built game
 //
 // No dependencies: plain Node 18+.
 
@@ -32,7 +32,7 @@ const arg = (name, fallback) => {
 };
 const PORT = Number(arg('port', process.env.PORT || 8787));
 const OLLAMA = new URL(arg('ollama', process.env.OLLAMA_URL || 'http://127.0.0.1:11434'));
-const ROOT = path.resolve(here, arg('dir', 'dist'));
+const ROOT = path.resolve(here, arg('dir', 'dist-web'));
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
@@ -42,7 +42,7 @@ const TYPES = {
 };
 
 if (!fs.existsSync(path.join(ROOT, 'index.html'))) {
-  console.error(`No built game in ${ROOT}. Run "npm run build" first.`);
+  console.error(`No built game in ${ROOT}. Run "npm run build:web" first.`);
   process.exit(1);
 }
 
@@ -98,7 +98,7 @@ http
       .flat()
       .filter((n) => n && n.family === 'IPv4' && !n.internal)
       .map((n) => `http://${n.address}:${PORT}`);
-    console.log(`Overseer is being served from ${ROOT}`);
+    console.log(`The office is being served from ${ROOT}`);
     console.log(`Model requests go to ${OLLAMA.origin}`);
     console.log('\nOpen one of these on your phone (same Wi-Fi), held sideways:');
     for (const a of [`http://${os.hostname()}.local:${PORT}`, ...addrs]) console.log(`  ${a}`);
