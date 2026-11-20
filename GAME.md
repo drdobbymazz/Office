@@ -4,6 +4,8 @@ A pixel-art office whose fifteen staff think for themselves, and you are the uns
 makes things happen to them. Played on a phone held sideways (it also works in a desktop browser
 and in the Electron app).
 
+![The title card, a surprise party, a flying saucer taking Dwight, and a fire with the Powers tab open](docs/media/living-office.png)
+
 Every worker is played by **your own local model through [Ollama](https://ollama.com/)**
 (default: `artemis-custom`). No cloud, no API key. The model writes what each person says, what
 they feel, what they decide to do next, and how they feel about each other afterwards.
@@ -63,6 +65,10 @@ phone sideways, and press **Start the day**. This small server hands out the gam
 model requests to Ollama on the same machine, so there is nothing to configure in Ollama and no
 browser security settings to fight. Options: `--port 8787`, `--ollama http://127.0.0.1:11434`.
 
+The first time, Windows may ask whether to let Node through the firewall: allow it on private
+networks. Away from home, with Tailscale running on the phone, the same server answers at
+`http://<the laptop's Tailscale name>:8787`.
+
 ### B. Hosted page plus Tailscale (works away from home)
 
 Deploy the web build anywhere static (the repo's `vercel.json` already builds it for Vercel:
@@ -103,7 +109,8 @@ A 16 GB model can take up to a minute to load the first time it is asked somethi
   Ollama reload the model.
 - **Long silences before anyone speaks.** The first request has to read the whole cast (about
   1,600 tokens). After that only the new part is read, as long as nothing else uses the model in
-  between. Another program talking to the same model throws that saved work away each time.
+  between. Another program talking to the same model throws that saved work away each time, and a
+  game running on the laptop's GPU at the same time makes every answer many times slower.
 - **Odd symbols or half sentences.** The game already repairs or drops broken replies and retries
   once. If it happens a lot, lower **Wildness** in Settings > Brain.
 
