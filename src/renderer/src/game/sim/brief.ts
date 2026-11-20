@@ -101,7 +101,8 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
 
 export function factsOf(core: SimCore): string[] {
   const out: string[] = [`It is ${core.weekday}, ${formatClock(core.clock)}.`];
-  for (const f of core.factMap.values()) out.push(f);
+  // Newest first: whoever reads only the top of the list should see what has just happened.
+  out.push(...[...core.factMap.values()].reverse());
   for (const p of core.list) {
     if (!p.onFloor) continue;
     for (const s of p.statuses) {

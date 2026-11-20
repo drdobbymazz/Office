@@ -150,12 +150,14 @@ function firstThought(why: string): string {
 }
 
 function fill(template: string, vars: { other?: string; thought?: string; thing?: string }): string {
-  return template
+  const out = template
     .replace(/\{other\}/g, vars.other ?? 'everyone')
     .replace(/\{thought\}/g, (vars.thought ?? 'something is up').replace(/[.!?]+$/, ''))
     .replace(/\{thing\}/g, vars.thing ?? 'thing')
     .replace(/\{name\}/g, vars.other ?? 'everyone')
     .replace(/\{[a-z]+\}/gi, '');
+  // "everyone, listen" at the start of a line needs its capital.
+  return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
 const PLAN_ROOM: Partial<Record<PlanKind, string[]>> = {
@@ -248,7 +250,10 @@ export class InstinctBrain implements Brain, Reflexes {
     let n = Math.min(hi, lo + (rng() < 0.5 ? 1 : 0));
     if (ppl.length === 1) n = Math.min(n, 2);
     const text = `${req.why} ${req.facts.join(' ')}`;
-    const chaos = req.trigger === 'event' || req.trigger === 'aftermath' ? detectChaos(text) : null;
+    // What set the scene off decides which event it is about. The list of facts also holds
+    // older events, so only the newest one (after the line giving the time) is a fallback:
+    // otherwise people would shout about an earthquake that ended half an hour ago.
+    const chaos = req.trigger === 'event' || req.trigger === 'aftermath' ? detectChaos(req.why) ?? detectChaos(req.facts[1] ?? '') : null;
     const thing = req.trigger === 'custom' ? matchThing(req.why) : null;
     const thingNoun = thing?.noun ?? guessNoun(req.why);
     const vibe: CustomVibe = thing?.vibe ?? 'weird';

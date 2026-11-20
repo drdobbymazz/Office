@@ -358,7 +358,10 @@ export class FloorCamera {
       const u = this.usableSize();
       // The automatic camera never goes in as close as the player can: context matters more than drama.
       const want = Math.min(u.w / r.w, u.h / r.h) * 0.9;
-      this.tz = clamp(this.crisp(want), this.homeZoom(), this.roomZoom());
+      // Small talk earns a gentle push-in; only the things that matter get the full close-up.
+      const home = this.homeZoom();
+      const cap = it.weight >= 0.55 ? this.roomZoom() : Math.max(home, this.crisp(home + (this.roomZoom() - home) * 0.4));
+      this.tz = clamp(this.crisp(want), home, cap);
       this.tx = r.x + r.w / 2;
       this.ty = r.y + r.h / 2;
       this.clampTarget();

@@ -88,6 +88,8 @@ export class Director {
   /** Sim time of the next look for people who could be chatting. */
   private idleAt = 0;
   private lastTopic = '';
+  /** Sim time each pair last finished talking, so the same two do not hog the floor. */
+  private pairAt = new Map<string, number>();
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   /** Free-text events currently on the floor, to be cleared when their time is up. */
@@ -121,6 +123,7 @@ export class Director {
     this.mindsAt = this.api.time + (this.slow ? 45 : 22);
     this.musingAt = this.api.time + 10;
     this.scenesSinceMinds = 0;
+    this.pairAt.clear();
   }
 
   get thinking(): boolean {
@@ -315,12 +318,14 @@ export class Director {
     const free = this.api.people().filter((p) => p.isCast && p.present && p.available && !p.plan && !p.speaking && this.canSpeak(p.id));
     if (!free.length) return null;
     const quiet = (p: SimPerson): number => now - (this.lastSpoke.get(p.id) ?? -999);
-    const pool = free.slice().sort((x, y) => quiet(y) - quiet(x)).slice(0, 4);
+    // A little noise, so people who have all been silent equally long are not always taken in the same order.
+    const turn = new Map(free.map((p) => [p.id, quiet(p) + rng() * 40]));
+    const pool = free.slice().sort((x, y) => turn.get(y.id)! - turn.get(x.id)!).slice(0, 4);
     const a = pool[Math.floor(rng() * pool.length)];
     const place = roomDef(a.room).name;
 
     const near = free
-      .filter((o) => o.id !== a.id && o.room === a.room)
+      .filter((o) => o.id !== a.id && o.room === a.room && !this.talkedLately(a.id, o.id, now))
       .map((o) => {
         const dist = Math.hypot(o.x - a.x, o.y - a.y);
         const feeling = Math.abs(this.api.bond(a.id, o.id)) / 100;
@@ -343,7 +348,8 @@ export class Director {
     if (!this.slow && near.length > 1 && rng() < 0.25) people.push(near[1].o.id);
 
     const bond = this.api.bond(a.id, b.id);
-    const facts = this.sim.facts();
+    // The first fact is only the day and the time; the rest are things that have happened, newest first.
+    const facts = this.sim.facts().slice(1);
     const topics: [string, string][] = [];
     if (facts.length) topics.push(['fact', `${a.name} and ${b.name} are talking about this: ${facts[Math.floor(rng() * Math.min(3, facts.length))]}`]);
     if (bond <= -20) topics.push(['feud', `${a.name} and ${b.name} do not get on. ${a.name} has found something small to pick at.`]);
@@ -376,6 +382,8 @@ export class Director {
     ids = ids.slice(0, 4);
     const first = this.api.person(ids[0]);
     if (!first) return false;
+    // Small talk between two people who have only just finished talking is skipped.
+    if (ask.trigger === 'ambient' && ids.length === 2 && this.talkedLately(ids[0], ids[1], now)) return false;
     const room = ask.room ?? first.room;
 
     const id = nextId('scene');
@@ -477,9 +485,21 @@ export class Director {
         if (s.who === s.about) continue;
         this.api.shiftBond(s.who, s.about, SHIFT_DELTA[s.change] ?? 0, res.summary);
       }
+      // One plan per conversation, and one follow-up at most: a plan to go straight
+      // back to the person you were just talking to is only allowed once, or the
+      // same two people would hold the floor all day.
+      const followUp = r.ask.trigger === 'plan';
       for (const p of res.plans) {
-        if (this.api.person(p.who)?.present) this.api.setPlan(p.who, p.plan);
+        if (!this.api.person(p.who)?.present) continue;
+        const again = typeof p.plan.target === 'string' && r.people.includes(p.plan.target);
+        if (again && followUp) continue;
+        this.api.setPlan(p.who, p.plan);
+        break;
       }
+    }
+    const done = this.api.time;
+    for (let i = 0; i < r.people.length; i++) {
+      for (let j = i + 1; j < r.people.length; j++) this.pairAt.set(pairKey(r.people[i], r.people[j]), done);
     }
     const pace = clampPace(this.opts.pace?.() ?? 1);
     // Busier offices talk more: the gap shrinks with chaos.
@@ -724,6 +744,10 @@ export class Director {
 
   // ── choosing people ────────────────────────────────────────────────────────
 
+  private talkedLately(a: CharId, b: CharId, now: number): boolean {
+    return now - (this.pairAt.get(pairKey(a, b)) ?? -999) < 90;
+  }
+
   private canSpeak(id: CharId): boolean {
     const p = this.api.person(id);
     return !!p && p.present && !p.sceneId && !p.statuses.some((s) => s.kind === 'asleep' || s.kind === 'frozen' || s.kind === 'abducted');
@@ -799,6 +823,10 @@ export class Director {
 function tidy(text: string, max: number): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function pairKey(a: CharId, b: CharId): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 /** Trim to one tidy sentence ending in a single full stop. */

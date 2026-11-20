@@ -86,6 +86,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     now: () => performance.now()
   });
   for (const s of parts.chaosScripts) sim.registerChaos(s);
+  // Development only: a handle for poking at the world from the browser console.
+  if (import.meta.env.DEV) (window as unknown as { __sim?: unknown }).__sim = sim;
 
   const instinct = parts.createBrain({ ...settings.brain, provider: 'instinct' }, { bank: parts.bank, world });
   let brain: Brain = parts.createBrain(settings.brain, { bank: parts.bank, world });
@@ -189,7 +191,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       if (e.power > 0.3) buzz(Math.min(200, Math.round(e.ms / 3)));
     }),
     bus.on('focus', (e) => {
-      if (settings.autoCamera) floor.camera.suggest({ x: e.x, y: e.y, w: e.w, h: e.h }, e.weight, e.holdMs);
+      if (!settings.autoCamera) return;
+      // While something big is going on, the camera does not wander off to listen to small talk.
+      if (e.weight < 0.5 && sim.activeChaos().length > 0) return;
+      floor.camera.suggest({ x: e.x, y: e.y, w: e.w, h: e.h }, e.weight, e.holdMs);
     }),
     bus.on('toast', (e) => toast(e.text, e.tone ?? 'info', e.icon)),
     bus.on('buzz', (e) => buzz(e.pattern)),

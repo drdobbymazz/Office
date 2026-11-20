@@ -48,8 +48,8 @@ class UfoRun extends Run {
     this.witnesses.forEach((id, i) => {
       sim.face(id, who);
       sim.react(id, 'startle', 0.8);
-      if (i === 0) sim.chaosBark(id, 'ufo');
-      else sim.emote(id, 'alert');
+      // They only stare for now: what they have to say is about the abduction, so it waits until it has happened.
+      sim.emote(id, 'alert');
       sim.feel(id, 'surprised', 0.9, 6);
     });
     this.focus(this.x, this.y - 40, 140, 130, 5000);
@@ -79,8 +79,6 @@ class UfoRun extends Run {
             else sim.react(id, 'cower', 2.5);
             sim.feel(id, 'scared', 0.8, 6);
           }
-          const second = this.witnesses[1];
-          if (second) sim.chaosBark(second, 'ufo');
         }
         break;
       }
@@ -103,6 +101,9 @@ class UfoRun extends Run {
           sim.sfx('pop', this.x);
           this.patch('saucer', { beam: 0 });
           this.remember(this.witnesses, 1.5);
+          const [first, second] = this.witnesses;
+          if (first) sim.chaosBark(first, 'ufo');
+          if (second) this.after(1.6, () => sim.chaosBark(second, 'ufo'));
         }
         break;
       }

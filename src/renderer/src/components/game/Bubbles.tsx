@@ -149,9 +149,11 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       el.style.visibility = 'hidden';
       root!.append(el);
       // Measure once with the whole line laid out (unrevealed letters are transparent), then fix the size.
-      const w = Math.ceil(box.offsetWidth);
-      const h = Math.ceil(box.offsetHeight);
+      // offsetWidth rounds to the nearest pixel, which can leave the box half a pixel too narrow and push
+      // the last word (or the last letter of a name) onto a new line: measure exactly and round up.
+      const w = Math.ceil(box.getBoundingClientRect().width) + 1;
       box.style.width = `${w}px`;
+      const h = Math.ceil(box.getBoundingClientRect().height);
       if (sp.kind === 'shout') inner.insertBefore(shoutBg(w, h), box);
       const n: Node = { sp, el, rev, rest, tail, w, h, shown: 0, lift: 0, slide: 0, x: -999, y: -999, flipped: false, dying: false };
       setTail(n, false, w / 2);

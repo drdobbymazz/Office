@@ -203,6 +203,7 @@ select.gu-field {
 }
 .gu-bubble-name {
   display: block;
+  white-space: nowrap;
   font-size: 12px;
   line-height: 13px;
   margin-bottom: 1px;
