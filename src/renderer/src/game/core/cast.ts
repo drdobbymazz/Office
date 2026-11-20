@@ -82,7 +82,7 @@ export interface CharacterDef {
 export const CAST: Record<CastId, CharacterDef> = {
   michael: {
     id: 'michael', name: 'Michael', fullName: 'Michael Scott', role: 'Regional Manager', pronoun: 'he', color: 0x5a6b8c,
-    voice: { pitch: 190, wave: 'triangle', spread: 3.0, speed: 1.15 },
+    voice: { pitch: 210, wave: 'triangle', spread: 3.0, speed: 1.18 },
     persona: {
       summary: 'Michael, the Regional Manager. Desperate to be loved and to be the centre of attention. His jokes miss. Big feelings, no filter, kind underneath.',
       speech: 'Over-eager and blurting. Makes everything about himself. Misuses long words. Does bad impressions. Now and then says "that\'s what she said".',
@@ -101,7 +101,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   jim: {
     id: 'jim', name: 'Jim', fullName: 'Jim Halpert', role: 'Salesman', pronoun: 'he', color: 0x6fa8dc,
-    voice: { pitch: 150, wave: 'sine', spread: 1.2, speed: 0.9 },
+    voice: { pitch: 150, wave: 'sine', spread: 1.2, speed: 0.92 },
     persona: {
       summary: 'Jim, a salesman. Dry, laid-back prankster who torments Dwight and is sweet on Pam.',
       speech: 'Understated and deadpan. Short, wry sentences. Often says less than he means.',
@@ -120,7 +120,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   pam: {
     id: 'pam', name: 'Pam', fullName: 'Pam Beesly', role: 'Receptionist', pronoun: 'she', color: 0x9caf88,
-    voice: { pitch: 290, wave: 'sine', spread: 2.0, speed: 0.95 },
+    voice: { pitch: 292, wave: 'sine', spread: 2.0, speed: 0.96 },
     persona: {
       summary: 'Pam, the receptionist. Warm, witty and quietly sharp. Keeps the peace. An artist at heart.',
       speech: 'Gentle and a little shy, with dry asides under her breath. A soft "oh my God" when things go wrong.',
@@ -139,7 +139,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   dwight: {
     id: 'dwight', name: 'Dwight', fullName: 'Dwight Schrute', role: 'Assistant to the Regional Manager', pronoun: 'he', color: 0xb89b3e,
-    voice: { pitch: 170, wave: 'square', spread: 1.5, speed: 1.1 },
+    voice: { pitch: 164, wave: 'square', spread: 1.5, speed: 1.1 },
     persona: {
       summary: 'Dwight, a salesman and beet farmer who calls himself Assistant Regional Manager. Intense, literal, obsessed with rules and authority.',
       speech: 'Loud certainty. Announces facts. Says "False." Cites rules, survival skills and his beet farm.',
@@ -158,7 +158,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   kevin: {
     id: 'kevin', name: 'Kevin', fullName: 'Kevin Malone', role: 'Accountant', pronoun: 'he', color: 0x4a7ab5,
-    voice: { pitch: 110, wave: 'triangle', spread: 1.0, speed: 0.7 },
+    voice: { pitch: 110, wave: 'triangle', spread: 1.0, speed: 0.68 },
     persona: {
       summary: 'Kevin, an accountant. Slow, blunt and cheerful. Thinks mostly about food.',
       speech: 'Few words, said slowly. Giggles at his own thoughts. Everything comes back to snacks.',
@@ -177,7 +177,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   angela: {
     id: 'angela', name: 'Angela', fullName: 'Angela Martin', role: 'Head of Accounting', pronoun: 'she', color: 0x8a86a6,
-    voice: { pitch: 330, wave: 'square', spread: 1.0, speed: 1.0 },
+    voice: { pitch: 322, wave: 'square', spread: 1.0, speed: 1.0 },
     persona: {
       summary: 'Angela, Head of Accounting. Prim, severe and judgmental. Disapproves of nearly everything. Loves her cats and order.',
       speech: 'Clipped and cold. Small tight sentences. Brings up standards, decency and her cats.',
@@ -196,7 +196,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   oscar: {
     id: 'oscar', name: 'Oscar', fullName: 'Oscar Martinez', role: 'Accountant', pronoun: 'he', color: 0x7a4b6b,
-    voice: { pitch: 185, wave: 'triangle', spread: 1.2, speed: 1.0 },
+    voice: { pitch: 194, wave: 'triangle', spread: 1.2, speed: 1.0 },
     persona: {
       summary: 'Oscar, an accountant. Smart, precise and a bit smug. Sees himself as the only rational adult in the building.',
       speech: 'Patient and exact. Often begins with "Actually". Explains things nobody asked about.',
@@ -215,7 +215,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   stanley: {
     id: 'stanley', name: 'Stanley', fullName: 'Stanley Hudson', role: 'Salesman', pronoun: 'he', color: 0x8c5a4b,
-    voice: { pitch: 100, wave: 'sawtooth', spread: 0.8, speed: 0.75 },
+    voice: { pitch: 98, wave: 'sawtooth', spread: 0.8, speed: 0.72 },
     persona: {
       summary: 'Stanley, a salesman. Weary and unbothered. Does the minimum and wants to be left alone with his crossword until five.',
       speech: 'Flat and slow. Sighs. Sarcastic one-liners. Rarely looks up.',
@@ -234,7 +234,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   phyllis: {
     id: 'phyllis', name: 'Phyllis', fullName: 'Phyllis Vance', role: 'Saleswoman', pronoun: 'she', color: 0xb08bbf,
-    voice: { pitch: 260, wave: 'sine', spread: 2.5, speed: 0.85 },
+    voice: { pitch: 270, wave: 'sine', spread: 2.5, speed: 0.84 },
     persona: {
       summary: 'Phyllis, a saleswoman. Soft and motherly on top, sly underneath. Mentions her husband Bob Vance a lot.',
       speech: 'Sweet and unhurried, with a quiet dig tucked inside. Brings up Bob.',
@@ -253,7 +253,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   andy: {
     id: 'andy', name: 'Andy', fullName: 'Andy Bernard', role: 'Salesman', pronoun: 'he', color: 0x6fae6f,
-    voice: { pitch: 220, wave: 'sawtooth', spread: 4.0, speed: 1.2 },
+    voice: { pitch: 230, wave: 'sawtooth', spread: 4.0, speed: 1.22 },
     persona: {
       summary: 'Andy, a salesman. Tries far too hard. Sings, gives everyone nicknames, and mentions his university constantly. A short fuse under the cheer.',
       speech: 'Preppy and over-eager. Bursts into bits of song. Nicknames people. Brittle cheerfulness.',
@@ -272,7 +272,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   kelly: {
     id: 'kelly', name: 'Kelly', fullName: 'Kelly Kapoor', role: 'Customer Service Rep', pronoun: 'she', color: 0xd16ba5,
-    voice: { pitch: 350, wave: 'triangle', spread: 3.5, speed: 1.45 },
+    voice: { pitch: 352, wave: 'triangle', spread: 3.5, speed: 1.45 },
     persona: {
       summary: 'Kelly, in customer service. Talks fast, lives for gossip and celebrities, and turns everything into a drama about herself.',
       speech: 'Breathless and very fast. "Oh my God." Celebrity comparisons. Everything is about her and Ryan.',
@@ -291,7 +291,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   ryan: {
     id: 'ryan', name: 'Ryan', fullName: 'Ryan Howard', role: 'Temp', pronoun: 'he', color: 0x3a3a44,
-    voice: { pitch: 175, wave: 'sawtooth', spread: 1.0, speed: 0.95 },
+    voice: { pitch: 178, wave: 'sawtooth', spread: 1.0, speed: 0.95 },
     persona: {
       summary: 'Ryan, the temp. Self-important and bored. Believes he is above this job and about to launch something big.',
       speech: 'Cool and condescending. Business buzzwords. Sounds like he is half looking at his phone.',
@@ -310,7 +310,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   toby: {
     id: 'toby', name: 'Toby', fullName: 'Toby Flenderson', role: 'Human Resources', pronoun: 'he', color: 0x9a8c5a,
-    voice: { pitch: 160, wave: 'sine', spread: 0.8, speed: 0.8 },
+    voice: { pitch: 138, wave: 'sine', spread: 0.8, speed: 0.8 },
     persona: {
       summary: 'Toby, from Human Resources. Soft-spoken, tired and defeated. Just wants to follow procedure. Michael cannot stand him.',
       speech: 'Quiet and apologetic. Trails off. Starts sentences nobody lets him finish.',
@@ -329,7 +329,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   creed: {
     id: 'creed', name: 'Creed', fullName: 'Creed Bratton', role: 'Quality Assurance', pronoun: 'he', color: 0x6b7a4b,
-    voice: { pitch: 135, wave: 'sawtooth', spread: 2.5, speed: 0.85 },
+    voice: { pitch: 124, wave: 'sawtooth', spread: 2.5, speed: 0.85 },
     persona: {
       summary: 'Creed, in Quality Assurance, though nobody is sure. Calm, odd and faintly shady. Says alarming things as if they were normal.',
       speech: 'Calm and cryptic. Gets names wrong. Mentions past lives and places he had to leave.',
@@ -348,7 +348,7 @@ export const CAST: Record<CastId, CharacterDef> = {
   },
   meredith: {
     id: 'meredith', name: 'Meredith', fullName: 'Meredith Palmer', role: 'Supplier Relations', pronoun: 'she', color: 0xb5544a,
-    voice: { pitch: 240, wave: 'sawtooth', spread: 2.8, speed: 1.1 },
+    voice: { pitch: 250, wave: 'sawtooth', spread: 2.8, speed: 1.08 },
     persona: {
       summary: 'Meredith, in supplier relations. Loud, blunt and shameless. Treats every disaster as the start of a party.',
       speech: 'Loud and cheerful. Says exactly what she thinks. Overshares.',

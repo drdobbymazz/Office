@@ -1,0 +1,21 @@
+// All hand-written text in one place.
+export type { VoiceBank, InstinctBank, ChaosText, Suggestions, Tips } from './types';
+export { BANK } from './bank';
+export { CHAOS_TEXT } from './chaosText';
+export { SUGGESTIONS } from './suggestions';
+export { TIPS } from './tips';
+export { michael } from './voices/michael';
+export { jim } from './voices/jim';
+export { pam } from './voices/pam';
+export { dwight } from './voices/dwight';
+export { kevin } from './voices/kevin';
+export { angela } from './voices/angela';
+export { oscar } from './voices/oscar';
+export { stanley } from './voices/stanley';
+export { phyllis } from './voices/phyllis';
+export { andy } from './voices/andy';
+export { kelly } from './voices/kelly';
+export { ryan } from './voices/ryan';
+export { toby } from './voices/toby';
+export { creed } from './voices/creed';
+export { meredith } from './voices/meredith';
