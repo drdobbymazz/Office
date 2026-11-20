@@ -220,8 +220,9 @@ function drawEyes(buf: Buf, kind: number, r: Recipe): void {
     case E.spiralA: case E.spiralB:
       for (const cx of [5, 11]) {
         const ring: [number, number][] = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
-        set(buf, cx, 9, PUPIL);
-        const gap = kind === E.spiralA ? (cx === 5 ? 7 : 3) : (cx === 5 ? 3 : 7);
+        // a ring with a moving gap and a dot inside it: reads as a turning swirl
+        set(buf, cx, 9, WHITE);
+        const gap = kind === E.spiralA ? (cx === 5 ? 1 : 5) : (cx === 5 ? 5 : 1);
         ring.forEach(([dx, dy], i) => set(buf, cx + dx, 9 + dy, i === gap ? WHITE : PUPIL));
       }
       break;

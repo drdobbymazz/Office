@@ -90,7 +90,7 @@ export class SimCore implements DirectorSimApi {
   readonly dayLogLines: string[] = [];
   readonly recent = new Map<RoomId, { who: string; say: string }[]>();
   readonly feedLog: FeedItem[] = [];
-  readonly stats = { rescues: 0, teleports: 0, forcedHome: 0, daysEnded: 0 };
+  readonly stats = { rescues: 0, teleports: 0, forcedHome: 0, daysEnded: 0, forcedLog: [] as string[] };
   private counter = 0;
   private ambientT = 0;
   private ambientGlobalUntil = 0;
@@ -601,6 +601,10 @@ export class SimCore implements DirectorSimApi {
     return !!this.map.get(who)?.seized;
   }
 
+  isAirborne(who: CharId): boolean {
+    return !!this.map.get(who)?.air;
+  }
+
   addStatus(who: CharId, kind: StatusKind, seconds: number, target?: CharId): void {
     const p = this.map.get(who);
     if (!p) return;
@@ -674,6 +678,8 @@ export class SimCore implements DirectorSimApi {
   place(who: CharId, x: number, y: number, lift: number): void {
     const p = this.map.get(who);
     if (!p || !p.seized || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    // The player's hand (or a throw) wins over a script placing them.
+    if (p.air) return;
     if (!p.placed) reserve(this, p, null);
     p.placed = true;
     p.x = clamp(x, 4, WORLD_W - 4);
@@ -1102,6 +1108,9 @@ export class SimCore implements DirectorSimApi {
       settleSeized(this, p, dt);
       return;
     }
+    // A plan waiting to be carried out takes over from the routine.
+    if (p.plan && !p.sceneId && !p.goingHome && (!p.job || p.job.kind === 'routine' || p.job.kind === 'settle')) this.replan(p);
+    if (!p.job) this.nextJob(p);
     if (p.reaction) {
       if (this.time >= p.reaction.until) p.reaction = null;
       else if (p.reaction.still) {
@@ -1109,13 +1118,8 @@ export class SimCore implements DirectorSimApi {
         return;
       }
     }
-    // A plan waiting to be carried out takes over from the routine.
-    if (p.plan && !p.sceneId && !p.goingHome && (!p.job || p.job.kind === 'routine' || p.job.kind === 'settle')) this.replan(p);
     if (!updateJob(this, p, dt)) {
-      if (p.goingHome) this.sendHome(p);
-      else if (p.sceneId) p.job = makeJob('gather', { kind: 'here' }, { act: idleAct('talking', Infinity) });
-      else if (p.isCast) setJob(this, p, nextRoutine(this, p));
-      else p.job = makeJob('settle', { kind: 'here' }, { act: idleAct('standing about', 8) });
+      this.nextJob(p);
       updateJob(this, p, 0);
     }
     watchdog(this, p, dt);
@@ -1136,6 +1140,14 @@ export class SimCore implements DirectorSimApi {
       p.rvx += (dx / dt - p.rvx) * k;
       p.rvy += (dy / dt - p.rvy) * k;
     }
+  }
+
+  /** Nothing to do: the day, a scene or the routine decides what comes next. */
+  private nextJob(p: Person): void {
+    if (p.goingHome) this.sendHome(p);
+    else if (p.sceneId) p.job = makeJob('gather', { kind: 'here' }, { act: idleAct('talking', Infinity) });
+    else if (p.isCast) setJob(this, p, nextRoutine(this, p));
+    else p.job = makeJob('settle', { kind: 'here' }, { act: idleAct('standing about', 8) });
   }
 
   private ambient(): void {

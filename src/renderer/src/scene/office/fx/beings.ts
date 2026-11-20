@@ -46,11 +46,11 @@ function beamFrames(h: number): Texture[] {
         let a = 0, r = 0, g = 0, b = 0;
         if (u > 0.78) {
           if (BAYER4[(y & 3) * 4 + (x & 3)] < 8) continue;
-          r = 170; g = 255; b = 160; a = 90;
+          r = 120; g = 220; b = 110; a = 70;
         } else if (u > 0.4) {
-          r = 180; g = 255; b = 170; a = scan ? 140 : 110;
+          r = 140; g = 230; b = 130; a = scan ? 105 : 80;
         } else {
-          r = 230; g = 255; b = 210; a = scan ? 190 : 160;
+          r = 200; g = 255; b = 180; a = scan ? 140 : 115;
         }
         const i = (y * w + x) * 4;
         d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = a;

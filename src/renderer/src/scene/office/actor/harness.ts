@@ -95,6 +95,9 @@ async function main(): Promise<void> {
 
   const grid = (n: number, cols: number, cellW: number, cellH: number, z: number) => {
     const rows = Math.ceil(n / cols);
+    // shrink the zoom if the grid would not fit the window
+    const fit = Math.min(W / (cols * cellW), (H - 10) / (rows * cellH));
+    if (fit < z) { z = fit; zoom = fit; }
     const ox = (W / z - cols * cellW) / 2, oy = (H / z - rows * cellH) / 2;
     return (i: number) => ({ x: ox + (i % cols) * cellW + cellW / 2, y: oy + Math.floor(i / cols) * cellH + cellH - 8 });
   };

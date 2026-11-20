@@ -1,7 +1,7 @@
 // localStorage that never throws. In private windows, sandboxed frames and
 // previews, storage can be missing or refuse writes: the game must still run.
 
-const PREFIX = 'overseer.';
+const PREFIX = 'mdgame.';
 
 export function loadJson<T>(key: string): T | null {
   try {

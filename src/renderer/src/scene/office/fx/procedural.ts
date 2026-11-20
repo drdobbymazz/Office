@@ -167,25 +167,25 @@ export function explosionFrames(): Texture[] {
   const out: Texture[] = [];
   for (let f = 0; f < n; f++) {
     out.push(cachedTex('boom:' + f, () => {
-      const S = 32;
+      const S = 46;
       const p = new Pix(S, S);
       const t = f / (n - 1);
-      const R = 4 + 11 * Math.sqrt(t + 0.05);
+      const R = 6 + 15 * Math.sqrt(t + 0.05);
       for (let y = 0; y < S; y++) {
         for (let x = 0; x < S; x++) {
           const dx = x + 0.5 - S / 2, dy = y + 0.5 - S / 2;
-          const nz = vnoise(x * 0.35, y * 0.35, 3 + f) - 0.5;
+          const nz = vnoise(x * 0.24, y * 0.24, 3 + f) - 0.5;
           const d = Math.hypot(dx, dy) / (R * (1 + nz * 0.5));
           if (d > 1) continue;
           // Heat falls from the centre and with time; holes open up late.
           let heat = (1 - d) * 1.2 + 0.6 - t * 1.25 + nz * 0.6;
-          if (t > 0.5 && hash2(x, y, f) < (t - 0.5) * 1.2 * d) continue;
+          if (t > 0.45 && vnoise(x * 0.3, y * 0.3, 40 + f) < (t - 0.45) * 1.5 * (0.4 + d)) continue;
           heat = Math.max(0, Math.min(0.999, heat));
           const idx = Math.min(BOOM.length - 1, Math.floor((1 - heat) * BOOM.length));
           p.set(x, y, BOOM[f === 0 ? Math.min(idx, 1) : idx]);
         }
       }
-      return f < 4 ? p.outline(0x4a2228) : p;
+      return p.outline(0x4a2228);
     }));
   }
   return out;

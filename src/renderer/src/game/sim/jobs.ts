@@ -53,6 +53,8 @@ export interface Job {
   onArrive?: () => void;
   /** If the job is cancelled or abandoned before completion. */
   onFail?: () => void;
+  /** Called every frame while acting (after arrival). */
+  whileActing?: (dt: number) => void;
   /** May go into rooms marked as hazards (fixers). */
   braveHazard?: boolean;
   /** For 'near': re-route when the target moves. */
@@ -248,6 +250,8 @@ export function updateJob(core: SimCore, p: Person, dt: number): boolean {
       job.tile = null;
     } else {
       job.left -= dt;
+      job.whileActing?.(dt);
+      if (p.job !== job) return true;
       if (job.left <= 0) finish(core, p, job);
       return true;
     }

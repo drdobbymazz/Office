@@ -85,6 +85,14 @@ function breathe(spec: FrameSpec, m: Motion, t: number, period: number, amount =
   if (ph > 0.55 && ph < 0.95) spec.headDy += 1;
 }
 
+const RUN_SIDE = [LEGS.sideRunA, LEGS.sidePassA, LEGS.sideRunB, LEGS.sidePassB];
+const RUN_FRONT = [LEGS.runA, LEGS.runFloat, LEGS.runB, LEGS.runFloat];
+const WALK_SIDE = [LEGS.sideA, LEGS.sidePassA, LEGS.sideB, LEGS.sidePassB];
+const WALK_FRONT = [LEGS.walkA, LEGS.stand, LEGS.walkB, LEGS.stand];
+const SHAKE_DX = [0, -1, 0, 1];
+const ZAP = [0, 1, 0, 2, 1, 0];
+const TURN = [VIEW.front, VIEW.right, VIEW.back, VIEW.left];
+
 /** Walk / run cycle frames. */
 function walkCycle(spec: FrameSpec, m: Motion, inp: PoseIn, run: boolean): void {
   const { st, view } = inp;
@@ -93,22 +101,22 @@ function walkCycle(spec: FrameSpec, m: Motion, inp: PoseIn, run: boolean): void 
   const f = frame(inp.t, fps, 4);
   const sv = side(view);
   if (run) {
-    spec.legs = sv ? [LEGS.sideRunA, LEGS.sidePassA, LEGS.sideRunB, LEGS.sidePassB][f] : [LEGS.runA, LEGS.runFloat, LEGS.runB, LEGS.runFloat][f];
+    spec.legs = sv ? RUN_SIDE[f] : RUN_FRONT[f];
     spec.bodyDy = f % 2 === 1 ? -1 : 0;
     if (sv) arms(spec, view, f < 2 ? ARM.sideB : ARM.sideF, f < 2 ? ARM.swingF : ARM.swingB);
     else { spec.armL = f < 2 ? ARM.swingF : ARM.swingB; spec.armR = f < 2 ? ARM.swingB : ARM.swingF; }
     const ph = (inp.t * fps / 2) % 1;
     m.y = -Math.abs(Math.sin(ph * TAU)) * 1.6;
-    m.rot = 0.13 * fdir(view);
+    m.rot = 0.09 * fdir(view);
     m.py = 0;
   } else {
-    spec.legs = sv ? [LEGS.sideA, LEGS.sidePassA, LEGS.sideB, LEGS.sidePassB][f] : [LEGS.walkA, LEGS.stand, LEGS.walkB, LEGS.stand][f];
+    spec.legs = sv ? WALK_SIDE[f] : WALK_FRONT[f];
     spec.bodyDy = f % 2 === 1 ? -1 : 0;
     if (sv) arms(spec, view, f === 0 ? ARM.sideB : f === 2 ? ARM.sideF : ARM.down, ARM.down);
     else { spec.armL = f === 0 ? ARM.swingB : f === 2 ? ARM.swingF : ARM.down; spec.armR = f === 0 ? ARM.swingF : f === 2 ? ARM.swingB : ARM.down; }
     const ph = (inp.t * fps / 2) % 1;
     m.y = -Math.abs(Math.sin(ph * TAU)) * 0.7;
-    m.rot = sv ? 0.03 * fdir(view) : Math.sin(ph * TAU) * 0.025;
+    m.x = sv ? 0 : Math.sin(ph * TAU) * 0.35;
     m.py = 0;
   }
 }
@@ -162,7 +170,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
     case 'phone': {
       arms(spec, view, ARM.phone, frame(t, 0.5, 2) ? ARM.hips : ARM.down);
       if (!st.prop) spec.prop = P_PHONE;
-      m.rot = Math.sin(t * 1.3) * 0.035 + 0.04 * (fd || 1);
+      m.x = Math.sin(t * 1.3) * 0.4;
       breathe(spec, m, t, 3.4);
       break;
     }
@@ -206,7 +214,6 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       if (!st.prop) spec.prop = P_MOP;
       spec.legs = sv ? LEGS.sideStand : f ? LEGS.danceL : LEGS.stand;
       m.x = Math.sin(t * Math.PI * 2.5) * 1.2;
-      m.rot = Math.sin(t * Math.PI * 2.5) * 0.04;
       m.py = 0;
       break;
     }
@@ -230,7 +237,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       const other = !sad && n > 0.8 ? ARM.shrug : angry ? ARM.fist : ARM.down;
       arms(spec, view, a, other);
       if (frame(t, 2.2, 3) === 1) spec.headDy = 1;
-      m.rot = Math.sin(t * 2.1) * 0.02;
+      m.x = Math.sin(t * 2.1) * 0.3;
       breathe(spec, m, t, 2.8);
       break;
     }
@@ -240,7 +247,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       spec.headDy = frame(t, 7, 2);
       spec.bodyDy = frame(t, 7, 4) === 0 ? 1 : 0;
       m.y = -Math.abs(Math.sin(t * 11)) * 1.1;
-      m.rot = Math.sin(t * 3) * 0.05;
+      m.x = Math.sin(t * 3) * 0.5;
       o.emo = 'amused'; o.emoMin = 0.85;
       break;
     }
@@ -269,7 +276,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
     case 'wave': {
       const f = frame(t, 4, 2);
       arms(spec, view, f ? ARM.waveA : ARM.waveB, ARM.down);
-      m.rot = Math.sin(t * Math.PI * 4) * 0.025;
+      m.x = Math.sin(t * Math.PI * 4) * 0.4;
       breathe(spec, m, t, 3);
       o.emo = 'happy'; o.emoMin = 0.3;
       break;
@@ -278,7 +285,6 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       arms(spec, view, sv ? ARM.sidePoint : ARM.point, ARM.hips);
       const k = easeOut(clamp(t / 0.18, 0, 1));
       m.x = (fd || (view === VIEW.front ? 1 : -1)) * (1 - k) * -1.5;
-      m.rot = 0.04 * (fd || 1) * (1 - k);
       breathe(spec, m, t, 3);
       break;
     }
@@ -295,15 +301,12 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       spec.headDy = 1;
       if (t > 0.5) spec.headDx = frame(t, 2.5, 2) ? -1 : 0;
       o.eyes = EYES.shut; o.mouth = MOUTH.flat;
-      m.py = -20;
-      m.rot = 0.05 * (fd || 1);
       break;
     }
     case 'think': {
       arms(spec, view, ARM.chin, sv ? ARM.down : ARM.belly);
       o.eyes = frame(t, 0.4, 2) ? EYES.glanceR : EYES.glanceL;
       if (lv < 2) o.mouth = frame(t, 0.7, 3) === 2 ? MOUTH.wavy : MOUTH.pout;
-      m.rot = 0.05 * (fd || 1); m.py = -10;
       breathe(spec, m, t, 3.6);
       break;
     }
@@ -314,7 +317,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       break;
     }
     case 'shake': {
-      spec.headDx = [0, -1, 0, 1][frame(t, 9, 4)];
+      spec.headDx = SHAKE_DX[frame(t, 9, 4)];
       if (lv < 2) o.mouth = MOUTH.flat;
       o.brow = lv < 2 ? BROW.flat : -1;
       break;
@@ -379,7 +382,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
         spec.legs = sv ? LEGS.sideStand : LEGS.together;
         both(spec, ARM.limp);
         spec.headDy = 1;
-        m.rot = Math.sin(t * 0.9) * 0.05; m.py = 0;
+        m.x = Math.sin(t * 0.9) * 0.7;
         breathe(spec, m, t, 4.2, 0.03);
       }
       break;
@@ -433,7 +436,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
     case 'zapped': {
       both(spec, ARM.out);
       spec.legs = sv ? LEGS.sideA : LEGS.spread;
-      spec.xray = [0, 1, 0, 2, 1, 0][frame(t, 18, 6)];
+      spec.xray = ZAP[frame(t, 18, 6)];
       m.x = Math.sin(t * 73) * 0.8; m.y = Math.sin(t * 51) * 0.4;
       o.emo = 'scared'; o.emoMin = 1; o.noBlink = true;
       break;
@@ -442,7 +445,7 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
     case 'beamUp': {
       both(spec, ARM.limp);
       spec.legs = LEGS.dangle;
-      spec.view = [VIEW.front, VIEW.right, VIEW.back, VIEW.left][frame(t, 1.6, 4)];
+      spec.view = TURN[frame(t, 1.6, 4)];
       m.rot = Math.sin(t * 1.4) * 0.09; m.py = -14;
       m.sy = 1.03;
       o.eyes = EYES.half; o.mouth = MOUTH.o; o.noBlink = true;
@@ -473,7 +476,7 @@ function idleMood(spec: FrameSpec, m: Motion, o: FaceOv, inp: PoseIn): void {
         both(spec, e === 'bored' ? ARM.hips : ARM.limp);
         if (e === 'bored') both(spec, ARM.down);
         m.sy = 1 + (m.sy - 1) * 0.6;
-        if (e === 'tired' && lv === 3) { m.rot = Math.sin(t * 0.8) * 0.05; m.py = 0; }
+        if (e === 'tired' && lv === 3) m.x = Math.sin(t * 0.8) * 0.8;
         if (e === 'sad' && lv === 3) arms(spec, view, ARM.eyes, ARM.limp);
         return;
       case 'scared': case 'nervous':
@@ -482,13 +485,13 @@ function idleMood(spec: FrameSpec, m: Motion, o: FaceOv, inp: PoseIn): void {
         else if (e === 'nervous') arms(spec, view, frame(t, 0.6, 2) ? ARM.belly : ARM.down, ARM.down);
         return;
       case 'confused': arms(spec, view, ARM.phone, ARM.down); return; // scratching the head
-      case 'embarrassed': both(spec, ARM.belly); m.rot = Math.sin(t * 1.5) * 0.03; m.py = 0; return;
-      case 'love': both(spec, ARM.belly); m.rot = Math.sin(t * 1.6) * 0.06; m.py = 0; spec.headDy = frame(t, 0.8, 2) ? -1 : 0; return;
+      case 'embarrassed': both(spec, ARM.belly); m.x = Math.sin(t * 1.5) * 0.6; return;
+      case 'love': both(spec, ARM.belly); m.x = Math.sin(t * 1.6) * 0.8; spec.headDy = frame(t, 0.8, 2) ? -1 : 0; return;
       case 'smug': case 'proud': both(spec, ARM.hips); if (e === 'proud') spec.headDy = -1; return;
       case 'mischievous': both(spec, frame(t, 5, 2) ? ARM.forward : ARM.forwardUp); return;
       case 'surprised': both(spec, lv === 3 ? ARM.cheek : ARM.outDown); m.y = -0.5; return;
       case 'amused': both(spec, ARM.belly); spec.headDy = frame(t, 4, 2); return;
-      case 'disgusted': both(spec, ARM.belly); m.rot = -0.06 * (view === VIEW.left ? -1 : 1); m.py = 0; m.x = -0.6; return;
+      case 'disgusted': both(spec, ARM.belly); m.x = -0.8 * (view === VIEW.left ? -1 : 1); return;
       case 'suspicious': both(spec, ARM.hips); o.eyes = frame(t, 0.5, 2) ? EYES.halfL : EYES.halfR; return;
       default: break;
     }
@@ -497,7 +500,7 @@ function idleMood(spec: FrameSpec, m: Motion, o: FaceOv, inp: PoseIn): void {
   const v = ((st.variant % 4) + 4) % 4;
   const cyc = (t + st.variant * 1.7) % 7;
   if (v === 1 && cyc > 4.5 && cyc < 5.6) o.eyes = cyc < 5.05 ? EYES.glanceL : EYES.glanceR;
-  else if (v === 2) { m.x = Math.sin(t * 0.9) * 0.5; m.rot = Math.sin(t * 0.9) * 0.015; m.py = 0; }
+  else if (v === 2) m.x = Math.sin(t * 0.9) * 0.5;
   else if (v === 3 && cyc > 5 && cyc < 6.2) arms(spec, view, ARM.phone, ARM.down);
 }
 

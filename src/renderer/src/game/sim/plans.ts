@@ -40,9 +40,12 @@ export function planJob(core: SimCore, p: Person, plan: Plan): Job | null {
       act: { ...idleAct(`waiting to ${verb} ${t.name}`, 25), faceWho: t.id },
       then: done
     });
-    job.onArrive = () => {
-      job.kind = 'planWait';
+    let asked = false;
+    let follows = 0;
+    const ask = (): void => {
+      asked = true;
       core.faceToward(p, t, 3);
+      core.faceToward(t, p, 3);
       core.requestScene({
         people: [p.id, t.id],
         trigger: 'plan',
@@ -50,6 +53,30 @@ export function planJob(core: SimCore, p: Person, plan: Plan): Job | null {
         priority: 5,
         staleAfter: 25
       });
+    };
+    const adjacent = (): boolean => {
+      const a = p.res ?? p.tile;
+      const b = t.res && !t.walk ? t.res : t.tile;
+      return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1 && !t.walk;
+    };
+    job.onArrive = () => {
+      job.kind = 'planWait';
+      if (adjacent()) ask();
+    };
+    // They may have gone to where the target was heading: wait for them there,
+    // or follow if they wander off.
+    job.whileActing = () => {
+      if (asked || !t.onFloor) return;
+      if (adjacent()) {
+        ask();
+        return;
+      }
+      if (!t.walk && follows < 3) {
+        follows++;
+        job.kind = 'plan';
+        job.phase = 'walk';
+        job.tile = null;
+      }
     };
     return job;
   }

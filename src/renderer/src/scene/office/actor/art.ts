@@ -125,6 +125,9 @@ export interface FrameSpec {
   xray: number;
 }
 
+/** Props carried at the side rather than held up in front. */
+const SIDE_HELD = new Set(['mop', 'extinguisher', 'balloon', 'net']);
+
 export const STATUS = { wet: 1, sooty: 2, frizzy: 4, stung: 8, dripPhase: 16 } as const;
 
 export const PROPS = [
@@ -461,6 +464,11 @@ export function composeActor(sprite: string, s: FrameSpec): Buf {
 
   // torso (with the classic arm columns only when both arms hang down)
   PX.oy = bodyOy;
+  const propName = s.prop ? PROPS[s.prop - 1] : (r.signatureProp ?? null);
+  // A small prop with both arms hanging: hold it up in front so it reads.
+  if (propName && s.armL === ARM.down && s.armR === ARM.down && !SIDE_HELD.has(propName)) {
+    if (s.view === VIEW.left) s = { ...s, armL: ARM.forwardUp }; else s = { ...s, armR: ARM.forwardUp };
+  }
   const classic = s.armL === ARM.down && s.armR === ARM.down;
   const arms = (phase: number) => {
     if (classic) return;
@@ -492,7 +500,6 @@ export function composeActor(sprite: string, s: FrameSpec): Buf {
   PX.ox = PAD_X; PX.oy = bodyOy;
 
   // prop
-  const propName = s.prop ? PROPS[s.prop - 1] : (r.signatureProp ?? null);
   if (propName) {
     const carried = s.armL === ARM.carry && s.armR === ARM.carry;
     const useL = !HOLDING.has(s.armR) && HOLDING.has(s.armL);

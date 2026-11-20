@@ -65,12 +65,12 @@ export class Light extends Lasting<Of<'light'>> {
     this.pool.texture = poolTex(Math.round(r / 2) * 2, 0.62, 3);
     this.core.texture = poolTex(Math.round(r * 0.22) * 2 + 2, 0.62, 2);
     this.pool.tint = inst.color;
-    this.core.tint = mix(inst.color, 0xffffff, 0.5);
+    this.core.tint = mix(inst.color, 0xffffff, 0.25);
     this.pool.position.set(Math.round(inst.x), Math.round(inst.y));
     this.core.position.set(Math.round(inst.x), Math.round(inst.y));
     const shimmer = Math.floor(this.t * 6) % 7 === 0 ? 0.9 : 1;
-    this.pool.alpha = 0.26 * k * shimmer;
-    this.core.alpha = 0.22 * k;
+    this.pool.alpha = 0.17 * k * shimmer;
+    this.core.alpha = 0.12 * k;
     env.dark.addLight(inst.x, inst.y, r, this.vis);
   }
   dispose(): void {

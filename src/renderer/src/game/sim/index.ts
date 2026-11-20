@@ -110,7 +110,7 @@ export interface Sim extends DirectorSimApi {
 
   // ── debug ──
   debugPeople(): SimDebugPerson[];
-  readonly debugStats: { rescues: number; teleports: number; forcedHome: number; daysEnded: number };
+  readonly debugStats: { rescues: number; teleports: number; forcedHome: number; daysEnded: number; forcedLog: string[] };
   blockedKeys(): string[];
 }
 
@@ -139,7 +139,7 @@ class SimImpl extends SimCore implements Sim {
     return this.meterState.stockDayStart;
   }
 
-  get debugStats(): { rescues: number; teleports: number; forcedHome: number; daysEnded: number } {
+  get debugStats(): { rescues: number; teleports: number; forcedHome: number; daysEnded: number; forcedLog: string[] } {
     return this.stats;
   }
 

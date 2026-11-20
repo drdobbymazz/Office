@@ -153,12 +153,13 @@ function raccoon(anim: CreatureAnim, frame: number, carrying: boolean): Pix {
   // Tail: a thick striped curve behind the body.
   const tailUp = anim === 'run' ? 0.2 : happy ? (frame % 2 ? 1.1 : 0.7) : sit ? -0.4 : 0.55 + (frame % 2) * 0.12;
   const tx0 = sit ? 7 : 8, ty0 = sit ? G - 3 : G - 6 + bob;
-  for (let i = 0; i < 9; i++) {
-    const t = i / 8;
-    const x = tx0 - i * (sit ? 0.85 : 0.8);
+  for (let i = 0; i < 11; i++) {
+    const t = i / 10;
+    const x = tx0 - i * (sit ? 0.8 : 0.75);
     const y = ty0 - Math.sin(t * 1.6) * tailUp * 6 - (sit ? 0 : t * 1.5);
-    const col = i >= 7 ? RAC.mask : ((i >> 1) & 1) === 0 ? RAC.light : RAC.dark;
-    p.ellipse(x, y, 1.9, 1.9, col);
+    // Clear rings: two light steps, two dark steps, ending in a dark tip.
+    const col = i >= 9 ? RAC.mask : (Math.floor(i / 2) & 1) === 0 ? 0xcfcbd8 : 0x4a4454;
+    p.ellipse(x, y, 2.1, 2.1, col);
   }
   // Legs (back pair then front pair) under the body.
   const L = legsFor(anim, frame);
@@ -176,11 +177,11 @@ function raccoon(anim: CreatureAnim, frame: number, carrying: boolean): Pix {
   // Body.
   if (sit) {
     p.ellipse(12, G - 5, 5, 4.5, RAC.fur);
-    p.ellipse(13.5, G - 4, 3, 3, RAC.light);
+    p.ellipse(14, G - 4, 2, 2.6, RAC.light);
   } else {
     p.ellipse(13.5, G - 6 + bob, 7, 3.6, RAC.fur);
     for (let x = 8; x <= 19; x++) if (p.alpha(x, G - 4 + bob)) p.set(x, G - 4 + bob, RAC.light);
-    for (let x = 9; x <= 17; x += 3) p.set(x, G - 8 + bob, RAC.dark);
+    for (let x = 10; x <= 17; x++) if (p.alpha(x, G - 9 + bob)) p.set(x, G - 9 + bob, RAC.dark);
   }
   // Head.
   const hx = sit ? 16 : eat ? 21 : 20;
@@ -343,13 +344,15 @@ const ITEM_ROWS: Record<string, string[]> = {
     'RRRRRYRRRRR'
   ],
   cashPile: [
-    '....gggggg....',
-    '...gGgwwgGg...',
-    '.ggggggggggg..',
-    'gGgwwgGggGgwg.',
-    'ggggggggggggggg',
-    'GGGGGGGGGGGGGGG',
-    '.GGGGGGGGGGGGG.'
+    '..gggggg......',
+    '..gGGwGg......',
+    '..GGGyGG......',
+    '..GGGyGGgggggg',
+    'ggggggGGgGGwGg',
+    'gGGwGgGGGGGyGG',
+    'GGGyGGGGGGGyGG',
+    'GGGyGGG.GGGyGG',
+    'GGGyGG..GGGyGG'
   ],
   paperPile: [
     '....wwwwwa.......',
@@ -461,8 +464,8 @@ export const FLAT_ITEMS = new Set(['puddle', 'scorch', 'foam']);
 /** A bee, 2 frames of wing beat. 6 x 5 with outline. */
 export function beeFrames(): Texture[] {
   return [
-    tex('bee:0', () => outlineSoft(ascii(['.ll.', 'ykyk', '.yk.'], { y: C.yellow, k: INK, l: 0xe8f4ff }, null))),
-    tex('bee:1', () => outlineSoft(ascii(['....', 'ykyk', 'lyk.'], { y: C.yellow, k: INK, l: 0xe8f4ff }, null)))
+    tex('bee:0', () => ascii(['.ll..', '.ll..', 'yykyk', 'ykykY'], { y: C.yellow, Y: C.yellowD, k: 0x3a3030, l: 0xe8f4ff })),
+    tex('bee:1', () => ascii(['.....', '.ll..', 'yykyk', 'ykykY'], { y: C.yellow, Y: C.yellowD, k: 0x3a3030, l: 0xe8f4ff }))
   ];
 }
 
@@ -514,11 +517,12 @@ export function mirrorBallFrames(): Texture[] {
 /** A tiny crossed-out wifi sign (9 x 8 with outline). */
 export function noSignalTex(): Texture {
   return tex('nosignal', () => slash(ascii([
-    '.wwwww.',
-    'w.....w',
-    '..www..',
-    '.w...w.',
-    '...w...'
+    '..wwwww..',
+    '.w.....w.',
+    'w..www..w',
+    '..w...w..',
+    '....w....',
+    '...www...'
   ], { w: 0xe8f0ff }, INK)));
 }
 

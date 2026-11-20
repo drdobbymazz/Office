@@ -66,6 +66,8 @@ class Flash implements Active {
     this.s.tint = color;
     this.s.width = Math.max(1, env.frame?.screenW ?? 2000);
     this.s.height = Math.max(1, env.frame?.screenH ?? 2000);
+    // Created mid-frame: start at the peak, not at the sprite's default alpha of 1.
+    this.s.alpha = peak;
     env.screen.addChild(this.s);
   }
   tick(dt: number): boolean {
@@ -83,7 +85,7 @@ class Flash implements Active {
 
 // ── lightning ───────────────────────────────────────────────────────────────
 
-const BOLT_BANDS: readonly (readonly [number, number, number])[] = [[2.6, 0x7aa8ff, 150], [1.3, 0xc8e0ff, 240], [0.45, 0xffffff, 255]];
+const BOLT_BANDS: readonly (readonly [number, number, number])[] = [[3.4, 0x6a98ff, 140], [1.9, 0xb8d4ff, 240], [0.9, 0xffffff, 255]];
 
 class Lightning implements Active {
   private line = new LineCanvas();
@@ -337,7 +339,7 @@ export class Cues {
         const sz = Math.max(0.3, Math.min(2, c.size));
         env.cue({ kind: 'flash', color: 0xfff4d8, alpha: 0.35 * Math.min(1, sz), ms: 160 });
         this.active.push(playAt(env, env.floor, rings(Math.round(18 + 18 * sz), 0.55), c.x, c.y, 16, 0xffd8a0, 0.8));
-        this.active.push(playAt(env, env.air, (BOOM ??= explosionFrames()), c.x, c.y - 10 * sz, 15, 0xffffff, 1, 0.6, sz > 1.2 ? 2 : 1));
+        this.active.push(playAt(env, env.air, (BOOM ??= explosionFrames()), c.x, c.y - 12 * sz, 12, 0xffffff, 1, 0.6, sz > 1.6 ? 2 : 1));
         for (let i = 0; i < 9; i++) {
           const a = (i / 9) * Math.PI * 2;
           emitDrift(parts, c.x + Math.cos(a) * 6, c.y + Math.sin(a) * 3, rr(4, 14), rr(3, 5) * sz, pick([0x6a6474, 0x847e92, 0x5a5262]), Math.cos(a) * 26 * sz, Math.sin(a) * 10 * sz, rr(6, 16), rr(0.9, 1.5), 0.85);

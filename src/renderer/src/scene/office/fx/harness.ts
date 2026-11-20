@@ -12,6 +12,9 @@ import type { OfficeCharacterName } from '../cast';
 import { createFxView } from './index';
 import { EMOTE_ICONS, emoteTex, textPix, BURSTS } from './art';
 import { Pix } from './pix';
+import { balloonTex, beaconFrames, beeFrames, creatureFrames, ghostTex, itemFrames, mirrorBallFrames, noSignalTex, offScreenTex, saucerFrames } from './sprites';
+import { emojiTex } from './emoji';
+import { explosionFrames, flameFrames } from './procedural';
 
 const q = new URLSearchParams(location.search);
 const VIEW = q.get('view') ?? 'effect';
@@ -91,7 +94,7 @@ async function main(): Promise<void> {
     const s = new Sprite(personTex(name));
     s.anchor.set(0.5, 1);
     sorted.addChild(s);
-    const p: Person = { id: name, s, x, y, statuses, walk };
+    const p: Person = { id: people.some((o) => o.id === name) ? name + people.length : name, s, x, y, statuses, walk };
     people.push(p);
     return p;
   };
@@ -159,6 +162,8 @@ async function main(): Promise<void> {
       }
     };
   } else if (VIEW === 'emotes') {
+    const panel = new Graphics().rect(0, 0, 4000, 196).fill(0x1a1320);
+    app.stage.addChild(panel);
     EMOTE_ICONS.forEach((icon, i) => {
       const col = i % 11, row = Math.floor(i / 11);
       addPerson(NAMES[i % NAMES.length], 2 * TILE + 8 + col * 26 + row * 13, (row ? 20 : 15) * TILE);
@@ -173,7 +178,7 @@ async function main(): Promise<void> {
       lab.position.set(30 + col * 78, 74 + row * 92);
       app.stage.addChild(big, lab);
     });
-    focus = { x: 2 * TILE + 150, y: 18 * TILE };
+    focus = { x: 2 * TILE + 150, y: 15 * TILE };
     zoomWant = ZOOM || 2.6;
     let k = 0;
     cueFn = () => {
@@ -192,6 +197,40 @@ async function main(): Promise<void> {
     focus = { x: 2 * TILE + 180, y: 17 * TILE };
     zoomWant = ZOOM || 2.4;
     cueFn = () => { for (const pt of pts) fx.cue({ kind: 'burst', what: pt.k, x: pt.x, y: pt.y }); };
+  } else if (VIEW === 'sheet') {
+    // Every sprite at a big integer scale on a floor-coloured board, for close inspection.
+    const SC = Number(q.get('scale') ?? 4);
+    const board = new Graphics().rect(0, 0, 4000, 4000).fill(0x8fa69a);
+    app.stage.addChild(board);
+    const texs: Texture[] = [];
+    const grp = q.get('group') ?? 'creatures';
+    if (grp === 'creatures') {
+      for (const sp of ['raccoon', 'puppy', 'pigeon'] as const) for (const an of ['idle', 'run', 'sit', 'eat', 'jump', 'fly', 'happy'] as const) {
+        if (an === 'fly' && sp !== 'pigeon') continue;
+        texs.push(...creatureFrames(sp, an, false));
+      }
+      texs.push(...creatureFrames('raccoon', 'run', true), ...creatureFrames('puppy', 'idle', true));
+    } else if (grp === 'things') {
+      for (const m of ['drift', 'boo', 'sad'] as const) for (let f = 0; f < 3; f++) texs.push(ghostTex(m, f, false));
+      texs.push(ghostTex('drift', 0, true));
+      texs.push(...saucerFrames());
+      for (const it of ['pizzaBoxes', 'cake', 'gift', 'cashPile', 'puddle', 'scorch', 'paperPile', 'wetFloorSign', 'foam', 'snackPile']) texs.push(itemFrames(it)[0]);
+      texs.push(...beeFrames(), balloonTex(0xe84a4a), ...mirrorBallFrames(), noSignalTex(), offScreenTex(), ...beaconFrames());
+      texs.push(emojiTex('🦖').texture, emojiTex('🐙').texture, emojiTex('🎸').texture, emojiTex('👽').texture);
+    } else if (grp === 'flames') {
+      for (const [w, hh] of [[7, 10], [10, 15], [13, 20], [16, 25]]) texs.push(...flameFrames(w, hh, 3));
+      texs.push(...explosionFrames());
+    }
+    let x = 8, y = 8, rowH = 0;
+    for (const t of texs) {
+      const s = new Sprite(t);
+      s.scale.set(SC);
+      if (x + t.width * SC > app.screen.width - 8) { x = 8; y += rowH + 8; rowH = 0; }
+      s.position.set(x, y);
+      app.stage.addChild(s);
+      x += t.width * SC + 8;
+      rowH = Math.max(rowH, t.height * SC);
+    }
   } else if (VIEW === 'all') {
     for (let i = 0; i < 15; i++) {
       const d = deskOf(NAMES[i] as never);

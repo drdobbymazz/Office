@@ -10,6 +10,8 @@ import type { Person } from './people';
 import type { SimCore } from './core';
 
 export const HOME_TIMEOUT = 25;
+/** Seconds after five when anyone still walking home breaks into a run. */
+const HURRY_AFTER = 9;
 
 export function resetPersonForDay(core: SimCore, p: Person): void {
   cancelJob(p, false);
@@ -149,7 +151,7 @@ function beginLeaving(core: SimCore): void {
       }
     }
     for (const kind of ['asleep', 'frozen'] as const) if (p.has(kind)) core.removeStatus(p.id, kind);
-    p.leaveAt = core.time + Math.min(8, i * 0.45 + core.rng() * 1.5);
+    p.leaveAt = core.time + Math.min(4, i * 0.25 + core.rng() * 1);
     i++;
   }
 }
@@ -157,7 +159,12 @@ function beginLeaving(core: SimCore): void {
 function endDay(core: SimCore): void {
   for (const p of core.list) {
     if (p.present) {
-      if (p.isCast) core.stats.forcedHome++;
+      if (p.isCast) {
+        core.stats.forcedHome++;
+        if (core.stats.forcedLog.length < 50) {
+          core.stats.forcedLog.push(`day ${core.day} ${p.id} at ${p.tile.x},${p.tile.y} job=${p.job?.kind ?? 'none'} walk=${!!p.walk} waiting=${p.waiting} air=${p.air?.mode ?? 'no'} seized=${p.seized} scene=${p.sceneId} doing=${p.doing} homeJobAge=${p.job ? p.job.walkTime.toFixed(1) : '-'} leaveAt=${(p.leaveAt - core.time).toFixed(1)} rescues=${p.rescues}`);
+        }
+      }
       goneHome(core, p);
     }
   }
@@ -190,6 +197,12 @@ export function updateDay(core: SimCore): void {
     if (!p.goingHome && core.time >= p.leaveAt && !p.air) {
       if (p.isCast && core.rng() < 0.3) core.bark(p.id, 'goodbye');
       sendHome(core, p);
+    }
+    // Stragglers hurry so they do not miss the bus.
+    if (c.leavingFor > HURRY_AFTER && p.job && p.job.kind === 'home' && p.job.style !== 'run') {
+      p.job.style = 'run';
+      if (p.walk) p.walk.style = 'run';
+      p.doing = 'hurrying home';
     }
   }
   if (!anyone || c.leavingFor >= HOME_TIMEOUT) endDay(core);

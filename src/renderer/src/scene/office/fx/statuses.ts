@@ -98,7 +98,7 @@ export class Statuses {
       const onScreen = p.x > v.x0 - 24 && p.x < v.x1 + 24 && p.y > v.y0 - 8 && p.y < v.y1 + 48;
       const head = Math.max(10, p.y - p.headY);
       if (started & ((1 << IDX.get('tiny')!) | (1 << IDX.get('giant')!))) {
-        emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 14);
+        emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 8);
         emitPoof(env.parts, p.x, p.y - 2, 0, 5, 0xffffff, 0, 0, 0, 0.4, Layer.Air, 0.6);
       }
       if (started & (1 << IDX.get('frozen')!)) emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 10);
@@ -180,7 +180,7 @@ export class Statuses {
     let tint = 0xffffff;
     switch (k) {
       case 'love':
-        q.x += rr(-5, 5); q.z = head + rr(0, 4); q.vz = rr(12, 18); q.sway = rr(1, 2); q.swayF = rr(4, 6); q.swayPh = rr(0, 6);
+        q.x += rr(-5, 5); q.z = head - 4 + rr(0, 3); q.vz = rr(12, 18); q.sway = rr(1, 2); q.swayF = rr(4, 6); q.swayPh = rr(0, 6);
         q.life = rr(1.1, 1.5); q.fadeOut = 0.4; q.popIn = 0.15; tex = this.heart;
         break;
       case 'rage': {

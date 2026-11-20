@@ -1471,11 +1471,17 @@ export interface GIconProps {
   title?: string;
 }
 
+const BASE_NAMES: readonly BaseIconName[] = [
+  'gear', 'plus', 'x', 'check', 'arrow-right', 'pause', 'play', 'bell', 'folder', 'terminal', 'code', 'web', 'mcp', 'sparkle', 'expand', 'minimize'
+];
+
 export const GIcon = memo(function GIcon({ name, px = 16, style, title }: GIconProps) {
   const def = defFor(name);
   if (!def) {
     // Fall back to the original icon set (gear, x, check, plus ...).
-    return <BaseIcon name={(name as BaseIconName) || 'sparkle'} size={Math.max(1, Math.round(px / 16))} style={style} />;
+    // An id nobody drew (from a goal, a feed line, a future power) must never take the interface down: show a sparkle.
+    const base = (BASE_NAMES as readonly string[]).includes(name) ? (name as BaseIconName) : 'sparkle';
+    return <BaseIcon name={base} size={Math.max(1, Math.round(px / 16))} style={style} />;
   }
   const b = build(name, def);
   return (

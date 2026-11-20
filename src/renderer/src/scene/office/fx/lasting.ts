@@ -258,7 +258,7 @@ function caustic(): Uint8Array {
   const c = new Uint8Array(64 * 64);
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
     const v = Math.sin((x / 64) * Math.PI * 4 + Math.sin((y / 64) * Math.PI * 2) * 2) + Math.sin((y / 64) * Math.PI * 6 + Math.cos((x / 64) * Math.PI * 2) * 1.5);
-    c[y * 64 + x] = v > 1.1 ? 2 : v > 0.55 ? 1 : 0;
+    c[y * 64 + x] = v > 1.5 ? 2 : v > 0.9 ? 1 : 0;
   }
   return (CAUSTIC = c);
 }

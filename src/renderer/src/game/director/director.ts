@@ -13,35 +13,13 @@
 // ever asks the sim to do things through its public surface.
 
 import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger } from '@/game/brain/api';
-import type { SceneAsk, SimApi, SimPerson } from '@/game/core/simApi';
-import type { CharId, RoomId, ShiftKind, Speech, TargetRoomId } from '@/game/core/types';
+import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
+import type { CharId, RoomId, ShiftKind, TargetRoomId } from '@/game/core/types';
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
 import { feetOf, room as roomDef, roomCentrePx, walkableTilesIn } from '@/game/core/world';
 
-/** What the director needs from the sim beyond SimApi. */
-export interface SceneHandle {
-  readonly id: string;
-  /** Everyone is in place and facing each other. */
-  readonly ready: boolean;
-  /** False once the scene has broken up (someone was picked up, fled, fell asleep ...). */
-  readonly alive: boolean;
-  line(l: SceneLine): Speech;
-  close(): void;
-}
-
-export interface DirectorSim {
-  readonly api: SimApi;
-  takeSceneAsks(): SceneAsk[];
-  openScene(opts: { id: string; people: CharId[]; gather: boolean }): SceneHandle | null;
-  briefFor(who: CharId, others: CharId[]): PersonBrief;
-  facts(): string[];
-  recentLines(room: RoomId, n: number): { who: string; say: string }[];
-  dayLog(): string[];
-  setTakeaway(who: CharId, text: string): void;
-}
-
 export interface DirectorOptions {
-  sim: DirectorSim;
+  sim: DirectorSimApi;
   /** The configured brain (a model, or instinct). */
   brain: Brain;
   /** The no-model brain, used when the model may not be called on a timer. */
@@ -87,7 +65,7 @@ let seq = 0;
 const nextId = (p: string): string => `${p}-${(seq += 1).toString(36)}`;
 
 export class Director {
-  private sim: DirectorSim;
+  private sim: DirectorSimApi;
   private api: SimApi;
   private brain: Brain;
   private instinct: Brain;
@@ -108,7 +86,7 @@ export class Director {
   constructor(opts: DirectorOptions) {
     this.opts = opts;
     this.sim = opts.sim;
-    this.api = opts.sim.api;
+    this.api = opts.sim;
     this.brain = opts.brain;
     this.instinct = opts.instinct;
   }
@@ -191,7 +169,7 @@ export class Director {
     const what = tidy(instruction, 160);
     if (!p || !what) return;
     this.api.emote(who, 'alert');
-    this.api.narrate(`You nudge ${p.name}: ${what}`, { kind: 'overseer', icon: 'cue', room: p.room });
+    this.api.narrate(`You nudge ${p.name}: ${what}`, { kind: 'overseer', icon: 'tell', room: p.room });
     // If the instruction names someone else, bring them into it.
     const named = this.api.people().filter((o) => o.id !== who && o.present && mentions(what, o.name)).map((o) => o.id).slice(0, 2);
     const people = [who, ...(named.length ? named : this.companions(p, 1))];
@@ -210,7 +188,7 @@ export class Director {
   customEvent(text: string): void {
     const what = tidy(text, 180);
     if (!what) return;
-    this.api.narrate(`You make it happen: ${what}`, { kind: 'overseer', icon: 'custom' });
+    this.api.narrate(`You make it happen: ${what}`, { kind: 'overseer', icon: 'anything' });
     const rooms = TARGET_ROOMS.map((id) => ({
       id: id as string,
       name: roomDef(id).name,
@@ -520,7 +498,7 @@ export class Director {
     const seconds = 26 + res.intensity * 8;
     const title = res.title || text;
 
-    this.api.narrate(`${title}. ${res.fact}`.trim(), { kind: 'event', icon: 'custom', room });
+    this.api.narrate(`${title}. ${res.fact}`.trim(), { kind: 'event', icon: 'anything', room });
     this.api.setFact(key, res.fact || text);
     this.api.bumpChaos(6 + res.intensity * 6);
     this.api.remember(everywhere ? 'all' : room, res.fact || text);
@@ -619,7 +597,7 @@ export class Director {
       this.side = false;
       this.report();
     }
-    for (const t of res.takeaways) if (isCastId(t.who) && t.text) this.sim.setTakeaway(t.who, t.text);
+    this.sim.setTakeaways(res.takeaways.filter((t) => isCastId(t.who) && !!t.text));
     return res;
   }
 

@@ -119,13 +119,14 @@ export class Actor implements ActorView {
 
   update(dt: number, st: PersonState): void {
     cacheTick();
-    const frozen = st.anim === 'frozen' || st.statuses.includes('frozen');
+    // Frozen holds the last frame; if there is none yet, pose once as idle first.
+    const frozen = (st.anim === 'frozen' || st.statuses.includes('frozen')) && this.started;
     const d = frozen ? 0 : Math.min(dt, 0.1);
     this.clock += d;
     if (this.clock > floorClock) floorClock = this.clock;
-    if (!this.started) { this.started = true; this.animCur = frozen ? 'idle' : st.anim; this.animPrev = this.animCur; }
+    if (!this.started) { this.started = true; this.animCur = st.anim === 'frozen' ? 'idle' : st.anim; this.animPrev = this.animCur; }
 
-    if (!frozen && st.anim !== this.animCur) {
+    if (!frozen && st.anim !== this.animCur && st.anim !== 'frozen') {
       this.animPrev = this.animCur;
       this.tPrev = this.t;
       this.animCur = st.anim;
@@ -305,8 +306,8 @@ export class Actor implements ActorView {
     const bottom = -this.crop;
     const p = { x: 0, y: 0 };
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [lx, ly] of [[-8, -31], [8, -31], [-8, bottom], [8, bottom]] as const) {
-      this.toWorld(lx, ly, p);
+    for (let i = 0; i < 4; i++) {
+      this.toWorld(i % 2 ? 8 : -8, i < 2 ? -31 : bottom, p);
       if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
       if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
     }

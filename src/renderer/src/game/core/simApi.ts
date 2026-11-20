@@ -185,6 +185,8 @@ export interface SimApi {
   seize(who: CharId, key: string, pose: SeizePose): void;
   release(who: CharId, key: string): void;
   isSeized(who: CharId): boolean;
+  /** (added) In the air: held by the player, thrown, falling or landing. place() leaves such a person alone. */
+  isAirborne(who: CharId): boolean;
   addStatus(who: CharId, kind: StatusKind, seconds: number, target?: CharId): void;
   removeStatus(who: CharId, kind: StatusKind): void;
   hasStatus(who: CharId, kind: StatusKind): boolean;

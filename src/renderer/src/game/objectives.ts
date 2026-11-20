@@ -36,7 +36,7 @@ const frac = (n: number, of: number): number => Math.max(0, Math.min(1, n / of))
 const POOL: GoalDef[] = [
   { id: 'events3', title: 'Stir things up', detail: 'Start three events today.', icon: 'fire', progress: (c) => frac(c.count.chaos ?? 0, 3) },
   { id: 'crowd', title: 'Standing room only', detail: 'Get six people into the break room at once.', icon: 'pizza', progress: (c) => frac(c.count.kitchenBest ?? 0, 6) },
-  { id: 'delivery', title: 'Special delivery', detail: "Pick someone up and drop them in Michael's office.", icon: 'hand', progress: (c) => frac(c.count.dropBoss ?? 0, 1) },
+  { id: 'delivery', title: 'Special delivery', detail: "Pick someone up and drop them in Michael's office.", icon: 'poke', progress: (c) => frac(c.count.dropBoss ?? 0, 1) },
   { id: 'whispers', title: 'Voices in their heads', detail: 'Whisper to three different people.', icon: 'whisper', progress: (c) => frac(c.seen.whisper?.size ?? 0, 3) },
   { id: 'chaos80', title: 'Out of control', detail: 'Push the chaos meter to 80.', icon: 'quake', progress: (c) => frac(c.count.chaosBest ?? 0, 80) },
   { id: 'evacuate', title: 'Everybody out', detail: 'Get ten people outside on the pavement at once.', icon: 'fireDrill', progress: (c) => frac(c.count.outsideBest ?? 0, 10) },
@@ -47,10 +47,10 @@ const POOL: GoalDef[] = [
   },
   { id: 'allhands', title: 'This could have been an email', detail: 'Get eight people into the conference room at once.', icon: 'meeting', progress: (c) => frac(c.count.meetingBest ?? 0, 8) },
   { id: 'quiet', title: 'A quiet day', detail: "Reach three o'clock without a single incident.", icon: 'check', progress: (c) => (c.incidentsToday() > 0 ? 0 : frac(c.sim.clock - 9 * 60, 6 * 60)) },
-  { id: 'stock', title: 'Line goes up', detail: 'Get the share price above 110.', icon: 'chartUp', progress: (c) => frac(c.meters().stock - 100, 10) },
+  { id: 'stock', title: 'Line goes up', detail: 'Get the share price above 110.', icon: 'stock', progress: (c) => frac(c.meters().stock - 100, 10) },
   { id: 'announce2', title: 'Attention, please', detail: 'Make two loudspeaker announcements.', icon: 'announce', progress: (c) => frac(c.count.announce ?? 0, 2) },
-  { id: 'imagine', title: 'Use your imagination', detail: 'Type an event of your own and watch them deal with it.', icon: 'custom', progress: (c) => frac(c.count.custom ?? 0, 1) },
-  { id: 'toss', title: 'Human resources', detail: 'Pick up four different people today.', icon: 'hand', progress: (c) => frac(c.seen.picked?.size ?? 0, 4) }
+  { id: 'imagine', title: 'Use your imagination', detail: 'Type an event of your own and watch them deal with it.', icon: 'anything', progress: (c) => frac(c.count.custom ?? 0, 1) },
+  { id: 'toss', title: 'Human resources', detail: 'Pick up four different people today.', icon: 'poke', progress: (c) => frac(c.seen.picked?.size ?? 0, 4) }
 ];
 
 export class Objectives {

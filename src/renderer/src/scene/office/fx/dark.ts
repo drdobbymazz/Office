@@ -19,7 +19,7 @@ const CW = WORLD_W / CELL;
 const CH = WORLD_H / CELL;
 const ROOM_IDS: RoomId[] = ['boss', 'meeting', 'annex', 'accounts', 'bullpen', 'kitchen', 'outside'];
 /** Darkest the darkness gets: people must stay faintly readable. */
-const MAX_DARK = 0.84;
+const MAX_DARK = 0.88;
 const MAX_LIGHTS = 32;
 const MAX_DARKS = 8;
 

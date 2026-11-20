@@ -28,6 +28,9 @@ export class Nav {
   private prev = new Int32Array(CELLS);
   private queue = new Int32Array(CELLS);
   private dist = new Int32Array(CELLS);
+  /** Separate from `dist` so nearestFree never clobbers a distance field a caller is holding. */
+  private seen = new Int32Array(CELLS);
+  private queue2 = new Int32Array(CELLS);
   private distFrom = -1;
   private distVersion = -1;
 
@@ -161,11 +164,9 @@ export class Nav {
       seed = w;
     }
     const start = cellOf(seed.x, seed.y);
-    const dist = this.dist;
-    // Reuse the distance buffer as a visited map; invalidate the cache.
-    this.distFrom = -1;
+    const dist = this.seen;
     dist.fill(-1);
-    const q = this.queue;
+    const q = this.queue2;
     let head = 0;
     let tail = 0;
     q[tail++] = start;

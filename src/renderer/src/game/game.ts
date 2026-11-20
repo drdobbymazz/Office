@@ -24,39 +24,16 @@ import type { CreateActorView, CreateFxView, PortraitUrl, RenderFrame } from '@/
 import { GameFloor } from '@/scene/office/floor/GameFloor';
 import { FloorInput } from '@/scene/office/floor/input';
 import { Director } from '@/game/director/director';
-import type { DirectorSim } from '@/game/director/director';
+import type { Sim, SimOptions } from '@/game/sim';
 import { Objectives } from './objectives';
 import { loadSettings, saveSettings } from './settings';
 import { loadJson, removeKey, saveJson } from './storage';
-
-/** What the game needs from the simulation (the real one is game/sim). */
-export interface SimPort extends DirectorSim {
-  update(dt: number): void;
-  frame(): RenderFrame;
-  pickUp(who: CharId): boolean;
-  dragTo(x: number, y: number): void;
-  drop(vx: number, vy: number): void;
-  poke(who: CharId): void;
-  registerChaos(script: ChaosScript): void;
-  startChaos(id: ChaosId, target: ChaosTarget): string | null;
-  beginDay(day: number): void;
-  peopleUi(): PersonUi[];
-  personDetail(who: CharId): PersonDetail | null;
-  meters(): Meters;
-  cooldowns(): Partial<Record<ChaosId, CooldownUi>>;
-  activeChaos(): ActiveChaosUi[];
-  readonly weekday: string;
-  readonly dayProgress: number;
-  readonly incidentsToday: number;
-  readonly incidentFreeDays: number;
-  serialize(): unknown;
-}
 
 export interface GameParts {
   createActorView: CreateActorView;
   createFxView: CreateFxView;
   portraitUrl: PortraitUrl;
-  createSim(opts: { bus: GameBus; reflexes: Reflexes; seed?: number; dayMinutes: number; sandbox?: boolean; save?: unknown; now?: () => number }): SimPort;
+  createSim(opts: SimOptions): Sim;
   chaosScripts: ChaosScript[];
   createBrain(settings: BrainSettings, deps: { bank: InstinctBank; world: BrainWorld }): Brain;
   createReflexes(bank: InstinctBank, world?: BrainWorld): Reflexes;
@@ -105,7 +82,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   audio.setMuted(settings.muted);
 
   let sim = parts.createSim({
-    bus, reflexes, dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, save: loadJson<unknown>(SAVE_KEY) ?? undefined,
+    bus, reflexes, dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, save: loadJson<SimOptions['save']>(SAVE_KEY) ?? undefined,
     now: () => performance.now()
   });
   for (const s of parts.chaosScripts) sim.registerChaos(s);
@@ -133,7 +110,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     model: settings.brain.model, thinking: false, queued: 0, tokPerSec: null, error: null
   };
   const store = create<UiState>(() => ({
-    phase: 'title', paused: false, speed: 1, day: sim.api.day, weekday: sim.weekday, clock: sim.api.clock, dayProgress: sim.dayProgress,
+    phase: 'title', paused: false, speed: 1, day: sim.day, weekday: sim.weekday, clock: sim.clock, dayProgress: sim.dayProgress,
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
     settings, holding: null, targeting: null, inArtifact: false
@@ -142,7 +119,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   const get = store.getState;
 
   let director = makeDirector();
-  let objectives = new Objectives(sim.api, bus, () => sim.meters(), () => sim.incidentsToday);
+  let objectives = new Objectives(sim, bus, () => sim.meters(), () => sim.incidentsToday);
 
   function makeDirector(): Director {
     return new Director({
@@ -194,13 +171,13 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       if (item.kind === 'say') linesToday += 1;
     }),
     bus.on('speech', (sp: Speech) => {
-      const p = sim.api.person(sp.who);
+      const p = sim.person(sp.who);
       audio.speak(voiceOf(sp.who), sp.text, {
         cps: sp.cps, emotion: p?.emotion, style: sp.kind, pan: pan(p?.x)
       });
       if (sp.kind === 'say' || sp.kind === 'shout') {
         captionUntil = performance.now() + sp.durationMs + 400;
-        set({ caption: { id: sp.id, day: sim.api.day, clock: sim.api.clock, kind: 'say', who: sp.who, text: sp.text, emotion: p?.emotion } });
+        set({ caption: { id: sp.id, day: sim.day, clock: sim.clock, kind: 'say', who: sp.who, text: sp.text, emotion: p?.emotion } });
       }
     }),
     bus.on('fx', (c) => floor.cue(c)),
@@ -223,7 +200,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     }),
     bus.on('chaosStart', () => buzz(25)),
     bus.on('dayStart', () => {
-      objectives.startDay(sim.api.day);
+      objectives.startDay(sim.day);
       stockStart = sim.meters().stock;
       linesToday = 0;
       chaosPeak = 0;
@@ -313,7 +290,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   async function endDay(): Promise<void> {
     if (get().phase === 'report') return;
     const m = sim.meters();
-    const day = sim.api.day;
+    const day = sim.day;
     const stats = { incidents: sim.incidentsToday, stockStart, stockEnd: m.stock, morale: m.morale, chaosPeak: Math.round(chaosPeak) };
     flushFeed();
     const todays = get().feed.filter((f) => f.day === day && f.kind === 'say' && f.who && f.text.length > 18);
@@ -364,13 +341,13 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     if (get().phase === 'playing') objectives.update();
     set((s) => ({
       objectives: objectives.ui(),
-      day: sim.api.day, weekday: sim.weekday || WEEKDAYS[(sim.api.day - 1) % 5], clock: sim.api.clock, dayProgress: sim.dayProgress, meters: m,
+      day: sim.day, weekday: sim.weekday || WEEKDAYS[(sim.day - 1) % 5], clock: sim.clock, dayProgress: sim.dayProgress, meters: m,
       incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, people, cooldowns: sim.cooldowns(), activeChaos: sim.activeChaos(),
       holding: input.held,
       brain: s.brain.thinking === brainBusy.thinking && s.brain.queued === brainBusy.queued ? s.brain : { ...s.brain, thinking: brainBusy.thinking, queued: brainBusy.queued }
     }));
     audio.setMusicMood({
-      chaos: m.chaos / 100, hour: sim.api.clock / 60,
+      chaos: m.chaos / 100, hour: sim.clock / 60,
       disco: sim.activeChaos().some((c) => c.id === 'disco'),
       blackout: sim.activeChaos().some((c) => c.id === 'blackout'),
       frozen: sim.activeChaos().some((c) => c.id === 'timeFreeze'),
@@ -418,6 +395,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   function select(who: CharId | null): void {
     if (get().selectedId === who) return;
     set({ selectedId: who });
+    sim.select(who);
     if (who) floor.camera.followPoint(() => floor.personWorld(who));
     else floor.camera.stopFollowing();
   }
@@ -528,7 +506,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     nextDay() {
       if (get().phase !== 'report') return;
       floor.clearFx();
-      sim.beginDay(sim.api.day + 1);
+      sim.beginDay(sim.day + 1);
       director.reset();
       set({ phase: 'playing', report: null, paused: false });
       audio.setMusicMood({ menu: false });
@@ -619,7 +597,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       for (const s of parts.chaosScripts) sim.registerChaos(s);
       director = makeDirector();
       objectives.dispose();
-      objectives = new Objectives(sim.api, bus, () => sim.meters(), () => sim.incidentsToday);
+      objectives = new Objectives(sim, bus, () => sim.meters(), () => sim.incidentsToday);
       feedBuffer = [];
       set({ feed: [], report: null, phase: 'playing', paused: false, selectedId: null, caption: null, targeting: null });
       floor.camera.goHome();

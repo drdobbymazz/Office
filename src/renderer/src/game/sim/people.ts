@@ -240,7 +240,8 @@ export class Person implements SimPerson {
 
   /** Standing or sitting still on their own tile (the invariant the tests check). */
   get resting(): boolean {
-    return this.onFloor && !this.air && !this.walk && !this.waiting;
+    // A job still in its walk phase is about to move off (it may be paused for a frame or a reaction).
+    return this.onFloor && !this.air && !this.walk && !this.waiting && !(this.job && this.job.phase === 'walk');
   }
 }
 

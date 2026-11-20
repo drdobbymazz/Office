@@ -2,9 +2,9 @@
 // each other. This is what the language model is given to play each person,
 // and what the sim uses to decide everyday behaviour.
 //
-// It extends the short voice cards in game/personas.ts (same fifteen people,
-// same desks and sprites as scene/office/cast.ts) with the extra detail the
-// game needs: fears, a quirk, a secret, example lines, temperament.
+// The same fifteen people, desks and sprites as scene/office/cast.ts, with the
+// detail the game needs to play them: how they talk, fears, a quirk, a secret,
+// example lines, temperament.
 //
 // Writing rule for anything a player or the model reads: plain words, say who
 // does what. Wit is a seasoning, never a replacement for the fact.
