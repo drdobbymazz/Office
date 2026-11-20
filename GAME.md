@@ -76,6 +76,15 @@ OLLAMA_ORIGINS=https://your-app.vercel.app ollama serve
 
 The phone must be on the tailnet, and Tailscale must be signed in on the laptop.
 
+### C. A preview inside Claude
+
+The same build can be published as a Claude Artifact, which is a quick way to look at the game on
+a phone without setting anything up. A page inside Claude cannot reach a model server, so there
+the staff run on the written lines, and Claude itself writes only what follows from your own
+actions (a whisper, an announcement, a typed event, the day's report). It asks your permission the
+first time. To publish a new one: `npm run build:web`, then publish a page that loads
+`assets/index-*.css` and `assets/index-*.js` from `dist-web` with the `sample` capability.
+
 ### If it says the model is offline
 
 The game keeps running: the staff fall back to hand-written lines ("instinct") until the model
