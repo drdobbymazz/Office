@@ -14,18 +14,21 @@ export const PORTRAIT_H = 28;
 // In-scene walking sprite: same width + upper body as the portrait, taller to add legs.
 export const SCENE_W = 18;
 export const SCENE_H = 32;
-const OUTLINE: RGB = [38, 34, 46];
-const HX0 = 4, HX1 = 13; // head skin columns
+export const OUTLINE: RGB = [38, 34, 46];
+export const HX0 = 4, HX1 = 13; // head skin columns
 
-type RGB = [number, number, number];
-type Buf = Uint8ClampedArray;
+export type RGB = [number, number, number];
+export type Buf = Uint8ClampedArray;
 
-// Current canvas dims — set per compose() so the same drawing primitives serve
-// both the 18×28 portrait and the 18×32 scene sprite. (Rendering is synchronous.)
-let CUR_W = PORTRAIT_W, CUR_H = PORTRAIT_H;
+/**
+ * Current canvas: its size, plus an offset added to every drawing call so the
+ * same 18-wide recipes can be drawn into a padded actor frame, with the head or
+ * body shifted for a pose. Set per compose (rendering is synchronous).
+ */
+export const PX = { w: PORTRAIT_W, h: PORTRAIT_H, ox: 0, oy: 0 };
 
 const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
-function shades(rgb: RGB, dl = 1.22, dd = 0.68): [RGB, RGB, RGB] {
+export function shades(rgb: RGB, dl = 1.22, dd = 0.68): [RGB, RGB, RGB] {
   return [
     [clamp(rgb[0] * dl), clamp(rgb[1] * dl), clamp(rgb[2] * dl)],
     [rgb[0], rgb[1], rgb[2]],
@@ -33,27 +36,31 @@ function shades(rgb: RGB, dl = 1.22, dd = 0.68): [RGB, RGB, RGB] {
   ];
 }
 
-function set(buf: Buf, x: number, y: number, c: RGB, a = 255): void {
-  if (x < 0 || x >= CUR_W || y < 0 || y >= CUR_H) return;
-  const i = (y * CUR_W + x) * 4;
+export function set(buf: Buf, x: number, y: number, c: RGB, a = 255): void {
+  x += PX.ox; y += PX.oy;
+  if (x < 0 || x >= PX.w || y < 0 || y >= PX.h) return;
+  const i = (y * PX.w + x) * 4;
   buf[i] = c[0]; buf[i + 1] = c[1]; buf[i + 2] = c[2]; buf[i + 3] = a;
 }
-function alphaAt(buf: Buf, x: number, y: number): number {
-  if (x < 0 || x >= CUR_W || y < 0 || y >= CUR_H) return 0;
-  return buf[(y * CUR_W + x) * 4 + 3];
+export function alphaAt(buf: Buf, x: number, y: number): number {
+  x += PX.ox; y += PX.oy;
+  if (x < 0 || x >= PX.w || y < 0 || y >= PX.h) return 0;
+  return buf[(y * PX.w + x) * 4 + 3];
 }
-function rgbAt(buf: Buf, x: number, y: number): RGB {
-  const i = (y * CUR_W + x) * 4;
+export function rgbAt(buf: Buf, x: number, y: number): RGB {
+  x += PX.ox; y += PX.oy;
+  if (x < 0 || x >= PX.w || y < 0 || y >= PX.h) return [0, 0, 0];
+  const i = (y * PX.w + x) * 4;
   return [buf[i], buf[i + 1], buf[i + 2]];
 }
-function eq(a: RGB, b: RGB): boolean { return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]; }
-function rect(buf: Buf, x0: number, y0: number, x1: number, y1: number, c: RGB): void {
+export function eq(a: RGB, b: RGB): boolean { return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]; }
+export function rect(buf: Buf, x0: number, y0: number, x1: number, y1: number, c: RGB): void {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(buf, x, y, c);
 }
 
 // ─── palettes ────────────────────────────────────────────────────────────────
-interface SkinPal { hi: RGB; base: RGB; sh: RGB; line: RGB; }
-const SKIN: Record<string, SkinPal> = {
+export interface SkinPal { hi: RGB; base: RGB; sh: RGB; line: RGB; }
+export const SKIN: Record<string, SkinPal> = {
   light: { hi: [255, 221, 189], base: [247, 201, 170], sh: [212, 158, 126], line: [168, 112, 82] },
   tan:   { hi: [232, 182, 136], base: [214, 162, 116], sh: [176, 126, 86],  line: [138, 92, 60] },
   brown: { hi: [180, 130, 94],  base: [158, 112, 78],  sh: [124, 86, 58],   line: [90, 60, 40] },
@@ -77,9 +84,9 @@ function drawHead(buf: Buf, skin: string): void {
   rect(buf, 7, 17, 10, 18, s.sh); rect(buf, 7, 17, 9, 17, s.base);
 }
 
-type Brow = 'flat' | 'angry' | 'raised' | 'soft';
-type Mouth = 'neutral' | 'smile' | 'frown' | 'grin';
-function drawFace(buf: Buf, skin: string, brow: Brow, mouth: Mouth, blush: boolean, lashes = false): void {
+export type Brow = 'flat' | 'angry' | 'raised' | 'soft';
+export type Mouth = 'neutral' | 'smile' | 'frown' | 'grin';
+export function drawFace(buf: Buf, skin: string, brow: Brow, mouth: Mouth, blush: boolean, lashes = false): void {
   const s = SKIN[skin];
   const white: RGB = [250, 248, 244], pup: RGB = [46, 38, 42];
   for (const [a, b, p] of [[5, 6, 6], [10, 11, 10]] as const) {
@@ -298,7 +305,7 @@ function bodyShape(buf: Buf, col: RGB, heavy = false): void {
   const [lo, hi] = heavy ? [1, 16] : [2, 15];
   for (let y = 22; y < 28; y++) { set(buf, lo, y, sh); set(buf, hi, y, sh); }
 }
-function drawClothing(buf: Buf, kind: Cloth, c1: RGB, c2: RGB | undefined, tie: RGB | undefined, skin: string, heavy = false): void {
+export function drawClothing(buf: Buf, kind: Cloth, c1: RGB, c2: RGB | undefined, tie: RGB | undefined, skin: string, heavy = false): void {
   const [hi, base, sh] = shades(c1);
   bodyShape(buf, c1, heavy);
   if (kind === 'suit') {
@@ -328,7 +335,7 @@ function drawClothing(buf: Buf, kind: Cloth, c1: RGB, c2: RGB | undefined, tie: 
     for (const [x, y] of [[6, 19], [7, 19], [8, 19], [9, 19], [10, 19], [11, 19]] as const) set(buf, x, y, sh);
   }
 }
-function collarNeck(buf: Buf, skin: string): void {
+export function collarNeck(buf: Buf, skin: string): void {
   rect(buf, 7, 18, 10, 19, SKIN[skin].sh);
 }
 
@@ -350,19 +357,23 @@ function drawSceneLegs(buf: Buf, pants: RGB, phase: number): void {
   rect(buf, 10, rightLow ? 31 : 30, 12, rightLow ? 31 : 30, SHOE);
 }
 
-function drawSceneTorso(buf: Buf, r: Recipe, back: boolean): void {
+/**
+ * `arms=false` leaves out the two edge columns that read as arms hanging down,
+ * so the actor can draw posed arms instead (see actor/body.ts).
+ */
+export function drawSceneTorso(buf: Buf, r: Recipe, back: boolean, arms = true): void {
   const [hi, base, sh] = shades(r.c1);
   // shoulders → torso, narrower than the portrait bust (wider + rounder if heavy)
   if (r.heavy) {
     rect(buf, 3, 18, 14, 18, base);
     rect(buf, 2, 19, 15, 19, base);
-    rect(buf, 2, 20, 15, 24, base);
-    for (let y = 20; y <= 24; y++) { set(buf, 2, y, sh); set(buf, 15, y, sh); set(buf, 14, y, sh); }
+    rect(buf, 3, 20, 14, 24, base);
+    for (let y = 20; y <= 24; y++) { set(buf, 14, y, sh); if (arms) { set(buf, 2, y, sh); set(buf, 15, y, sh); } }
   } else {
     rect(buf, 4, 18, 13, 18, base);
     rect(buf, 3, 19, 14, 19, base);
     rect(buf, 4, 20, 13, 24, base);
-    for (let y = 20; y <= 24; y++) { set(buf, 3, y, sh); set(buf, 14, y, sh); set(buf, 13, y, sh); } // arms / right shade
+    for (let y = 20; y <= 24; y++) { set(buf, 13, y, sh); if (arms) { set(buf, 3, y, sh); set(buf, 14, y, sh); } } // arms / right shade
   }
   if (back) {
     // plain back with a collar line + center seam
@@ -396,7 +407,7 @@ function drawSceneTorso(buf: Buf, r: Recipe, back: boolean): void {
 }
 
 /** Back of the head: a rounded hair-covered skull with crown sheen + nape, no face. */
-function drawHeadBack(buf: Buf, r: Recipe): void {
+export function drawHeadBack(buf: Buf, r: Recipe): void {
   const s = SKIN[r.skin];
   if (r.hair === 'styleBald') { drawHeadBackBald(buf, r); return; }
   const [hi, base, sh] = shades(r.hairc);
@@ -450,21 +461,25 @@ function drawSceneBody(buf: Buf, r: Recipe, phase: number, back: boolean): void 
 }
 
 // ─── outline pass ────────────────────────────────────────────────────────────
-function outlinePass(buf: Buf): void {
-  const pts: [number, number][] = [];
-  for (let y = 0; y < CUR_H; y++) {
-    for (let x = 0; x < CUR_W; x++) {
-      if (alphaAt(buf, x, y) !== 0) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        if (alphaAt(buf, x + dx, y + dy) === 255) { pts.push([x, y]); break; }
-      }
+export function outlinePass(buf: Buf, color: RGB = OUTLINE): void {
+  // Raw canvas coordinates (ignores PX offsets): outlines everything drawn.
+  const W = PX.w, H = PX.h;
+  const a = (x: number, y: number) => (x < 0 || x >= W || y < 0 || y >= H ? 0 : buf[(y * W + x) * 4 + 3]);
+  const pts: number[] = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (a(x, y) !== 0) continue;
+      if (a(x + 1, y) === 255 || a(x - 1, y) === 255 || a(x, y + 1) === 255 || a(x, y - 1) === 255) pts.push(y * W + x);
     }
   }
-  for (const [x, y] of pts) set(buf, x, y, OUTLINE);
+  for (const p of pts) {
+    const i = p * 4;
+    buf[i] = color[0]; buf[i + 1] = color[1]; buf[i + 2] = color[2]; buf[i + 3] = 255;
+  }
 }
 
 // ─── recipes ─────────────────────────────────────────────────────────────────
-interface Recipe {
+export interface Recipe {
   skin: string; hairc: RGB; hair: HairStyle; hairargs?: HairArgs;
   cloth: Cloth; c1: RGB; c2?: RGB; tie?: RGB; pants?: RGB;
   brow?: Brow; mouth?: Mouth; blush?: boolean; facial?: Facial; glasses?: boolean;
@@ -472,6 +487,12 @@ interface Recipe {
   lashes?: boolean;
   /** Heavier build: chubby cheeks, a double chin, and a wider torso. */
   heavy?: boolean;
+  /** Short sleeves: forearms show skin when the arms are posed. */
+  shortSleeves?: boolean;
+  /** A peaked cap worn over the hair (the courier). */
+  cap?: RGB;
+  /** Something always carried when the sim gives no prop (the inspector's clipboard). */
+  signatureProp?: string;
 }
 
 // Puff the lower face into round cheeks + a double chin so a character reads as
@@ -495,12 +516,12 @@ const RECIPES: Record<OfficeCharacterName, Recipe> = {
   jim:      { skin: 'light', hairc: [92, 60, 34],   hair: 'styleFloppy', cloth: 'dressshirt', c1: [172, 196, 224], tie: [120, 130, 150], brow: 'flat', mouth: 'smile' },
   pam:      { skin: 'light', hairc: [120, 76, 42],  hair: 'styleFrame',  hairargs: { length: 18, vol: 2 }, cloth: 'cardigan', c1: [236, 174, 192], c2: [244, 242, 238], brow: 'soft', mouth: 'smile', blush: true, lashes: true },
   dwight:   { skin: 'light', hairc: [64, 48, 28],   hair: 'styleShort',  hairargs: { part: 'L', recede: 1 }, cloth: 'dressshirt', c1: [184, 155, 62], tie: [120, 82, 46], glasses: true, brow: 'angry', mouth: 'neutral' },
-  kevin:    { skin: 'light', hairc: [58, 44, 30],   hair: 'styleBald',   cloth: 'polo', c1: [110, 140, 180], c2: [90, 120, 160], brow: 'flat', mouth: 'neutral', heavy: true },
+  kevin:    { skin: 'light', hairc: [58, 44, 30],   hair: 'styleBald',   cloth: 'polo', c1: [110, 140, 180], c2: [90, 120, 160], brow: 'flat', mouth: 'neutral', heavy: true, shortSleeves: true },
   angela:   { skin: 'light', hairc: [186, 154, 90], hair: 'styleBun',    cloth: 'cardigan', c1: [150, 146, 170], c2: [235, 233, 226], brow: 'angry', mouth: 'frown', lashes: true },
   oscar:    { skin: 'tan',   hairc: [28, 22, 18],   hair: 'styleShort',  hairargs: { part: 'L' }, cloth: 'sweater', c1: [122, 60, 74], brow: 'flat', mouth: 'smile' },
   stanley:  { skin: 'dark',  hairc: [60, 54, 48],   hair: 'styleRecede', cloth: 'dressshirt', c1: [150, 120, 86], tie: [120, 78, 52], glasses: true, facial: 'mustache', brow: 'flat', mouth: 'neutral', heavy: true },
   phyllis:  { skin: 'light', hairc: [196, 162, 110], hair: 'styleCurly', cloth: 'blouse', c1: [202, 160, 192], glasses: true, brow: 'soft', mouth: 'smile', lashes: true, heavy: true },
-  andy:     { skin: 'light', hairc: [74, 51, 32],   hair: 'styleShort',  hairargs: { part: 'R' }, cloth: 'polo', c1: [176, 65, 58], c2: [150, 50, 46], brow: 'raised', mouth: 'smile' },
+  andy:     { skin: 'light', hairc: [74, 51, 32],   hair: 'styleShort',  hairargs: { part: 'R' }, cloth: 'polo', c1: [176, 65, 58], c2: [150, 50, 46], brow: 'raised', mouth: 'smile', shortSleeves: true },
   kelly:    { skin: 'tan',   hairc: [24, 18, 22],   hair: 'styleFrame',  hairargs: { length: 20, vol: 1 }, cloth: 'blouse', c1: [212, 90, 158], brow: 'soft', mouth: 'smile', blush: true, lashes: true },
   ryan:     { skin: 'light', hairc: [42, 32, 24],   hair: 'styleSpiky',  cloth: 'suit', c1: [58, 58, 68], tie: [40, 40, 50], brow: 'flat', mouth: 'neutral' },
   toby:     { skin: 'light', hairc: [106, 90, 66],  hair: 'styleShort',  hairargs: { part: 'L', recede: 1 }, cloth: 'dressshirt', c1: [150, 150, 120], facial: 'mustacheSm', brow: 'soft', mouth: 'frown' },
@@ -508,36 +529,79 @@ const RECIPES: Record<OfficeCharacterName, Recipe> = {
   meredith: { skin: 'light', hairc: [154, 82, 46],  hair: 'styleMessy',  hairargs: { length: 15 }, cloth: 'blouse', c1: [176, 86, 74], brow: 'raised', mouth: 'smile', lashes: true },
 };
 
+/**
+ * Hooks that replace the resting face with an expression (actor/faces.ts).
+ * `face` runs where the resting face would be drawn (before facial hair and
+ * hair, so a fringe still covers the brow line); `afterHair` runs before the
+ * glasses; `top` runs last (tears, sweat, marks that sit over everything).
+ */
+export interface FaceHooks {
+  face(buf: Buf, r: Recipe): void;
+  afterHair?(buf: Buf, r: Recipe): void;
+  top?(buf: Buf, r: Recipe): void;
+}
+
+/** Visitors, drawn in the same style. Keys are the sim's visitor ids. */
+const VISITOR_RECIPES: Record<string, Recipe> = {
+  // Grey suit, grey hair, a big moustache, glasses and a clipboard.
+  'visitor:inspector': { skin: 'light', hairc: [128, 124, 118], hair: 'styleShort', hairargs: { part: 'R', recede: 1 }, cloth: 'suit', c1: [112, 116, 124], tie: [52, 58, 78], facial: 'mustache', glasses: true, brow: 'angry', mouth: 'neutral', signatureProp: 'clipboard' },
+  // Red courier uniform and a red cap.
+  'visitor:courier': { skin: 'brown', hairc: [34, 24, 20], hair: 'styleFrame', hairargs: { length: 13, vol: 1 }, cloth: 'polo', c1: [206, 54, 44], c2: [250, 210, 80], pants: [44, 46, 60], cap: [196, 44, 38], brow: 'flat', mouth: 'smile', lashes: true, shortSleeves: true },
+};
+
+/** Anyone unknown: a plain office worker. */
+const DEFAULT_RECIPE: Recipe = { skin: 'tan', hairc: [70, 52, 36], hair: 'styleShort', hairargs: { part: 'L' }, cloth: 'dressshirt', c1: [150, 166, 186], tie: [80, 90, 120], brow: 'flat', mouth: 'neutral' };
+
+/** The recipe for a cast name, a visitor id, or the default person. */
+export function recipeFor(sprite: string): Recipe {
+  return (RECIPES as Record<string, Recipe | undefined>)[sprite] ?? VISITOR_RECIPES[sprite] ?? DEFAULT_RECIPE;
+}
+
 /** The face/hair group (head → face → facial hair → hair → glasses), no clothing. */
-function drawHeadGroup(buf: Buf, r: Recipe): void {
+export function drawHeadGroup(buf: Buf, r: Recipe, hooks?: FaceHooks): void {
   const skinBase = SKIN[r.skin].base;
   drawHead(buf, r.skin);
   if (r.heavy) drawHeavyFace(buf, r.skin);
-  drawFace(buf, r.skin, r.brow ?? 'flat', r.mouth ?? 'neutral', r.blush ?? false, r.lashes ?? false);
+  if (hooks) hooks.face(buf, r);
+  else drawFace(buf, r.skin, r.brow ?? 'flat', r.mouth ?? 'neutral', r.blush ?? false, r.lashes ?? false);
   if (r.facial) drawFacial(buf, r.facial, r.hairc);
   HAIR_FNS[r.hair](buf, r.hairc, skinBase, r.hairargs ?? {});
+  if (r.cap) drawCap(buf, r.cap);
+  hooks?.afterHair?.(buf, r);
   if (r.glasses) drawGlasses(buf);
+  hooks?.top?.(buf, r);
 }
 
-function defaultPants(r: Recipe): RGB {
+/** A peaked cap over the top of the head, the peak to the viewer's right. */
+function drawCap(buf: Buf, color: RGB): void {
+  const [hi, base, sh] = shades(color);
+  rect(buf, 4, 1, 13, 4, base);
+  for (let x = 5; x <= 12; x++) set(buf, x, 0, base);
+  for (let x = 6; x <= 9; x++) set(buf, x, 1, hi);
+  for (let x = 3; x <= 15; x++) set(buf, x, 5, sh); // the peak
+  set(buf, 16, 5, sh);
+  set(buf, 8, 2, [250, 220, 90]); set(buf, 9, 2, [250, 220, 90]); // badge
+}
+
+export function defaultPants(r: Recipe): RGB {
   if (r.pants) return r.pants;
   return r.cloth === 'suit' ? shades(r.c1)[2] : [54, 56, 70];
 }
 
 /** Portrait bust: shoulders-height clothing + front head group. */
-function compose(r: Recipe): Buf {
-  CUR_W = PORTRAIT_W; CUR_H = PORTRAIT_H;
+export function compose(r: Recipe, hooks?: FaceHooks): Buf {
+  PX.w = PORTRAIT_W; PX.h = PORTRAIT_H; PX.ox = 0; PX.oy = 0;
   const buf = new Uint8ClampedArray(PORTRAIT_W * PORTRAIT_H * 4);
   drawClothing(buf, r.cloth, r.c1, r.c2, r.tie, r.skin, r.heavy ?? false);
   collarNeck(buf, r.skin);
-  drawHeadGroup(buf, r);
+  drawHeadGroup(buf, r, hooks);
   outlinePass(buf);
   return buf;
 }
 
 /** Full-body 18×32 scene sprite. `back=false` reuses the portrait's exact face. */
 function composeScene(r: Recipe, phase: number, back: boolean): Buf {
-  CUR_W = SCENE_W; CUR_H = SCENE_H;
+  PX.w = SCENE_W; PX.h = SCENE_H; PX.ox = 0; PX.oy = 0;
   const buf = new Uint8ClampedArray(SCENE_W * SCENE_H * 4);
   drawSceneBody(buf, r, phase, back);
   if (back) drawHeadBack(buf, r);

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>FX harness</title>
+    <!--
+      Effects harness. URL parameters:
+        ?view=effect&kind=fire&room=kitchen&zoom=3   one lasting effect (extra: size, level, what, mood,
+                                                     facing, species, anim, carrying, item, emoji, state,
+                                                     hour, rooms=room, emergency=1, t=<pre-step seconds>)
+        ?view=cue&kind=lightning                     a cue fired every 1.6 s (extra: what, icon, text, size)
+        ?view=statuses | emotes | bursts | all
+      window.__h: add / patch / remove / clear effects, cue(c), step(seconds), pause(), setStatus(id, list), zoom(z, x, y)
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #1a1320; overflow: hidden; }
+      canvas { display: block; image-rendering: pixelated; }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/scene/office/fx/harness.ts"></script>
+  </body>
+</html>

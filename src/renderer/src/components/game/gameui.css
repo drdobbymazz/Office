@@ -1,0 +1,255 @@
+/* Game overlay. Everything here follows DESIGN.md: hard edges, hard shadows,
+   step animations, the three pixel fonts and the design tokens. Class names are
+   prefixed gu- so nothing leaks into the rest of the app. */
+
+.gu-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;           /* the floor underneath gets every touch we do not claim */
+  overflow: hidden;
+  font-family: var(--cth-font-ui);
+  color: var(--cth-ink-900);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 10;
+}
+.gu-root * { -webkit-tap-highlight-color: transparent; }
+.gu-hit { pointer-events: auto; }
+.gu-root input, .gu-root textarea, .gu-root select {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Scrolling lists: momentum, no rubber band leaking to the page, no floor pan. */
+.gu-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cth-ink-700) var(--cth-cream-200);
+}
+.gu-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+.gu-scroll-x::-webkit-scrollbar { display: none; }
+.gu-scroll::-webkit-scrollbar { width: 6px; }
+
+/* Tiny diagonal cream noise, same as the app body. */
+.gu-paper {
+  background-color: var(--cth-cream-100);
+  background-image: repeating-linear-gradient(45deg, rgba(232, 217, 160, 0.20) 0 1px, transparent 1px 6px);
+}
+
+.gu-label {
+  font-family: var(--cth-font-display);
+  font-size: 8px;
+  line-height: 12px;
+  color: var(--cth-ink-500);
+  text-transform: uppercase;
+}
+
+.gu-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  min-height: 40px;
+  border: 2px solid var(--cth-ink-900);
+  border-radius: 0;
+  background: var(--cth-cream-50);
+  font-family: var(--cth-font-ui);
+  font-size: 16px;               /* 16 px stops iOS zooming on focus */
+  line-height: 20px;
+  color: var(--cth-ink-900);
+  outline: none;
+  resize: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.gu-field:focus { box-shadow: inset 0 0 0 1px var(--cth-ink-900), 0 0 0 2px var(--cth-lemon); }
+.gu-field::placeholder { color: var(--cth-ink-300); }
+select.gu-field {
+  padding-right: 28px;
+  background-image:
+    linear-gradient(var(--cth-ink-900), var(--cth-ink-900)),
+    linear-gradient(var(--cth-ink-900), var(--cth-ink-900)),
+    linear-gradient(var(--cth-ink-900), var(--cth-ink-900));
+  background-size: 8px 2px, 4px 2px, 2px 2px;
+  background-position: right 10px top 17px, right 12px top 19px, right 13px top 21px;
+  background-repeat: no-repeat;
+}
+
+/* Pixel slider: square thumb, inset track. */
+.gu-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 40px;
+  background: transparent;
+  margin: 0;
+  touch-action: pan-y;
+}
+.gu-range::-webkit-slider-runnable-track {
+  height: 8px;
+  background: var(--cth-cream-200);
+  box-shadow: inset 0 0 0 2px var(--cth-ink-900);
+}
+.gu-range::-moz-range-track {
+  height: 8px;
+  background: var(--cth-cream-200);
+  box-shadow: inset 0 0 0 2px var(--cth-ink-900);
+}
+.gu-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 24px;
+  margin-top: -8px;
+  background: var(--cth-cream-50);
+  box-shadow: inset 0 0 0 2px var(--cth-ink-900), 0 2px 0 var(--cth-ink-900);
+  border: none;
+  border-radius: 0;
+}
+.gu-range::-moz-range-thumb {
+  width: 20px;
+  height: 24px;
+  background: var(--cth-cream-50);
+  box-shadow: inset 0 0 0 2px var(--cth-ink-900), 0 2px 0 var(--cth-ink-900);
+  border: none;
+  border-radius: 0;
+}
+
+/* ── Keyframes (step based, as global.css) ── */
+@keyframes gu-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes gu-shake {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-1px, 1px); }
+  50% { transform: translate(1px, 0); }
+  75% { transform: translate(0, -1px); }
+  100% { transform: translate(1px, 1px); }
+}
+@keyframes gu-pop-in {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes gu-slide-down {
+  0% { transform: translateY(-8px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes gu-slide-in-right {
+  0% { transform: translateX(16px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes gu-rotate-phone {
+  0%, 30% { transform: rotate(0deg); }
+  40%, 80% { transform: rotate(-90deg); }
+  90%, 100% { transform: rotate(0deg); }
+}
+@keyframes gu-bob { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(-2px); } }
+@keyframes gu-point-down { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(4px); } }
+@keyframes gu-point-right { 0%, 49% { transform: translateX(0); } 50%, 100% { transform: translateX(4px); } }
+
+.gu-pop { animation: gu-pop-in 200ms cubic-bezier(.2, .8, .2, 1) both; }
+.gu-drop { animation: gu-slide-down 200ms steps(4) both; }
+.gu-slide { animation: gu-slide-in-right 160ms steps(4) both; }
+.gu-caret::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 2px;
+  background: var(--cth-ink-700);
+  animation: gu-blink 1s steps(1) infinite;
+  vertical-align: -1px;
+}
+
+/* Cooldown step-wipe: the cover shrinks in 8 steps. */
+.gu-wipe {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: rgba(26, 19, 32, 0.55);
+  pointer-events: none;
+}
+
+/* ── Speech bubbles ── */
+.gu-bubble {
+  position: absolute;
+  left: 0; top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.gu-bubble-box {
+  position: relative;
+  background: var(--cth-cream-50);
+  box-shadow: inset 0 0 0 1px var(--cth-ink-900);
+  padding: 4px 7px 5px;
+  font-family: var(--cth-font-ui);
+  font-size: 14px;
+  line-height: 17px;
+  color: var(--cth-ink-700);
+  overflow-wrap: break-word;
+  /* one-pixel corner notches: the pixel "rounded corner" of DESIGN.md 6.3 */
+  clip-path: polygon(1px 0, calc(100% - 1px) 0, calc(100% - 1px) 1px, 100% 1px, 100% calc(100% - 1px),
+    calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) 100%, 1px 100%, 1px calc(100% - 1px), 0 calc(100% - 1px),
+    0 1px, 1px 1px);
+}
+.gu-bubble-name {
+  display: block;
+  font-size: 12px;
+  line-height: 13px;
+  margin-bottom: 1px;
+}
+.gu-bubble.k-whisper .gu-bubble-box {
+  box-shadow: none;
+  background:
+    repeating-linear-gradient(90deg, var(--cth-ink-500) 0 3px, transparent 3px 6px) top / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, var(--cth-ink-500) 0 3px, transparent 3px 6px) bottom / 100% 1px no-repeat,
+    repeating-linear-gradient(180deg, var(--cth-ink-500) 0 3px, transparent 3px 6px) left / 1px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--cth-ink-500) 0 3px, transparent 3px 6px) right / 1px 100% no-repeat,
+    var(--cth-cream-50);
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--cth-ink-500);
+}
+.gu-bubble.k-think .gu-bubble-box { font-style: italic; color: var(--cth-ink-500); }
+.gu-bubble.k-shout .gu-bubble-box {
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+  padding: 9px 12px 10px;
+  font-size: 16px;
+  line-height: 19px;
+  font-weight: 700;
+  color: var(--cth-ink-900);
+}
+.gu-bubble.k-shout .gu-shout-bg { position: absolute; left: 0; top: 0; }
+.gu-bubble.k-shout .gu-bubble-inner { animation: gu-shake 240ms steps(4) infinite; }
+.gu-bubble-text .gu-rest { color: transparent; }
+
+/* Rail tab: the open tab joins the sheet like a file tab. */
+.gu-tab {
+  position: relative;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--cth-ink-700);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gu-bubble.k-shout .gu-bubble-inner { animation: none; }
+}

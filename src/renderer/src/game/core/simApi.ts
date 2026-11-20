@@ -2,9 +2,8 @@
 // plays out what the language model writes) and the chaos events (which stage
 // fires, floods, saucers ...). The sim (game/sim/) implements this.
 //
-// STATUS: this is the agreed shape. The sim's author may ADD methods and
-// fields, and may tighten types, but should keep these names and meanings so
-// code written against it keeps working.
+// STATUS: implemented by game/sim (createSim). Additions over the first draft
+// are marked "(added)". Names and meanings of the original members are kept.
 
 import type {
   AnimId, CastId, ChaosId, ChaosTarget, CharId, Dir, EmotionId, FeedKind, Headgear, HeldProp,
@@ -14,7 +13,7 @@ import type { FixSkill } from './cast';
 import type { GameBus } from './bus';
 import type { EffectInstance, EmoteIcon, FxCue } from '@/game/view/api';
 import type { LoopId, SfxId } from '@/game/audio/api';
-import type { BarkKind, SceneTrigger } from '@/game/brain/api';
+import type { BarkKind, PersonBrief, SceneLine, SceneTrigger } from '@/game/brain/api';
 
 /** Read-only view of one person. */
 export interface SimPerson {
@@ -63,6 +62,20 @@ export interface GoOptions {
   then?: () => void;
   /** What they are doing, in plain words, for the UI: "going to confront Jim". */
   doing?: string;
+  /** (added) Seconds to stay at the destination before going back to the routine. Default 30. */
+  stay?: number;
+  /** (added) What they are doing while they stay there. Default: "waiting <place>". */
+  stayDoing?: string;
+  /** (added) May walk into rooms marked with setHazard (default false). */
+  braveHazard?: boolean;
+}
+
+/** (added) Options for fleeFrom. */
+export interface FleeOptions {
+  doing?: string;
+  /** Seconds to keep clear before going back to the routine. Default 10. */
+  stay?: number;
+  style?: 'run' | 'panic';
 }
 
 export interface SayOptions {
@@ -84,6 +97,18 @@ export interface TaskSpec {
   prop?: HeldProp;
   style?: 'walk' | 'run';
   doing: string;
+  /** (added) What they are doing while walking there. Default: `doing`. */
+  walkDoing?: string;
+}
+
+/** (added) What a seized person looks like. */
+export interface SeizePose {
+  anim: AnimId;
+  seated?: boolean;
+  variant?: number;
+  doing: string;
+  /** Off the floor entirely (aboard the saucer): not drawn, not present, no tile. */
+  hidden?: boolean;
 }
 
 /** Ask the director for a scene. It decides when the model is free. */
@@ -142,18 +167,22 @@ export interface SimApi {
   /** Drop whatever they are doing and go somewhere. */
   goTo(who: CharId, dest: Dest, opts?: GoOptions): void;
   /** Run out of a room to somewhere safer. */
-  fleeFrom(who: CharId, room: RoomId): void;
+  fleeFrom(who: CharId, room: RoomId, opts?: FleeOptions): void;
   /** Leave the building for the pavement outside. */
   evacuate(who: CharId): void;
   /** Back to their normal routine. */
   resume(who: CharId): void;
-  /** Send someone to do a job. `done` runs when the work is finished. */
-  assign(who: CharId, task: TaskSpec, done?: () => void): void;
+  /**
+   * Send someone to do a job. `done` runs when the work is finished.
+   * (added) `failed` runs instead if they never finish it (picked up, seized,
+   * sent elsewhere, gone home, or not available in the first place).
+   */
+  assign(who: CharId, task: TaskSpec, done?: () => void, failed?: () => void): void;
   /**
    * Take over a person completely under a named key (asleep, frozen, dancing,
    * abducted ...). They do nothing else until release() with the same key.
    */
-  seize(who: CharId, key: string, pose: { anim: AnimId; seated?: boolean; variant?: number; doing: string }): void;
+  seize(who: CharId, key: string, pose: SeizePose): void;
   release(who: CharId, key: string): void;
   isSeized(who: CharId): boolean;
   addStatus(who: CharId, kind: StatusKind, seconds: number, target?: CharId): void;
@@ -177,6 +206,14 @@ export interface SimApi {
   removeEffect(id: string): void;
   /** Make tiles impassable under a key (a jammed door, a fire); null clears the key. */
   setBlocked(key: string, tiles: Tile[] | null): void;
+  /** (added) Mark a room as dangerous under a key: routines and plans avoid it (fixers may enter). null clears. */
+  setHazard(key: string, room: RoomId | null): void;
+  /** (added) */
+  isHazard(room: RoomId): boolean;
+  /** (added) True if blocking these tiles would leave every other floor tile reachable from the front door. */
+  canBlock(tiles: Tile[]): boolean;
+  /** (added) An effect currently in the list. */
+  effect(id: string): EffectInstance | undefined;
   fx(cue: FxCue): void;
   sfx(id: SfxId, x?: number): void;
   loop(id: LoopId, on: boolean): void;
@@ -187,8 +224,8 @@ export interface SimApi {
   // ── story ──
   /** A plain line in the feed. */
   narrate(text: string, opts?: { icon?: string; room?: RoomId; kind?: FeedKind }): void;
-  /** Add a memory to people: a list of ids, everyone in a room, or 'all'. */
-  remember(who: CharId[] | RoomId | 'all', text: string): void;
+  /** Add a memory to people: a list of ids, everyone in a room, or 'all'. (added) weight 0.5 trivial .. 3 unforgettable, default 1. */
+  remember(who: CharId[] | RoomId | 'all', text: string, weight?: number): void;
   /** Change how `who` feels about `about` by delta (-100..100 scale). */
   shiftBond(who: CharId, about: CharId, delta: number, why?: string): void;
   bumpChaos(amount: number): void;
@@ -200,6 +237,49 @@ export interface SimApi {
   /** Reveal someone's secret to the player (and note that the office knows). */
   revealSecret(who: CastId): void;
   requestScene(ask: SceneAsk): void;
+  /** (added) Cut someone's current speech bubble short. */
+  hush(who: CharId): void;
+}
+
+// ── (added) What the director needs on top of SimApi ─────────────────────────
+
+export interface OpenSceneOpts {
+  /** Unique id (the director's scene request id). */
+  id: string;
+  /** 1-4 people, all of whom must be available. */
+  people: CharId[];
+  /** Walk them within talking distance (adjacent tiles) first. */
+  gather: boolean;
+}
+
+export interface SceneHandle {
+  readonly id: string;
+  readonly people: readonly CharId[];
+  /** True once everyone is in place (or after a short timeout). */
+  readonly ready: boolean;
+  /** False once it has broken up (someone picked up, seized, fell asleep, went home ...) or been closed. */
+  readonly alive: boolean;
+  /** Say one line: bubble, feed, talking flag, emotion, gesture; the others turn to the speaker. */
+  line(l: SceneLine): Speech;
+  /** Let everyone go back to what they were doing. Safe to call twice. */
+  close(): void;
+}
+
+export interface DirectorSimApi extends SimApi {
+  /** Queued scene asks, highest priority first. Clears the queue. */
+  takeSceneAsks(): SceneAsk[];
+  /** null if anyone is unavailable (or the id is already open). */
+  openScene(opts: OpenSceneOpts): SceneHandle | null;
+  briefFor(who: CharId, others: readonly CharId[]): PersonBrief;
+  /** True statements about the office right now. */
+  facts(): string[];
+  /** The last n lines said in a room, oldest first. */
+  recentLines(room: RoomId, n: number): { who: string; say: string }[];
+  /** Plain lines of what happened today, oldest first. */
+  dayLog(): string[];
+  memoriesFor(who: CharId, about?: readonly CharId[]): string[];
+  /** Long-term takeaways from the end-of-day report. */
+  setTakeaways(list: readonly { who: CharId; text: string }[]): void;
 }
 
 // ── Chaos events plug into the sim like this ─────────────────────────────────
