@@ -125,6 +125,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     return new Director({
       sim, brain, instinct,
       pace: () => 1,
+      speed: () => store.getState().brain.tokPerSec ?? 0,
       onBusy: (b) => {
         brainBusy = { thinking: b.thinking, queued: b.queued };
       }
@@ -219,7 +220,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const state: BrainUi['state'] = chosen === 'instinct' ? 'instinct' : st.ok ? 'online' : 'offline';
     set((s) => ({
       brain: {
-        ...s.brain, provider: chosen, state, model: st.model || settings.brain.model,
+        ...s.brain, provider: chosen, state, model: (st.model || settings.brain.model).replace(/:latest$/, ''),
         tokPerSec: st.tokPerSec ?? null, error: st.ok ? null : st.error ?? 'The model is not answering.'
       }
     }));

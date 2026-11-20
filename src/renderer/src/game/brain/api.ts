@@ -271,6 +271,12 @@ export interface BrainStatus {
 export interface SceneCallbacks {
   /** Called for each line as soon as it is complete in the stream. */
   onLine?: (line: SceneLine, index: number) => void;
+  /**
+   * Called at most once, when the last line has arrived but the rest of the
+   * reply (summary, shifts, plans) is still being written. On a slow model that
+   * tail takes several seconds, and nobody needs to stand and wait for it.
+   */
+  onLinesEnd?: () => void;
   signal?: AbortSignal;
 }
 

@@ -109,7 +109,7 @@ export class ChaosRegistry {
     core.bus.emit('chaosStart', { id, target: t, label: run.label, room: room as RoomId | undefined });
     core.bumpChaos(def.chaos);
     if (def.incident) core.incident();
-    core.narrate(run.label, { icon: id, kind: 'overseer', room: room as RoomId | undefined });
+    if (!run.ownStartLine) core.narrate(run.label, { icon: id, kind: 'overseer', room: room as RoomId | undefined });
     return null;
   }
 

@@ -125,6 +125,8 @@ export interface SceneAsk {
   maxLines?: number;
   /** Drop the request if it has not started within this many seconds. */
   staleAfter?: number;
+  /** Walk them together first. Default: yes, unless it is an announcement or one person. */
+  gather?: boolean;
 }
 
 export interface SimApi {
@@ -296,6 +298,8 @@ export interface ChaosRun {
   /** Short label for the UI: "Fire in the break room". */
   readonly label: string;
   readonly room: RoomId | null;
+  /** The script writes its own opening line in the log, so the sim does not add the label as well. */
+  readonly ownStartLine?: boolean;
 }
 
 export interface ChaosScript {

@@ -380,6 +380,8 @@ export function rescue(core: SimCore, p: Person): void {
   }
   // Re-plan: drop the job (its owner hears onFail); the routine picks again.
   cancelJob(p);
+  // Stand on a free tile of their own meanwhile (their reservation may be across a now-blocked door).
+  if (!p.job) p.job = settleJob(p.doing);
 }
 
 export function trappedWait(core: SimCore, p: Person): void {

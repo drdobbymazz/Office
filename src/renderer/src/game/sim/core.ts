@@ -848,7 +848,8 @@ export class SimCore implements DirectorSimApi {
     if (!Number.isFinite(delta) || who === about) return;
     const r = this.bondsTable.shift(who, about, delta, why);
     if (r.before !== r.after) {
-      this.emitFeed('shift', `${this.nameOf(who)} now ${r.after} ${this.nameOf(about)}${why ? ` (${why})` : ''}.`, { who, other: about });
+      const label = r.after.startsWith('is ') ? `is now ${r.after.slice(3)}` : `now ${r.after}`;
+      this.emitFeed('shift', `${this.nameOf(who)} ${label} ${this.nameOf(about)}.`, { who, other: about });
     }
   }
 

@@ -26,6 +26,8 @@ export interface DirectorOptions {
   instinct: Brain;
   /** 0.5 relaxed .. 2 frantic: scales the pauses between ambient scenes. */
   pace?: () => number;
+  /** Measured output speed of the model in tokens a second (0 = not known yet). */
+  speed?: () => number;
   /** Called whenever the director starts or stops waiting on the model. */
   onBusy?: (state: { thinking: boolean; queued: number; source: 'model' | 'instinct' | null }) => void;
 }
@@ -55,6 +57,10 @@ interface Running {
   waitedSince: number;
   dotted: boolean;
   fromPlayer: boolean;
+  /** The model has written its last line and is now on the summary. */
+  linesDone: boolean;
+  /** Sim time the people were let go while the summary was still coming (0 = not yet). */
+  releasedAt: number;
 }
 
 const SHIFT_DELTA: Record<ShiftKind, number> = {
@@ -75,8 +81,13 @@ export class Director {
   /** A non-scene request (minds / interpret / report) is in flight. */
   private side = false;
   private ambientAt = 6;
-  private mindsAt = 14;
+  private mindsAt = 40;
   private musingAt = 9;
+  /** Conversations finished since the last round of thoughts. */
+  private scenesSinceMinds = 0;
+  /** Sim time of the next look for people who could be chatting. */
+  private idleAt = 0;
+  private lastTopic = '';
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   /** Free-text events currently on the floor, to be cleared when their time is up. */
@@ -107,12 +118,23 @@ export class Director {
     this.queue.length = 0;
     this.expireCustoms(Infinity);
     this.ambientAt = this.api.time + 8;
-    this.mindsAt = this.api.time + 16;
+    this.mindsAt = this.api.time + (this.slow ? 45 : 22);
     this.musingAt = this.api.time + 10;
+    this.scenesSinceMinds = 0;
   }
 
   get thinking(): boolean {
     return (this.running !== null && this.running.result === null && !this.running.failed) || this.side;
+  }
+
+  /**
+   * A model that writes only a few words a second (a laptop GPU) cannot do
+   * everything: its time goes to conversations first. Unknown counts as slow
+   * until the first reply has been timed.
+   */
+  private get slow(): boolean {
+    const speed = this.opts.speed?.() ?? 0;
+    return speed <= 0 || speed < 16;
   }
 
   // ── things the player does ─────────────────────────────────────────────────
@@ -228,8 +250,16 @@ export class Director {
       void this.musing();
     }
     if (!this.running && !this.side && now >= this.mindsAt) {
-      this.mindsAt = now + 28 + this.api.rng() * 14;
-      this.mindsRound();
+      // Conversations come first. A round of private thoughts costs a slow model
+      // twenty seconds, so it waits for a quiet moment and happens less often.
+      const slow = this.slow;
+      const owed = this.scenesSinceMinds >= (slow ? 3 : 1);
+      if (this.queue.length && !owed) this.mindsAt = now + 3;
+      else {
+        this.mindsAt = now + (slow ? 70 + this.api.rng() * 30 : 28 + this.api.rng() * 14);
+        this.scenesSinceMinds = 0;
+        this.mindsRound(slow ? 2 : 3);
+      }
     }
   }
 
@@ -265,6 +295,75 @@ export class Director {
         return;
       }
     }
+    // Nobody has asked for anything, so the office makes its own small talk.
+    if (now >= this.ambientAt && now >= this.idleAt) {
+      this.idleAt = now + 2.5;
+      const ask = this.smallTalk(now);
+      if (ask && this.startScene({ ask, at: now, fromPlayer: false }, now)) this.report();
+    }
+  }
+
+  /**
+   * Two people who could plausibly be talking right now, and something for them
+   * to talk about. Whoever has been quiet longest goes first, so over a day
+   * everybody gets heard.
+   */
+  private smallTalk(now: number): SceneAsk | null {
+    const clock = this.api.clock;
+    if (clock < 9 * 60 + 2 || clock > 16 * 60 + 50 || this.api.chaos > 70) return null;
+    const rng = this.api.rng;
+    const free = this.api.people().filter((p) => p.isCast && p.present && p.available && !p.plan && !p.speaking && this.canSpeak(p.id));
+    if (!free.length) return null;
+    const quiet = (p: SimPerson): number => now - (this.lastSpoke.get(p.id) ?? -999);
+    const pool = free.slice().sort((x, y) => quiet(y) - quiet(x)).slice(0, 4);
+    const a = pool[Math.floor(rng() * pool.length)];
+    const place = roomDef(a.room).name;
+
+    const near = free
+      .filter((o) => o.id !== a.id && o.room === a.room)
+      .map((o) => {
+        const dist = Math.hypot(o.x - a.x, o.y - a.y);
+        const feeling = Math.abs(this.api.bond(a.id, o.id)) / 100;
+        return { o, dist, score: feeling + Math.max(0, 1 - dist / 260) + Math.min(1, quiet(o) / 120) * 0.6 + rng() * 0.5 };
+      })
+      .sort((x, y) => y.score - x.score);
+
+    if (!near.length) {
+      // Alone in the room: a line down the phone or under the breath.
+      if (quiet(a) < 45) return null;
+      return {
+        people: [a.id], room: a.room, trigger: 'ambient', priority: 1, minLines: 1, maxLines: 1, gather: false,
+        why: `${a.name} is alone in ${place}, ${a.doing}. ${a.name} says one thing out loud, to nobody or down the phone.`
+      };
+    }
+
+    const { o: b, dist } = near[0];
+    const people = [a.id, b.id];
+    // Now and then a third joins in, when the model is quick enough to afford it.
+    if (!this.slow && near.length > 1 && rng() < 0.25) people.push(near[1].o.id);
+
+    const bond = this.api.bond(a.id, b.id);
+    const facts = this.sim.facts();
+    const topics: [string, string][] = [];
+    if (facts.length) topics.push(['fact', `${a.name} and ${b.name} are talking about this: ${facts[Math.floor(rng() * Math.min(3, facts.length))]}`]);
+    if (bond <= -20) topics.push(['feud', `${a.name} and ${b.name} do not get on. ${a.name} has found something small to pick at.`]);
+    if (bond >= 30) topics.push(['pals', `${a.name} and ${b.name} get on well. They are having a quiet word instead of working.`]);
+    if (a.thought) topics.push(['thought', `${a.name} keeps thinking: "${a.thought}" Now ${a.name} says something about it to ${b.name}.`]);
+    topics.push(['doing', `A quiet moment in ${place}. ${a.name} is ${a.doing} and ${b.name} is ${b.doing}.`]);
+    if (clock < 10 * 60) topics.push(['early', `It is early and nobody in ${place} has done any work yet. ${a.name} says so to ${b.name}.`]);
+    else if (clock >= 11 * 60 + 30 && clock < 13 * 60) topics.push(['lunch', `It is nearly lunch. ${a.name} and ${b.name} are talking about anything except work.`]);
+    else if (clock >= 15 * 60 + 30) topics.push(['late', `The afternoon is dragging in ${place}. ${a.name} wants to go home and says so to ${b.name}.`]);
+    // Not the same kind of chat twice running.
+    const fresh = topics.filter((t) => t[0] !== this.lastTopic);
+    const [kind, why] = (fresh.length ? fresh : topics)[Math.floor(rng() * (fresh.length || topics.length))];
+    this.lastTopic = kind;
+
+    return {
+      people, room: a.room, trigger: 'ambient', priority: 1, why,
+      minLines: 2, maxLines: people.length > 2 ? 4 : 3,
+      // Neighbours call across the desks; anyone further away walks over.
+      gather: dist > 110
+    };
   }
 
   // ── scenes ─────────────────────────────────────────────────────────────────
@@ -281,13 +380,14 @@ export class Director {
 
     const id = nextId('scene');
     // An announcement is shouted across the room; everything else is a huddle.
-    const handle = this.sim.openScene({ id, people: ids, gather: ask.trigger !== 'announce' && ids.length > 1 });
+    const handle = this.sim.openScene({ id, people: ids, gather: ask.gather ?? (ask.trigger !== 'announce' && ids.length > 1) });
     if (!handle) return false;
 
     const abort = new AbortController();
     const r: Running = {
       ask, handle, people: ids, room, abort, buffer: [], spoken: 0, result: null, failed: false,
-      nextAt: now + 0.4, startedAt: now, waitedSince: now, dotted: false, fromPlayer: p.fromPlayer
+      nextAt: now + 0.4, startedAt: now, waitedSince: now, dotted: false, fromPlayer: p.fromPlayer,
+      linesDone: false, releasedAt: 0
     };
     this.running = r;
     this.focusOn(ids, ask.priority);
@@ -296,7 +396,11 @@ export class Director {
     // A brain that may not be called on a timer (Claude inside an Artifact) only writes for the player's own actions.
     const brain = this.brain.autonomous || p.fromPlayer ? this.brain : this.instinct;
     void brain
-      .scene(req, { signal: abort.signal, onLine: (line) => { if (this.running === r) r.buffer.push(line); } })
+      .scene(req, {
+        signal: abort.signal,
+        onLine: (line) => { if (this.running === r) r.buffer.push(line); },
+        onLinesEnd: () => { if (this.running === r) r.linesDone = true; }
+      })
       .then((res) => {
         if (this.running !== r) return;
         r.result = res;
@@ -315,6 +419,12 @@ export class Director {
   private advanceScene(now: number): void {
     const r = this.running;
     if (!r) return;
+    if (r.releasedAt) {
+      // Everyone has gone back to work; only the summary is still on its way.
+      if (r.result || r.failed) this.finishScene(r);
+      else if (now - r.releasedAt > 45) this.stopScene(false);
+      return;
+    }
     if (!r.handle.alive) {
       this.stopScene(true);
       return;
@@ -339,6 +449,12 @@ export class Director {
       this.finishScene(r);
       return;
     }
+    if (r.linesDone && r.spoken > 0) {
+      // The talking is over. Let them go now rather than stand about while the summary is written.
+      r.releasedAt = now;
+      r.handle.close();
+      return;
+    }
     // Nothing to say yet: the model is still writing. Show that someone is thinking.
     if (!r.dotted && now - r.waitedSince > 1.6) {
       r.dotted = true;
@@ -353,6 +469,7 @@ export class Director {
     const res = r.result;
     r.handle.close();
     this.running = null;
+    this.scenesSinceMinds += 1;
     if (res) {
       const onlookers = this.api.peopleIn(r.room).filter((p) => p.present && !r.people.includes(p.id)).map((p) => p.id);
       if (res.summary) this.api.remember([...r.people, ...onlookers], res.summary);
@@ -367,7 +484,9 @@ export class Director {
     const pace = clampPace(this.opts.pace?.() ?? 1);
     // Busier offices talk more: the gap shrinks with chaos.
     const calm = 1 - Math.min(1, this.api.chaos / 100) * 0.6;
-    this.ambientAt = this.api.time + (5 + this.api.rng() * 6) * calm / pace;
+    // Written lines repeat sooner than a model's, so without a model the pauses are longer.
+    const canned = !this.brain.autonomous || this.brain.kind === 'instinct' ? 2.4 : 1;
+    this.ambientAt = this.api.time + (5 + this.api.rng() * 6) * calm * canned / pace;
     this.report();
   }
 
@@ -406,7 +525,7 @@ export class Director {
 
   // ── people on their own: thoughts and plans ────────────────────────────────
 
-  private mindsRound(): void {
+  private mindsRound(count = 3): void {
     // Without a model that may run on a timer, the sim's own routine is the mind.
     if (!this.brain.autonomous || this.brain.kind === 'instinct') return;
     const now = this.api.time;
@@ -414,7 +533,7 @@ export class Director {
       .people()
       .filter((p) => p.present && p.available && p.isCast && !p.plan && now - (this.lastMinded.get(p.id) ?? -999) > 50)
       .sort((a, b) => (this.lastMinded.get(a.id) ?? -999) - (this.lastMinded.get(b.id) ?? -999))
-      .slice(0, 3);
+      .slice(0, count);
     if (free.length < 2) return;
     for (const p of free) this.lastMinded.set(p.id, now);
     const ids = free.map((p) => p.id);
@@ -498,10 +617,12 @@ export class Director {
     const seconds = 26 + res.intensity * 8;
     const title = res.title || text;
 
-    this.api.narrate(`${title}. ${res.fact}`.trim(), { kind: 'event', icon: 'anything', room });
-    this.api.setFact(key, res.fact || text);
+    // One plain sentence in the feed: what is now true.
+    const fact = sentence(res.fact || text);
+    this.api.narrate(fact, { kind: 'event', icon: 'anything', room });
+    this.api.setFact(key, fact);
     this.api.bumpChaos(6 + res.intensity * 6);
-    this.api.remember(everywhere ? 'all' : room, res.fact || text);
+    this.api.remember(everywhere ? 'all' : room, fact);
     this.api.bus.emit('focus', { x: spot.x - 60, y: spot.y - 50, w: 120, h: 90, weight: 0.8, holdMs: 5000 });
 
     if (res.emoji) {
@@ -548,7 +669,7 @@ export class Director {
         people: speakers,
         room,
         trigger: 'custom',
-        why: res.fact || text,
+        why: fact,
         priority: 9,
         minLines: Math.min(3, speakers.length + 1),
         maxLines: 4,
@@ -678,6 +799,14 @@ export class Director {
 function tidy(text: string, max: number): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** Trim to one tidy sentence ending in a single full stop. */
+function sentence(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
+  if (!t) return '';
+  const body = t.charAt(0).toUpperCase() + t.slice(1);
+  return /[!?]$/.test(body) ? body : `${body}.`;
 }
 
 function mentions(text: string, name: string): boolean {

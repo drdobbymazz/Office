@@ -48,8 +48,14 @@ export class ArrayItemStream {
   private rootDone = false;
   private found = 0;
   private emitted = 0;
+  private arrayDone = false;
 
   constructor(private readonly key: string) {}
+
+  /** The array itself has closed: no more items are coming. */
+  get closed(): boolean {
+    return this.arrayDone || this.rootDone;
+  }
 
   /** How many items have been handed out so far. */
   get count(): number {
@@ -103,6 +109,7 @@ export class ArrayItemStream {
             this.rootDone = true;
             break;
           }
+          if (done.t === '[' && done.key === this.key && this.stack.length === 1) this.arrayDone = true;
           // An object closing as an item of root.<key>[]: stack is [root, array].
           if (done.t === '{' && this.stack.length === 2) {
             const arr = this.stack[1];
@@ -139,6 +146,7 @@ export class ArrayItemStream {
     this.esc = false;
     this.strStart = -1;
     this.rootDone = false;
+    this.arrayDone = false;
     this.found = 0;
   }
 }

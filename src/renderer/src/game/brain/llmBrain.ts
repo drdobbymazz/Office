@@ -302,6 +302,16 @@ export class LlmBrain implements Brain {
     const lines: SceneLine[] = [];
     let t0 = now();
     let stream = new ArrayItemStream('lines');
+    let ended = false;
+    const linesEnd = (): void => {
+      if (ended || !lines.length) return;
+      ended = true;
+      try {
+        cb?.onLinesEnd?.();
+      } catch {
+        /* a UI callback must not break the brain */
+      }
+    };
 
     const emit = (line: SceneLine): void => {
       if (lines.length >= maxLines) return;
@@ -345,6 +355,7 @@ export class LlmBrain implements Brain {
             /* incomplete or odd item: the final parse gets another look */
           }
         }
+        if (stream.closed || lines.length >= maxLines) linesEnd();
       },
       parse: (text) => {
         const p = parseLoose(text);
