@@ -35,7 +35,9 @@ if (!root) throw new Error('No root element');
 createRoot(root).render(<App />);
 
 // Installed on a phone, the game should open offline. Only on the web (not Electron, not inside an Artifact frame).
-if ('serviceWorker' in navigator && window.top === window && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+// Not in the Android app either: it already carries every file, and a service worker there would
+// try to fetch them over a network that does not exist.
+if (import.meta.env.VITE_APP_SHELL !== '1' && 'serviceWorker' in navigator && window.top === window && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => undefined);
   });

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ink">#FF1A1320</color>
+    <!-- Dark from the first frame, so opening the app never flashes white. -->
+    <!-- Not the Fullscreen theme: a fullscreen window cannot make room for the keyboard.
+         The bars are hidden from code instead (MainActivity.hideBars). -->
+    <style name="Game" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:colorBackground">@color/ink</item>
+        <item name="android:statusBarColor">@color/ink</item>
+        <item name="android:navigationBarColor">@color/ink</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+</resources>

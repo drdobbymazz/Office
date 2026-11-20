@@ -284,7 +284,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       return;
     }
     const sameOrigin = location.protocol.startsWith('http') ? `${location.origin}/ollama` : '';
-    const candidates = [...new Set([settings.brain.baseUrl, sameOrigin, 'http://localhost:11434'].filter(Boolean))];
+    // A build can name extra places to look (the Android app names the laptop on the home network).
+    const extra = String(import.meta.env.VITE_OLLAMA_CANDIDATES ?? '').split(',').map((u) => u.trim()).filter(Boolean);
+    const candidates = [...new Set([settings.brain.baseUrl, ...extra, sameOrigin, 'http://localhost:11434'].filter(Boolean))];
     const found = await parts.probeOllama(candidates).catch(() => null);
     if (found) {
       const want = settings.brain.model;
@@ -621,6 +623,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       toast('The office starts again from day 1.', 'info');
     },
     goFullscreen() {
+      // The Android app is full screen and landscape already; its web view has no fullscreen mode to enter.
+      if (import.meta.env.VITE_APP_SHELL === '1') return;
       const el = document.documentElement as HTMLElement & { requestFullscreen?: () => Promise<void> };
       const lock = (): void => {
         const o = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };

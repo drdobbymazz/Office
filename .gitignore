@@ -21,3 +21,7 @@ build/AuthKey_*.p8
 
 # heavy hero source — only the compressed hero.mp4/.webm are deployed
 docs/media/*.mov
+
+# Android app build output and its local signing key
+dist-android/
+android/debug.keystore

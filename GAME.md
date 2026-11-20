@@ -82,6 +82,25 @@ OLLAMA_ORIGINS=https://your-app.vercel.app ollama serve
 
 The phone must be on the tailnet, and Tailscale must be signed in on the laptop.
 
+### D. As an Android app
+
+`npm run build:android` makes `dist-android/munder-difflin.apk`: the same game in a full-screen,
+landscape app with its own icon. It keeps the screen on, leaves the game running when you press
+Back, and buzzes on drops. On first run it looks for Ollama at `http://MSI.lan:11434`, then
+`http://192.168.1.124:11434` (change the list with `--ollama a,b`), so it works on the home Wi-Fi
+with nothing changed on the laptop. Install it from the computer the phone is connected to:
+
+```bash
+adb install -r munder-difflin.apk
+```
+
+or open the file on the phone and allow installing from that app. To see what the game logs, run
+`adb logcat -s MunderDifflin`; `chrome://inspect` on the computer can look inside it too. Building
+needs Java and Android's build tools (`aapt`, `d8` or `dx`, `zipalign`, `apksigner`, a platform
+`android.jar`); the top of `tools/build-apk.mjs` says where it finds them. The first build makes a
+signing key at `android/debug.keystore` (not committed). Keep it: an app signed with a different key
+has to be uninstalled before the new one goes on, and that deletes the save.
+
 ### C. A preview inside Claude
 
 The same build can be published as a Claude Artifact, which is a quick way to look at the game on
