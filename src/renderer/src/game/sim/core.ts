@@ -34,7 +34,7 @@ import {
 } from './jobs';
 import { nextRoutine, placePhrase } from './routine';
 import { planJob } from './plans';
-import { dragTo as handDragTo, drop as handDrop, fallFrom, launch as handLaunch, pickUp as handPickUp, updateAir } from './handling';
+import { dragTo as handDragTo, drop as handDrop, fallFrom, launch as handLaunch, lingerAfterRelease, pickUp as handPickUp, updateAir } from './handling';
 import { goneHome, sendHome as daySendHome, startDay, updateDay } from './day';
 import { briefFor as makeBrief, factsOf } from './brief';
 import { cleanSave, SAVE_VERSION, type SaveData } from './save';
@@ -592,6 +592,8 @@ export class SimCore implements DirectorSimApi {
       fallFrom(this, p);
     }
     if (!p.air) {
+      // Put down by the player while held (time stopped): they stay where they were put for a while.
+      if (lingerAfterRelease(p)) return;
       if (!p.res || !this.isAt(p, p.res)) p.job = settleJob('getting back to it');
       if (p.goingHome) this.sendHome(p);
     }
@@ -838,10 +840,10 @@ export class SimCore implements DirectorSimApi {
 
   // ── SimApi: story ──────────────────────────────────────────────────────────
 
-  narrate(text: string, opts: { icon?: string; room?: RoomId; kind?: FeedKind; beat?: boolean } = {}): void {
+  narrate(text: string, opts: { icon?: string; room?: RoomId; kind?: FeedKind; beat?: boolean; slow?: boolean } = {}): void {
     const t = String(text ?? '').trim();
     if (!t) return;
-    this.emitFeed(opts.kind ?? 'event', t, { icon: opts.icon, room: opts.room, ...(opts.beat ? { beat: true } : {}) });
+    this.emitFeed(opts.kind ?? 'event', t, { icon: opts.icon, room: opts.room, ...(opts.beat ? { beat: true } : {}), ...(opts.slow ? { slow: true } : {}) });
     this.logEvent(t);
   }
 

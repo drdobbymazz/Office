@@ -32,7 +32,7 @@ describe('saving the story', () => {
     expect(ui.intro).toEqual(MEMO.intro);
     expect(ui.hints).toEqual(MEMO.hints);
     expect(ui.goal).toMatchObject({ id: 'call', title: 'All hands for the call', state: 'open', status: MEMO.before });
-    expect(ui.side.map((x) => x.title)).toEqual(['Quiet hands', 'Calm Monday']);
+    expect(ui.side.map((x) => x.title)).toEqual(['Quiet hands', 'Full room']);
     expect(ui.influence).toEqual({ left: 8, max: 8 });
     expect(ui.costs.whisper).toBe(1);
     expect(ui.costs.fire).toBe(4);

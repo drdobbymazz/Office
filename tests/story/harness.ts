@@ -73,18 +73,28 @@ export function play(story: Story, store?: StoryStore): Played {
   const feed: string[] = [];
   const goals: Played['goals'] = [];
   bus.on('feed', (f) => feed.push(f.text));
-  const day = story.beginDay(sim, { onGoal: (g) => goals.push({ title: g.title, state: g.state, main: g.main }) });
-  const director = new Director({ sim, brain, instinct: brain, pinned: (w) => day.pinned(w) });
-  director.reset();
+  // Wired the way game.ts wires them: scripted scenes go through the director, and the chapter
+  // may hold people, adjust a scene's change in feeling, and give small talk its topics.
+  let director: Director | null = null;
+  const day = story.beginDay(sim, {
+    onGoal: (g) => goals.push({ title: g.title, state: g.state, main: g.main }),
+    script: (lines, o) => (director ? director.playScript(lines, o) : o.done?.())
+  });
+  director = new Director({
+    sim, brain, instinct: brain, pinned: (w) => day.pinned(w),
+    storyTopics: () => day.topics(), vetoShift: (w, a, d) => day.vetoShift(w, a, d)
+  });
+  const dir: Director = director;
+  dir.reset();
   let ticks = 0;
   const tick = async (): Promise<void> => {
     sim.update(DT);
-    director.update(DT);
+    dir.update(DT);
     day.update(DT);
     if (++ticks % FLUSH_EVERY === 0) await flush();
   };
   const p: Played = {
-    story, store: store ?? memoryStore(), sim, day, director, feed, goals,
+    story, store: store ?? memoryStore(), sim, day, director: dir, feed, goals,
     async step(seconds) {
       for (let t = 0; t < seconds - 1e-9; t += DT) await tick();
     },
@@ -103,19 +113,19 @@ export function play(story: Story, store?: StoryStore): Played {
     },
     whisper(who, text) {
       return day.attempt('whisper', () => {
-        director.whisper(who, text);
+        dir.whisper(who, text);
         return null;
       }) ?? (day.note({ kind: 'whisper', who, text }), null);
     },
     announce(text) {
       return day.attempt('announce', () => {
-        director.announce(text);
+        dir.announce(text);
         return null;
       }) ?? (day.note({ kind: 'announce', text }), null);
     },
     cue(who, text) {
       return day.attempt('cue', () => {
-        director.cue(who, text);
+        dir.cue(who, text);
         return null;
       }) ?? (day.note({ kind: 'cue', who, text }), null);
     },

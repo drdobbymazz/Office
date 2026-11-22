@@ -15,6 +15,9 @@ import type { SimPerson } from '@/game/core/simApi';
 import { summonChance } from '@/game/director/summon';
 import type { ChapterCtx, ChapterDef, ChapterRun, ChaosStartInfo, PlayerAction, SceneDoneInfo, ScriptLine, WeekNotes } from './types';
 import { CLIENT, LEAK, MEMO, ROW, VERDICT } from './text';
+// Monday to Wednesday.
+import { CHAOS_IDS } from '@/game/core/types';
+import { roomNamedIn } from '@/game/director/summon';
 
 const DAY = (h: number, m = 0): number => h * 60 + m;
 
@@ -31,11 +34,42 @@ const signed = (n: number): string => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0
 
 // ── Monday: The Memo ─────────────────────────────────────────────────────────
 
-const RETURN_EVERY = 20;
+/** How often Michael's hiding is checked (sim seconds). */
+const HIDE_EVERY = 1;
+/** Put down somewhere, Michael stays this long before he slips back to his office. */
+const GRACE = 12;
+/** The call needs Michael and 9 others in the room on two checks this far apart: walking through does not count. */
+const CALL_EVERY = 2;
+const OTHERS_NEEDED = 9;
+/** "Full room": this many others with Michael when the phone rings. */
+const FULL_ROOM = 12;
+/** The bin Creed goes through: the corridor just outside Michael's door. */
+const BIN = { x: 5, y: 9 };
+const BIN_AT = DAY(10, 20);
+/** Sim seconds Creed spends going through the bin before he finds the memo. */
+const SEARCH_FOR = 25;
+const BIN_FX = 'story.memo.bin';
+const DIM_FX = 'story.memo.dim';
+
+type BinState = 'waiting' | 'going' | 'searching' | 'stopped' | 'found';
 
 class MemoRun implements ChapterRun {
-  private returnAt = 0;
+  private hideAt = 0;
   private lockedIn = false;
+  private carried = false;
+  private landedAt = -1e9;
+  private slipped = 0;
+  private freed = false;
+  private unhide = false;
+  private checkAt = 0;
+  private okChecks = 0;
+  private said14 = false;
+  private said1445 = false;
+  private bin: BinState = 'waiting';
+  private binSince = 0;
+  private binTries = 0;
+  private creedLeaves = false;
+  private kellyAt = 0;
 
   constructor(private c: ChapterCtx) {}
 
@@ -44,7 +78,9 @@ class MemoRun implements ChapterRun {
     s.convince('michael', MEMO.conviction);
     s.setHiddenNote('michael', MEMO.hidden);
     s.setFact('story.memo', MEMO.fact);
-    this.returnAt = s.time + RETURN_EVERY;
+    // The memo itself, in his hand all day, and his office dim while he hides in it.
+    s.setProp('michael', 'papers');
+    s.addEffect({ id: DIM_FX, kind: 'dark', rooms: ['boss'], level: 0.35, emergency: false });
   }
 
   private holds(): boolean {
@@ -69,28 +105,181 @@ class MemoRun implements ChapterRun {
       s.setFact('story.closure', MEMO.closure);
     }
     if (this.c.main() !== 'open') return;
-    if (s.incidentsToday > 0) this.c.setExtra('calm', 'lost');
-    // Once he is sure of something else, he stops hiding there and then.
-    const m0 = s.person('michael');
-    if (m0 && !this.holds() && m0.doing === MEMO.hiding && m0.available && !m0.sceneId) s.resume('michael');
-    // The obstacle: while he is sure hiding keeps it unreal, he keeps going back to his office.
-    if (s.time >= this.returnAt) {
-      this.returnAt = s.time + RETURN_EVERY;
-      const m = s.person('michael');
-      if (m && this.holds() && m.present && m.room !== 'boss' && !this.lockedIn) {
-        // Busy (talking, asleep, in the air): he tries again in a moment.
-        if (m.available && !m.sceneId) s.goTo('michael', { anchor: 'desk.michael' }, { doing: MEMO.hiding, stay: 45, stayDoing: MEMO.hiding });
-        else this.returnAt = s.time + 3;
-      }
+    this.hide();
+    this.watchBin();
+    this.followRyan();
+    if (s.clock >= DAY(14) && !this.said14) {
+      this.said14 = true;
+      s.narrate(MEMO.two, { beat: true, icon: 'phone', room: 'meeting' });
     }
-    if (s.clock >= DAY(14)) {
+    if (s.clock >= DAY(14, 45) && !this.said1445) {
+      this.said1445 = true;
       const r = this.room();
-      if (r.michael && r.others >= 9) {
-        this.callHappens();
+      s.narrate(MEMO.late(Math.min(OTHERS_NEEDED, r.others) + (r.michael ? 1 : 0), r.michael), { beat: true, icon: 'clock', room: 'meeting' });
+    }
+    if (s.clock >= DAY(14) && s.time >= this.checkAt) {
+      this.checkAt = s.time + CALL_EVERY;
+      const r = this.room();
+      this.okChecks = r.michael && r.others >= OTHERS_NEEDED ? this.okChecks + 1 : 0;
+      if (this.okChecks >= 2) {
+        this.callHappens(r.others);
         return;
       }
     }
     if (s.clock >= DAY(15)) this.missed();
+  }
+
+  /**
+   * The obstacle: while he is sure hiding keeps today normal, Michael stays at his desk (no errands,
+   * no wandering off to chat). Carried out, he gets his bearings for a moment, then slips back.
+   */
+  private hide(): void {
+    const s = this.c.sim;
+    const m = s.person('michael');
+    if (!m || !m.present) return;
+    if (!this.holds()) {
+      if (!this.freed) {
+        // A whisper replaced what he was sure of: he stops hiding there and then.
+        this.freed = true;
+        this.unhide = true;
+        s.setFact('story.memo', null);
+        s.removeEffect(DIM_FX);
+        s.narrate(MEMO.freed, { beat: true, icon: 'whisper', room: m.room });
+      }
+      // He leaves his desk as soon as he is free to (the whisper's own conversation comes first).
+      if (this.unhide && m.available && !m.sceneId && (m.doing === MEMO.hiding || m.doing === MEMO.toOffice)) {
+        this.unhide = false;
+        s.resume('michael');
+      }
+      return;
+    }
+    if (s.holding === 'michael' || s.isAirborne('michael')) {
+      this.carried = true;
+      return;
+    }
+    if (this.carried) {
+      this.carried = false;
+      this.landedAt = s.time;
+    }
+    if (s.time < this.hideAt) return;
+    this.hideAt = s.time + HIDE_EVERY;
+    if (this.lockedIn || m.room === 'boss') return;
+    if (s.time - this.landedAt < GRACE) return;
+    // Talking, asleep, frozen: he tries again in a moment.
+    if (!m.available || m.sceneId || m.doing === MEMO.toOffice) return;
+    const putDown = s.time - this.landedAt < GRACE + 30;
+    s.goTo('michael', { anchor: 'desk.michael' }, { doing: MEMO.toOffice, stay: 100000, stayDoing: MEMO.hiding });
+    if (putDown) {
+      this.slipped += 1;
+      this.landedAt = -1e9;
+      s.narrate(MEMO.slipBack, { beat: this.slipped === 1, icon: 'door', room: 'boss' });
+    }
+  }
+
+  /** The second beat: at 10:20 Creed goes through Michael's bin. Left alone, he finds the memo. */
+  private watchBin(): void {
+    const s = this.c.sim;
+    const p = s.person('creed');
+    // Stopped while he was busy (a whisper starts a chat): he walks off once the chat is over.
+    if (this.creedLeaves && p && p.present && p.available && !p.sceneId) {
+      this.creedLeaves = false;
+      if (p.doing === MEMO.bin.going || p.doing === MEMO.bin.searching) s.resume('creed');
+    }
+    if (this.bin === 'stopped' || this.bin === 'found') return;
+    if (this.bin === 'waiting') {
+      if (s.clock < BIN_AT || !p || !p.present) return;
+      // Already busy with an idea of his own (a whisper this morning): he never goes near the bin.
+      if (p.conviction) {
+        this.bin = 'stopped';
+        return;
+      }
+      if (!p.available || p.sceneId || s.holding === 'creed') return;
+      this.bin = 'going';
+      this.binSince = s.time;
+      s.goTo('creed', { tile: BIN }, { doing: MEMO.bin.going, stay: SEARCH_FOR + 40, stayDoing: MEMO.bin.searching });
+      s.narrate(MEMO.bin.goes, { beat: true, icon: 'rumour', room: 'bullpen' });
+      const b = feetOf(BIN);
+      s.bus.emit('focus', { x: b.x - 70, y: b.y - 70, w: 140, h: 100, weight: 0.8, holdMs: 5000 });
+      return;
+    }
+    if (!p || !p.present) {
+      this.stopBin();
+      return;
+    }
+    // A whisper (an idea of his own) or the player's hand stops him at once; a chat only pauses him;
+    // anything else that sends him elsewhere (an evacuation, a summons) stops him too.
+    if (s.holding === 'creed' || s.isAirborne('creed') || p.conviction) {
+      this.stopBin();
+      return;
+    }
+    if (p.sceneId) return;
+    if (p.doing !== MEMO.bin.going && p.doing !== MEMO.bin.searching) {
+      // A chat or an errand carried him off: he goes back to the bin (a few times at most).
+      if (this.binTries < 3 && p.available) {
+        this.binTries += 1;
+        this.bin = 'going';
+        this.binSince = s.time;
+        s.goTo('creed', { tile: BIN }, { doing: MEMO.bin.going, stay: SEARCH_FOR + 40, stayDoing: MEMO.bin.searching });
+      } else if (this.binTries >= 3) {
+        this.stopBin();
+      }
+      return;
+    }
+    if (this.bin === 'going' && (p.doing === MEMO.bin.searching || s.time - this.binSince > 60)) {
+      this.bin = 'searching';
+      this.binSince = s.time;
+    }
+    if (this.bin === 'searching' && s.time - this.binSince >= SEARCH_FOR) this.memoGetsOut();
+  }
+
+  private stopBin(): void {
+    this.bin = 'stopped';
+    this.creedLeaves = true;
+    this.c.sim.narrate(MEMO.bin.stopped, { beat: true, icon: 'rumour', room: 'bullpen' });
+  }
+
+  private memoGetsOut(): void {
+    const s = this.c.sim;
+    this.bin = 'found';
+    s.resume('creed');
+    s.sfx('gasp');
+    s.narrate(MEMO.bin.found, { beat: true, icon: 'rumour' });
+    s.setFact('story.rumour', MEMO.bin.fact);
+    s.remember('all', MEMO.bin.fact, 1.5);
+    const b = feetOf(BIN);
+    s.addEffect({ id: BIN_FX, kind: 'item', item: 'paperPile', x: b.x + 8, y: b.y });
+    for (const p of s.people()) {
+      if (!p.isCast || !p.present || p.id === 'michael') continue;
+      s.bumpMood(p.id, -0.08);
+      s.feel(p.id, 'nervous', 0.7, 12);
+    }
+    // The ones who take it hardest hide away, each in their own way (their cards say what would move them).
+    MEMO.stragglers.forEach((st, i) => this.c.after(2 + i * 3, () => this.straggle(st)));
+  }
+
+  private straggle(st: (typeof MEMO.stragglers)[number]): void {
+    const s = this.c.sim;
+    if (this.c.main() !== 'open') return;
+    const p = s.person(st.id);
+    if (!p || !p.present || p.conviction) return;
+    s.convince(st.id, st.conviction);
+    s.goTo(st.id, st.at, { doing: st.going, stay: 100000, stayDoing: st.doing });
+    s.narrate(st.beat, { icon: 'rumour', room: p.room });
+  }
+
+  /** Kelly goes wherever Ryan goes, however he got there (called by name, carried, or a whispered idea). */
+  private followRyan(): void {
+    const s = this.c.sim;
+    if (s.time < this.kellyAt) return;
+    this.kellyAt = s.time + 2;
+    const kelly = s.person('kelly');
+    const ryan = s.person('ryan');
+    if (!kelly || !ryan || !kelly.present || !ryan.present) return;
+    if (kelly.conviction?.text !== MEMO.stragglers[2].conviction) return;
+    if (ryan.room !== 'meeting' || kelly.room === 'meeting' || !kelly.available || kelly.sceneId) return;
+    if (/conference room/.test(kelly.doing)) return;
+    s.goTo('kelly', { room: 'meeting' }, { doing: 'heading to the conference room', stay: 100, stayDoing: 'waiting in the conference room' });
+    s.narrate(MEMO.kellyFollows, { icon: 'announce', room: 'meeting' });
   }
 
   private missed(): void {
@@ -98,32 +287,70 @@ class MemoRun implements ChapterRun {
     this.c.notes.call = false;
     this.c.notes.closureKnown = true;
     s.setFact('story.closure', MEMO.closure);
-    s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting' });
+    s.setFact('story.memo', null);
+    s.setFact('story.rumour', null);
+    // The news is out anyway: nobody is hiding it, or from it, any more.
+    s.convince('michael', null);
+    s.setHiddenNote('michael', null);
+    s.setProp('michael', null);
+    s.removeEffect(DIM_FX);
+    for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
+    s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting', beat: true });
+    for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'nervous', 0.6, 20);
     this.c.lose([MEMO.missed]);
   }
 
   atFive(): void {
     if (this.c.main() === 'open') this.missed();
+    this.c.sim.removeEffect(BIN_FX);
+    this.c.sim.removeEffect(DIM_FX);
   }
 
-  private callHappens(): void {
+  private callHappens(others: number): void {
     const s = this.c.sim;
-    s.sfx('ding');
+    s.sfx('phoneRing');
     s.narrate(MEMO.ring, { icon: 'phone', room: 'meeting' });
-    const others = s.peopleIn('meeting').filter((p) => p.isCast && p.id !== 'michael' && p.available).slice(0, 3).map((p) => p.id);
-    s.requestScene({
-      people: ['michael', ...others], room: 'meeting', trigger: 'event', why: MEMO.sceneWhy,
-      priority: 9, minLines: 3, maxLines: 4, gather: false, staleAfter: 40
-    });
     this.c.notes.closureKnown = true;
     this.c.notes.call = true;
     s.setFact('story.closure', MEMO.closure);
+    s.setFact('story.memo', null);
+    s.setFact('story.rumour', null);
     s.remember('all', 'The regional vice president phoned the conference room: Corporate may close this branch on Friday.', 3);
     s.convince('michael', null);
     s.setHiddenNote('michael', null);
+    s.setProp('michael', null);
+    s.removeEffect(DIM_FX);
+    // Whoever was hiding from the news has heard it now.
+    for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
     const u = this.c.used;
     this.c.setExtra('quiet', u.powers.length === 0 && u.anything === 0 && u.cue === 0 ? 'won' : 'lost');
+    this.c.setExtra('full', others >= FULL_ROOM ? 'won' : 'lost');
     this.c.win([MEMO.won]);
+    // The call itself: the vice president on the speakerphone, then the room.
+    const vp = { name: MEMO.vp, icon: 'phone', room: 'meeting' as RoomId };
+    const staff = (['stanley', 'pam', 'jim', 'oscar', 'phyllis', 'kevin', 'angela'] as CastId[]).find((id) => {
+      const p = s.person(id);
+      return !!p && p.present && p.room === 'meeting';
+    });
+    const lines: ScriptLine[] = [
+      { voice: vp, text: MEMO.call.hello },
+      { voice: vp, text: MEMO.call.news },
+      { who: 'michael', text: MEMO.call.michael, emotion: 'nervous' },
+      { voice: vp, text: MEMO.call.inspector },
+      ...(staff ? [{ who: staff, text: MEMO.call.staff, emotion: 'nervous' as const, to: 'michael' }] : []),
+      { who: 'michael', text: MEMO.call.rally, emotion: 'determined' }
+    ];
+    this.c.script(lines, { room: 'meeting', then: 'model', why: MEMO.sceneWhy, done: () => this.afterCall() });
+  }
+
+  /** The news sinks in. */
+  private afterCall(): void {
+    const s = this.c.sim;
+    for (const p of s.people()) {
+      if (!p.isCast || !p.present) continue;
+      s.feel(p.id, p.id === 'michael' ? 'determined' : 'nervous', 0.7, 25);
+      s.bumpMood(p.id, -0.05);
+    }
   }
 
   status(): { progress: number; status: string } {
@@ -131,9 +358,12 @@ class MemoRun implements ChapterRun {
     if (st === 'won') return { progress: 1, status: 'The call went ahead' };
     if (st === 'lost') return { progress: 0, status: 'The call was missed' };
     const r = this.room();
-    const n = Math.min(9, r.others) + (r.michael ? 1 : 0);
-    const status = this.c.sim.clock < DAY(14) ? MEMO.before : `${n} of 10 in the room${r.michael ? '' : ', Michael not yet'}`;
-    return { progress: n / 10, status };
+    const here = r.others + (r.michael ? 1 : 0);
+    if (this.c.sim.clock < DAY(14)) {
+      return { progress: 0, status: here >= 3 ? `Corporate rings from 14:00. ${here} in the room so far` : MEMO.before };
+    }
+    const n = Math.min(OTHERS_NEEDED, r.others) + (r.michael ? 1 : 0);
+    return { progress: n / 10, status: `${n} of 10 in the room${r.michael ? '' : ', Michael not yet'}` };
   }
 
   onAction(a: PlayerAction): void {
@@ -150,13 +380,40 @@ class MemoRun implements ChapterRun {
     this.lockedIn = false;
     if (this.c.main() !== 'open' || !this.holds()) return;
     const s = this.c.sim;
+    this.freed = true;
     s.convince('michael', null);
-    s.narrate(MEMO.lockedOut, { room: 'meeting' });
+    s.setFact('story.memo', null);
+    s.removeEffect(DIM_FX);
+    s.narrate(MEMO.lockedOut, { room: 'meeting', beat: true });
     s.goTo('michael', { room: 'meeting' }, { doing: 'staying in the conference room', stay: 120, stayDoing: 'staying in the conference room' });
   }
 
   pinned(who: CharId): boolean {
     return who === 'michael' && this.holds();
+  }
+
+  topics(): string[] {
+    if (this.c.main() !== 'open') return [MEMO.closure];
+    const out: string[] = [];
+    if (this.holds()) out.push(MEMO.topicHiding, MEMO.topicCancelled);
+    if (this.bin === 'found') out.push(MEMO.bin.topic);
+    return out;
+  }
+
+  warns(): Partial<Record<ActionId, string>> {
+    if (this.c.main() !== 'open' || this.c.extra('quiet') !== 'open') return {};
+    const out: Partial<Record<ActionId, string>> = { anything: MEMO.warnQuiet, cue: MEMO.warnQuiet };
+    for (const id of CHAOS_IDS) out[id] = MEMO.warnQuiet;
+    return out;
+  }
+
+  stakes(): number {
+    if (this.c.main() !== 'open') return 0;
+    const clock = this.c.sim.clock;
+    if (clock >= DAY(14, 45)) return 1;
+    if (clock >= DAY(14)) return 0.8;
+    if (clock >= DAY(13, 30)) return 0.5;
+    return this.bin === 'going' || this.bin === 'searching' ? 0.45 : 0.2;
   }
 }
 
@@ -168,13 +425,31 @@ function onFloorOrAsleep(c: ChapterCtx, p: SimPerson): boolean {
 // ── Tuesday: Not Speaking ────────────────────────────────────────────────────
 
 const GOSSIP_EVERY = 80;
+/** Talks that went well, needed to make up (a pushed talk counts 1, a chat on their own 0.5). */
+const TALKS_NEEDED = 3;
+/** Or both feelings at this or better. */
 const MADE_UP = 15;
 const ROW_START = -40;
 const KIND_TALK = new Set(['talk', 'comfort', 'flirt']);
+const SOCIAL_PLANS = new Set(['talk', 'comfort', 'flirt', 'confront', 'gossip']);
+/** After lunch, Kevin starts worrying Oscar about the deadline (if they have not made up by then). */
+const KEVIN_AT = DAY(13);
+/** One conversation, one talk: two counted talks between the pair are at least this far apart. */
+const TALK_GAP = 20;
+/** A shared enemy in their room brings them together. */
+const ENEMIES: Partial<Record<ChaosId, string>> = { raccoon: 'raccoon', bees: 'bees', snackStorm: 'vending machine', ghost: 'ghost' };
+const PAPERS = ['angela', 'oscar'] as const;
 
 class RowRun implements ChapterRun {
   private gossipAt = 0;
+  private kevinAt = 0;
+  private kevinStarted = false;
+  private talks = 0;
+  private lastTalk = -1e9;
   private locks: CharId[][] = [];
+  private tricks = new Set<string>();
+  private askAt = 0;
+  private warned = new Set<string>();
 
   constructor(private c: ChapterCtx) {}
 
@@ -184,10 +459,19 @@ class RowRun implements ChapterRun {
     s.setFact('story.row', ROW.fact);
     s.convince('dwight', ROW.dwight);
     this.gossipAt = s.time + 45;
+    // Two sets of figures that do not match, one on each desk.
+    for (const id of PAPERS) {
+      const f = feetOf(anchor(`desk.${id}`).tile);
+      s.addEffect({ id: `story.row.papers.${id}`, kind: 'item', item: 'paperPile', x: f.x + 10, y: f.y + 2 });
+    }
   }
 
   private dwightHolds(): boolean {
     return this.c.sim.person('dwight')?.conviction?.text === ROW.dwight;
+  }
+
+  private kevinHolds(): boolean {
+    return this.c.sim.person('kevin')?.conviction?.text === ROW.kevin;
   }
 
   private both(delta: number, why?: string): void {
@@ -198,19 +482,19 @@ class RowRun implements ChapterRun {
   update(): void {
     const s = this.c.sim;
     if (this.c.extra('stirring') === 'open' && !this.dwightHolds()) this.c.setExtra('stirring', 'won');
-    if (this.c.main() === 'won' && this.c.extra('team') === 'open') {
-      const ok = (['angela', 'oscar', 'kevin'] as const).every((id) => {
-        const p = s.person(id);
-        return onFloor(this.c, p) && p.room === 'accounts';
-      });
-      if (ok) this.c.setExtra('team', 'won');
-    }
     if (this.c.main() !== 'open') return;
-    if (s.bond('angela', 'oscar') >= MADE_UP && s.bond('oscar', 'angela') >= MADE_UP) {
+    if (this.talks >= TALKS_NEEDED || (s.bond('angela', 'oscar') >= MADE_UP && s.bond('oscar', 'angela') >= MADE_UP)) {
       this.madeUp();
       return;
     }
-    // The obstacle: Dwight keeps going to warn Angela about Oscar's "plot".
+    this.stir();
+    if (!this.kevinStarted && s.clock >= KEVIN_AT) this.startKevin();
+    this.boostPair();
+  }
+
+  /** The obstacle: Dwight keeps warning Angela about Oscar's "plot" (and after lunch Kevin worries Oscar). */
+  private stir(): void {
+    const s = this.c.sim;
     if (this.dwightHolds() && s.time >= this.gossipAt) {
       const d = s.person('dwight');
       const a = s.person('angela');
@@ -221,25 +505,84 @@ class RowRun implements ChapterRun {
         this.gossipAt = s.time + 5;
       }
     }
+    if (this.kevinHolds() && s.time >= this.kevinAt) {
+      const k = s.person('kevin');
+      const o = s.person('oscar');
+      if (k && o && k.present && o.present && k.available && !k.plan && !k.sceneId) {
+        s.setPlan('kevin', { kind: 'gossip', target: 'oscar', about: ROW.kevinGossip });
+        this.kevinAt = s.time + GOSSIP_EVERY;
+      } else {
+        this.kevinAt = s.time + 5;
+      }
+    }
+  }
+
+  private startKevin(): void {
+    const s = this.c.sim;
+    this.kevinStarted = true;
+    const k = s.person('kevin');
+    if (!k || !k.present || k.conviction) return;
+    s.convince('kevin', ROW.kevin);
+    s.narrate(ROW.kevinStarts, { beat: true, icon: 'rumour', room: k.room });
+    this.kevinAt = s.time + 10;
+  }
+
+  /**
+   * When one of them walks over to the other on purpose, make sure the conversation happens even
+   * when the model is slow: a high-priority scene that waits for up to 90 seconds.
+   */
+  private boostPair(): void {
+    const s = this.c.sim;
+    if (s.time < this.askAt) return;
+    this.askAt = s.time + 0.5;
+    const a = s.person('angela');
+    const o = s.person('oscar');
+    if (!a || !o || !a.present || !o.present || a.sceneId || o.sceneId) return;
+    const lead = a.plan && a.plan.target === 'oscar' && SOCIAL_PLANS.has(a.plan.kind) ? a
+      : o.plan && o.plan.target === 'angela' && SOCIAL_PLANS.has(o.plan.kind) ? o : null;
+    if (!lead || !lead.plan) return;
+    const other = lead === a ? o : a;
+    if (Math.hypot(a.x - o.x, a.y - o.y) > 30) return;
+    s.requestScene({
+      people: [lead.id, other.id], trigger: 'plan', planKind: lead.plan.kind, priority: 8, staleAfter: 90,
+      why: `${lead.name} walked over to ${lead.plan.kind === 'flirt' ? 'flirt with' : 'talk to'} ${other.name} about their row over the figures.`
+    });
+    this.askAt = s.time + 30;
   }
 
   private madeUp(): void {
     const s = this.c.sim;
-    s.narrate(ROW.won, { room: 'accounts' });
+    s.narrate(ROW.won, { room: 'accounts', beat: true, icon: 'love' });
+    for (const [x, y] of [['angela', 'oscar'], ['oscar', 'angela']] as const) {
+      if (s.bond(x, y) < 20) s.shiftBond(x, y, 20 - s.bond(x, y), 'making up after the row');
+    }
     const go = { doing: 'going to finish the accounts', stay: 40, stayDoing: 'finishing the accounts' };
     s.goTo('angela', { anchor: 'desk.angela' }, go);
     s.goTo('oscar', { anchor: 'desk.oscar' }, go);
     s.goTo('kevin', { room: 'accounts' }, go);
     s.setFact('story.row', ROW.madeUp);
     s.remember(['angela', 'oscar', 'kevin'], 'Angela and Oscar made up and finished the accounts together.', 2);
+    if (this.kevinHolds()) s.convince('kevin', null);
+    for (const id of ['angela', 'oscar', 'kevin'] as const) s.feel(id, 'happy', 0.8, 20);
+    for (const id of PAPERS) s.removeEffect(`story.row.papers.${id}`);
     this.c.notes.accounts = true;
+    if (this.c.extra('kind') === 'open') this.c.setExtra('kind', 'won');
     this.c.win([ROW.won]);
+    // Once they are back at their desks, they say it out loud.
+    this.c.after(14, () => {
+      this.c.script([
+        { who: 'angela', text: ROW.scene.angela, emotion: 'embarrassed', to: 'oscar' },
+        { who: 'oscar', text: ROW.scene.oscar, emotion: 'happy', to: 'angela' },
+        { who: 'kevin', text: ROW.scene.kevin, emotion: 'happy' }
+      ], { room: 'accounts', then: 'none' });
+    });
   }
 
   atFive(): void {
+    for (const id of PAPERS) this.c.sim.removeEffect(`story.row.papers.${id}`);
     if (this.c.main() !== 'open') return;
     this.c.notes.accounts = false;
-    this.c.sim.narrate(ROW.lost, { room: 'accounts' });
+    this.c.sim.narrate(ROW.lost, { room: 'accounts', beat: true });
     this.c.lose([ROW.lost]);
   }
 
@@ -248,13 +591,43 @@ class RowRun implements ChapterRun {
     if (st === 'won') return { progress: 1, status: 'Speaking again' };
     if (st === 'lost') return { progress: 0, status: 'Still not speaking' };
     const s = this.c.sim;
-    const a = s.bond('angela', 'oscar');
-    const o = s.bond('oscar', 'angela');
-    const avg = (Math.min(a, MADE_UP) + Math.min(o, MADE_UP)) / 2;
-    return {
-      progress: Math.max(0, Math.min(1, (avg - ROW_START) / (MADE_UP - ROW_START))),
-      status: `Angela ${signed(a)}/15, Oscar ${signed(o)}/15`
-    };
+    const avg = (Math.min(s.bond('angela', 'oscar'), MADE_UP) + Math.min(s.bond('oscar', 'angela'), MADE_UP)) / 2;
+    const byBond = Math.max(0, Math.min(0.99, (avg - ROW_START) / (MADE_UP - ROW_START)));
+    return { progress: Math.max(this.talks / TALKS_NEEDED, byBond), status: ROW.status(Math.floor(this.talks)) };
+  }
+
+  /** Read by tests: talks that went well so far. */
+  get goodTalks(): number {
+    return this.talks;
+  }
+
+  /** A talk between the two of them. One they were pushed into counts double. */
+  private talk(n: number, bond: number, text: string): void {
+    const s = this.c.sim;
+    if (s.time - this.lastTalk < TALK_GAP) return;
+    this.lastTalk = s.time;
+    this.talks += n;
+    this.both(bond, 'talking again after the row');
+    s.narrate(text, { icon: 'love', room: s.person('angela')?.room });
+  }
+
+  /** Something that brings them together once (a party, a confession, a shared enemy). */
+  private trick(kind: string, text: string): void {
+    if (this.tricks.has(kind) || this.c.main() !== 'open') return;
+    this.tricks.add(kind);
+    this.talks += 1;
+    this.both(12, 'getting on again');
+    this.c.sim.narrate(text, { beat: true, icon: 'love', room: this.c.sim.person('angela')?.room });
+  }
+
+  /** A stirrer has been at one of them: a whole talk's worth of progress undone. */
+  private setBack(who: 'angela' | 'oscar', key: string, text: string, why: string): void {
+    const s = this.c.sim;
+    this.talks = Math.max(0, this.talks - 1);
+    s.shiftBond(who, who === 'angela' ? 'oscar' : 'angela', -6, why);
+    const first = !this.warned.has(key);
+    this.warned.add(key);
+    s.narrate(text, { beat: first, icon: 'rumour', room: s.person(who)?.room });
   }
 
   onSceneDone(e: SceneDoneInfo): void {
@@ -262,19 +635,37 @@ class RowRun implements ChapterRun {
     const has = (id: CharId): boolean => e.people.includes(id);
     if (has('angela') && has('oscar')) {
       const pushed = e.trigger === 'whisper' || e.trigger === 'cue' || (e.trigger === 'plan' && !!e.planKind && KIND_TALK.has(e.planKind));
-      this.both(pushed ? 10 : 5);
+      this.talk(pushed ? 1 : 0.5, pushed ? 10 : 5, pushed ? ROW.talkPushed : ROW.talkChat);
     } else if (has('dwight') && has('angela') && this.dwightHolds()) {
-      this.c.sim.shiftBond('angela', 'oscar', -6, "Dwight's warnings about Oscar");
+      this.setBack('angela', 'dwight', ROW.dwightWarns, "Dwight's warnings about Oscar");
+    } else if (has('kevin') && has('oscar') && this.kevinHolds()) {
+      this.setBack('oscar', 'kevin', ROW.kevinWarns, "Kevin's worrying about the deadline");
     }
   }
 
   onChaosStart(e: ChaosStartInfo): void {
     if (this.c.main() !== 'open') return;
+    const s = this.c.sim;
     const { who, other } = e.target;
-    if (e.id === 'love' && ((who === 'angela' && other === 'oscar') || (who === 'oscar' && other === 'angela'))) {
-      this.c.sim.shiftBond(who, other, 20);
+    const pair = (x?: CharId, y?: CharId): boolean => (x === 'angela' && y === 'oscar') || (x === 'oscar' && y === 'angela');
+    // Cupid's Arrow between them: a big push (a feeling, and half a talk's worth of thawing).
+    if (e.id === 'love' && who && other && pair(who, other)) {
+      s.shiftBond(who, other, 20);
+      this.talks += 0.5;
     }
     if (e.id === 'lockIn' && who && other) this.locks.push([who, other]);
+    const a = s.person('angela');
+    const o = s.person('oscar');
+    const together = !!a && !!o && a.present && o.present && a.room === o.room;
+    const inTheirRoom = together && (e.room === a!.room || (!!who && s.person(who)?.room === a!.room));
+    if (e.id === 'birthday' && together && (who === 'angela' || who === 'oscar')) {
+      this.trick('party', who === 'angela' ? ROW.party('Angela', 'Oscar') : ROW.party('Oscar', 'Angela'));
+    }
+    if (e.id === 'truth' && who === 'oscar') this.trick('truth', ROW.truthOscar);
+    if (e.id === 'truth' && who === 'angela') this.trick('truth', ROW.truthAngela);
+    const enemy = ENEMIES[e.id];
+    if (enemy && inTheirRoom) this.trick('enemy', ROW.enemy(enemy));
+    if (e.id === 'puppy' && inTheirRoom) this.trick('puppy', ROW.puppy);
   }
 
   onChaosEnd(id: ChaosId): void {
@@ -282,9 +673,41 @@ class RowRun implements ChapterRun {
     const pair = this.locks.shift();
     if (!pair || this.c.main() !== 'open') return;
     if (pair.includes('angela') && pair.includes('oscar')) {
+      this.talks += 1;
       this.both(18, 'were locked in together and had to talk');
-      this.c.sim.narrate(ROW.lockedTalk, { room: 'meeting' });
+      this.c.sim.narrate(ROW.lockedTalk, { room: 'meeting', beat: true, icon: 'lockIn' });
     }
+  }
+
+  onAction(a: PlayerAction): void {
+    if (a.kind === 'power' && (a.id === 'lockIn' || a.id === 'love') && this.c.main() === 'open') this.c.setExtra('kind', 'lost');
+  }
+
+  /** While they are making up, a scene never makes them like each other less: the chapter counts the talks itself. */
+  vetoShift(who: CharId, about: CharId, delta: number): number | undefined {
+    if (this.c.main() !== 'open') return undefined;
+    const pair = (who === 'angela' && about === 'oscar') || (who === 'oscar' && about === 'angela');
+    return pair ? Math.max(0, delta) : undefined;
+  }
+
+  topics(): string[] {
+    // Settled (made up, or the accounts went in late): the office goes back to its usual chatter.
+    if (this.c.main() !== 'open') return [];
+    const out = [ROW.topicRow, ROW.topicDue];
+    if (this.dwightHolds()) out.push(ROW.topicDwight);
+    return out;
+  }
+
+  warns(): Partial<Record<ActionId, string>> {
+    if (this.c.main() !== 'open' || this.c.extra('kind') !== 'open') return {};
+    return { lockIn: ROW.warnKind, love: ROW.warnKind };
+  }
+
+  stakes(): number {
+    if (this.c.main() !== 'open') return 0;
+    const clock = this.c.sim.clock;
+    const day = Math.max(0, Math.min(1, (clock - DAY(9)) / (DAY(17) - DAY(9))));
+    return Math.min(1, 0.25 + day * 0.6 + (clock >= DAY(16) ? 0.15 : 0));
   }
 }
 
@@ -292,13 +715,30 @@ class RowRun implements ChapterRun {
 
 export const FIGGIS = 'visitor:figgis';
 export const SALES: readonly CastId[] = ['jim', 'dwight', 'phyllis', 'stanley', 'andy'];
+/** How each salesperson suits Mr Figgis: seconds to close, and patience he loses each second they talk. */
+const PITCHERS: Record<string, { secs: number; drain: number }> = {
+  stanley: { secs: 12, drain: 0 },
+  jim: { secs: 15, drain: 0 },
+  phyllis: { secs: 15, drain: 0 },
+  andy: { secs: 18, drain: 1.5 },
+  dwight: { secs: 18, drain: 1.5 }
+};
+/** A joker or a shouter only pitches if the player sent them in (named, told, whispered or carried) this recently. */
+const INVITED_FOR = 150;
+const SALES_TEAM_RE = /\b(sales ?(team|people|staff|force)|salespeople|salesmen)\b/i;
+const BEST_FIRST = ['stanley', 'jim', 'phyllis', 'andy', 'dwight'];
 const PATIENCE_START = 70;
-const DRAIN = 0.25;
-const PITCH_FOR = 15;
+/** The accounts went in late yesterday, and he has heard about it. */
+const PATIENCE_LATE = 60;
+/** Patience lost each second with no salesperson near him (twice that with Michael near). */
+const DRAIN = 0.15;
 const PITCH_MIN = 50;
 const NEAR = 64;
-const MEDDLE_FIRST = 30;
+const MEDDLE_FIRST = 40;
 const MEDDLE_EVERY = 80;
+const DOG_RE = /\b(dogs?|pupp(y|ies)|pup|hound|retriever|labrador|spaniel|terrier|poodle|beagle|collie|dachshund|pug|corgi|bulldog|sheepdog|greyhound|dalmatian)\b/i;
+const CLIENT_RE = /\b(figgis|client|customer)\b/i;
+const BALLOONS_FX = 'story.client.balloons';
 
 export function registerFiggis(): void {
   registerVisitor({
@@ -313,17 +753,31 @@ export function registerFiggis(): void {
 class ClientRun implements ChapterRun {
   private patience = PATIENCE_START;
   private spawned = false;
+  private gone = false;
   private pitchT = 0;
   private pitchWith: CharId | null = null;
-  private grabbed = false;
+  private pitchId = 0;
+  private scriptDone = false;
+  private rough = false;
   private leavingAt = -1;
   private michaelAt = 0;
+  private below50 = false;
+  private annoyedAt = -1e9;
+  private grabbedOnce = false;
+  private meddledOnce = false;
+  /** When the player last sent each salesperson to him (named, told, whispered or carried). */
+  private invited = new Map<CharId, number>();
+  /** A salesperson told to bring him to a meeting room. */
+  private escorting: { who: CharId; room: 'meeting' | 'boss'; since: number } | null = null;
 
   constructor(private c: ChapterCtx) {}
 
   setup(): void {
     registerFiggis();
     this.c.sim.setFact('story.client', CLIENT.fact);
+    if (this.c.notes.accounts === false) this.patience = PATIENCE_LATE;
+    // Michael's idea of a welcome: balloons by the front door.
+    this.c.sim.addEffect({ id: BALLOONS_FX, kind: 'balloons', room: 'bullpen', count: 5 });
   }
 
   private figgis(): SimPerson | undefined {
@@ -342,6 +796,7 @@ class ClientRun implements ChapterRun {
       // However he was held up, he is gone.
       s.removeVisitor(FIGGIS);
     }
+    if (this.spawned && !this.gone && !s.person(FIGGIS)) this.figgisGone();
     if (!this.spawned || this.c.main() !== 'open') return;
     const f = this.figgis();
     // His patience only starts to wear once he is through the door.
@@ -351,8 +806,10 @@ class ClientRun implements ChapterRun {
       const michael = around.some((p) => p.id === 'michael');
       this.bump(-((sales ? 0 : DRAIN) + (michael ? DRAIN : 0)) * dt);
       this.meddle(f, michael);
+      this.walkHimIn();
       this.pitch(f, dt);
       if (this.c.main() !== 'open') return;
+      this.watchPatience(f);
       if (this.patience <= 0) {
         this.walkOut(CLIENT.fedUp);
         return;
@@ -366,9 +823,13 @@ class ClientRun implements ChapterRun {
     this.spawned = true;
     s.spawnVisitor(FIGGIS, { anchor: 'exit.street' });
     s.goTo(FIGGIS, { anchor: 'door.entrance' }, { doing: 'walking in from the street', stay: 100000, stayDoing: CLIENT.waiting });
+    // The contract, ready to sign.
+    s.setProp(FIGGIS, 'papers');
     s.feel(FIGGIS, 'bored', 0.5, 20);
-    s.sfx('doorOpen', feetOf(anchor('door.entrance').tile).x);
-    s.narrate(CLIENT.arrives, { icon: 'coin', room: 'bullpen' });
+    const door = feetOf(anchor('door.entrance').tile);
+    s.sfx('doorOpen', door.x);
+    s.narrate(this.patience < PATIENCE_START ? CLIENT.arrivesLate : CLIENT.arrives, { icon: 'coin', room: 'bullpen', beat: true, slow: true });
+    s.bus.emit('focus', { x: door.x - 80, y: door.y - 80, w: 160, h: 110, weight: 1, holdMs: 6000 });
     s.setFact('story.client', CLIENT.waitingFact);
     s.remember('all', 'Mr Figgis of Figgis Hardware came in to decide whether to sign for another year.', 1.5);
     this.michaelAt = s.time + MEDDLE_FIRST;
@@ -379,12 +840,8 @@ class ClientRun implements ChapterRun {
     const s = this.c.sim;
     if (s.time < this.michaelAt) return;
     const m = s.person('michael');
-    if (!m || !m.present || already || this.pitchWith) {
-      this.michaelAt = s.time + 5;
-      return;
-    }
-    // Someone who has a whispered idea of his own has better things to do.
-    if (!m.available || m.plan || m.sceneId || m.conviction) {
+    // Someone with an idea of his own (a whisper) has better things to do.
+    if (!m || !m.present || already || this.pitchWith || !m.available || m.plan || m.sceneId || m.conviction) {
       this.michaelAt = s.time + 5;
       return;
     }
@@ -392,52 +849,116 @@ class ClientRun implements ChapterRun {
     s.setPlan('michael', { kind: 'talk', target: f.id, about: CLIENT.meddle });
   }
 
+  /** In a meeting room with a salesperson, while he is still willing to talk business. Who pitches matters. */
   private pitch(f: SimPerson, dt: number): void {
     const s = this.c.sim;
     const room = f.room;
-    const ok = (room === 'meeting' || room === 'boss') && this.patience >= PITCH_MIN && onFloor(this.c, f);
-    const partner = ok
-      ? s.peopleIn(room).filter((p) => SALES.includes(p.id as CastId) && onFloor(this.c, p)).sort((a, b) => (a.id === this.pitchWith ? -1 : b.id === this.pitchWith ? 1 : 0))[0]
-      : undefined;
-    if (!partner) {
-      this.pitchT = 0;
-      this.pitchWith = null;
+    const inRoom = (room === 'meeting' || room === 'boss') && onFloor(this.c, f);
+    const sellers = inRoom ? s.peopleIn(room).filter((p) => SALES.includes(p.id as CastId) && onFloor(this.c, p)) : [];
+    if (!sellers.length) {
+      this.endPitch();
       return;
     }
-    if (this.pitchWith !== partner.id) {
-      this.pitchWith = partner.id;
-      this.pitchT = 0;
-      s.narrate(`${partner.name} sits down with Mr Figgis in ${room === 'boss' ? "Michael's office" : 'the conference room'}.`, { icon: 'coin', room });
-      s.requestScene({
-        people: [FIGGIS, partner.id], room, trigger: 'event', why: CLIENT.pitchWhy(partner.name),
-        priority: 9, minLines: 3, maxLines: 4, staleAfter: 30
-      });
+    if (this.patience < PITCH_MIN) {
+      if (this.pitchWith) {
+        const who = displayName(this.pitchWith);
+        this.endPitch();
+        this.annoyedAt = s.time;
+        s.narrate(CLIENT.lostHim(who), { beat: true, icon: 'coin', room });
+      } else if (s.time - this.annoyedAt > 30) {
+        this.annoyedAt = s.time;
+        s.narrate(CLIENT.tooAnnoyed, { beat: true, icon: 'coin', room });
+      }
+      return;
     }
+    // Jim, Phyllis and Stanley sit down with him whenever they are there. Andy and Dwight only if the
+    // player sent them in; and a better salesperson arriving takes over from them.
+    const ok = sellers.filter((p) => !PITCHERS[p.id]?.drain || s.time - (this.invited.get(p.id) ?? -1e9) < INVITED_FOR);
+    if (!ok.length) {
+      this.endPitch();
+      return;
+    }
+    const best = ok.slice().sort((a, b) => BEST_FIRST.indexOf(a.id) - BEST_FIRST.indexOf(b.id))[0];
+    const current = ok.find((p) => p.id === this.pitchWith);
+    const partner = current && !(this.rough && !PITCHERS[best.id]?.drain) ? current : best;
+    if (this.pitchWith !== partner.id) {
+      if (current) s.narrate(CLIENT.takesOver(partner.name, current.name), { icon: 'coin', room });
+      this.startPitch(partner, room);
+    }
+    const how = PITCHERS[partner.id] ?? PITCHERS.jim;
     this.pitchT += dt;
-    if (this.pitchT >= PITCH_FOR) this.sign();
+    if (how.drain) this.bump(-how.drain * dt);
+    if (this.patience < PITCH_MIN) return;
+    if (this.pitchT >= how.secs && this.scriptDone) this.sign();
+  }
+
+  private startPitch(partner: SimPerson, room: RoomId): void {
+    const s = this.c.sim;
+    this.pitchWith = partner.id;
+    this.pitchT = 0;
+    this.scriptDone = false;
+    const id = ++this.pitchId;
+    this.rough = !!PITCHERS[partner.id]?.drain;
+    const roomName = room === 'boss' ? "Michael's office" : 'the conference room';
+    s.narrate(CLIENT.sitsDown(partner.name, roomName), { beat: true, icon: 'coin', room });
+    s.setFact('story.client', CLIENT.meetingFact(partner.name, roomName));
+    if (this.rough && CLIENT.rough[partner.id]) s.narrate(CLIENT.rough[partner.id], { icon: 'coin', room });
+    const script = CLIENT.pitch[partner.id] ?? CLIENT.pitch.jim;
+    const lines: ScriptLine[] = script.map(([who, text]) => who === 'figgis'
+      ? { who: FIGGIS, text, to: partner.id, emotion: this.rough ? 'angry' : 'neutral' }
+      : { who: partner.id, text, to: FIGGIS, kind: partner.id === 'dwight' ? 'shout' : 'say', emotion: this.rough ? 'excited' : 'happy' });
+    this.c.script(lines, { room, then: 'none', done: () => { if (this.pitchId === id) this.scriptDone = true; } });
+  }
+
+  private endPitch(): void {
+    if (this.pitchWith && this.c.main() === 'open') this.c.sim.setFact('story.client', CLIENT.waitingFact);
+    this.pitchT = 0;
+    this.pitchWith = null;
+    this.scriptDone = false;
+    this.pitchId += 1;
+  }
+
+  /** Say it plainly once he drops below 50, so the player knows why the meeting will not happen. */
+  private watchPatience(f: SimPerson): void {
+    if (this.patience < PITCH_MIN && !this.below50) {
+      this.below50 = true;
+      if (!this.pitchWith) this.c.sim.narrate(CLIENT.fedUp50, { beat: true, icon: 'coin', room: f.room });
+    } else if (this.patience >= PITCH_MIN + 5) {
+      this.below50 = false;
+    }
   }
 
   private sign(): void {
     const s = this.c.sim;
+    const rough = this.rough;
+    this.endPitch();
     s.sfx('coin');
-    s.narrate(CLIENT.signed, { icon: 'coin' });
-    s.feel(FIGGIS, 'happy', 0.8, 30);
+    const f = s.person(FIGGIS);
+    if (f) s.fx({ kind: 'burst', what: 'cash', x: f.x, y: f.y - 18, count: 14 });
+    const text = rough ? CLIENT.signedRough : CLIENT.signed;
+    s.narrate(text, { icon: 'coin', beat: true });
+    s.feel(FIGGIS, rough ? 'bored' : 'happy', 0.8, 30);
+    s.setProp(FIGGIS, null);
     s.setFact('story.client', CLIENT.signedFact);
     s.remember('all', CLIENT.signedFact, 2);
+    for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'happy', 0.6, 15);
     this.c.notes.figgis = true;
-    if (!this.grabbed) this.c.setExtra('handsOff', 'won');
-    this.c.win([CLIENT.signed]);
+    this.c.setExtra('michael', 'won');
+    this.c.win([text]);
     this.c.after(6, () => this.leave());
   }
 
   private walkOut(text: string): void {
     const s = this.c.sim;
-    s.narrate(text, { icon: 'coin' });
+    this.endPitch();
+    s.narrate(text, { icon: 'coin', beat: true });
     s.feel(FIGGIS, 'angry', 0.8, 30);
     s.setFact('story.client', CLIENT.goneFact);
     s.remember('all', CLIENT.goneFact, 2);
+    for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'nervous', 0.6, 15);
     this.c.notes.figgis = false;
-    if (!this.grabbed) this.c.setExtra('handsOff', 'won');
+    // Kept away from him all along, even if the deal fell through.
+    this.c.setExtra('michael', 'won');
     this.c.lose([text]);
     this.leave();
   }
@@ -449,20 +970,62 @@ class ClientRun implements ChapterRun {
     s.goTo(FIGGIS, { anchor: 'exit.street' }, { style: 'walk', doing: 'leaving', stay: 0, then: () => s.removeVisitor(FIGGIS) });
   }
 
+  /** He has left the building: a dog can no longer find him, and the balloons come down. */
+  private figgisGone(): void {
+    this.gone = true;
+    this.c.setExtra('dog', 'lost');
+    this.c.sim.removeEffect(BALLOONS_FX);
+  }
+
   atFive(): void {
+    this.c.sim.removeEffect(BALLOONS_FX);
     if (this.c.main() === 'open') {
       this.c.notes.figgis = false;
       this.c.lose([CLIENT.late]);
     }
   }
 
+  /** Take Mr Figgis to a meeting room: "Tell Jim: take Mr Figgis to the conference room." */
+  private escort(who: CharId, room: 'meeting' | 'boss'): void {
+    if (!this.figgis()) return;
+    this.escorting = { who, room, since: this.c.sim.time };
+  }
+
+  /** The salesperson walks over to him (after any chat the order set off), then takes him along. */
+  private walkHimIn(): void {
+    const e = this.escorting;
+    if (!e) return;
+    const s = this.c.sim;
+    const p = s.person(e.who);
+    const f = this.figgis();
+    if (!p || !p.present || !f || s.time - e.since > 90) {
+      this.escorting = null;
+      return;
+    }
+    if (p.sceneId || f.sceneId || !p.available || !onFloor(this.c, f)) return;
+    const roomName = e.room === 'boss' ? "Michael's office" : 'the conference room';
+    if (Math.hypot(p.x - f.x, p.y - f.y) <= 40) {
+      this.escorting = null;
+      s.narrate(CLIENT.escort(p.name, roomName), { beat: true, icon: 'coin', room: e.room });
+      s.goTo(e.who, { room: e.room }, { doing: `taking Mr Figgis to ${roomName}`, stay: 100, stayDoing: `waiting in ${roomName}` });
+      s.goTo(FIGGIS, { room: e.room }, { doing: `following ${p.name} to ${roomName}`, stay: 100000, stayDoing: `waiting in ${roomName}` });
+      return;
+    }
+    if (p.doing !== CLIENT.fetching) s.goTo(e.who, { near: FIGGIS }, { doing: CLIENT.fetching, stay: 8, stayDoing: CLIENT.fetching });
+  }
+
   status(): { progress: number; status: string } {
     const st = this.c.main();
     if (st === 'won') return { progress: 1, status: 'Signed for another year' };
     if (st === 'lost') return { progress: 0, status: 'Walked out' };
-    if (!this.spawned) return { progress: PATIENCE_START / 100, status: CLIENT.before };
-    if (this.pitchWith) return { progress: this.patience / 100, status: `Pitching: ${Math.floor(this.pitchT)}s` };
-    return { progress: this.patience / 100, status: `Patience ${Math.round(this.patience)}` };
+    if (!this.spawned) return { progress: this.patience / 100, status: CLIENT.before };
+    const p = Math.round(this.patience);
+    if (this.pitchWith) {
+      const secs = (PITCHERS[this.pitchWith] ?? PITCHERS.jim).secs;
+      return { progress: this.patience / 100, status: CLIENT.statusPitch(displayName(this.pitchWith), Math.min(secs, Math.floor(this.pitchT)), secs) };
+    }
+    if (this.patience < PITCH_MIN) return { progress: this.patience / 100, status: CLIENT.statusAnnoyed(p) };
+    return { progress: this.patience / 100, status: CLIENT.statusPatience(p) };
   }
 
   /** Read by tests. */
@@ -471,10 +1034,41 @@ class ClientRun implements ChapterRun {
   }
 
   onPickedUp(who: CharId): void {
+    if (SALES.includes(who as CastId)) this.invited.set(who, this.c.sim.time);
     if (who !== FIGGIS || !this.spawned || this.c.main() !== 'open') return;
-    this.grabbed = true;
+    // He hates being grabbed.
     this.bump(-15);
-    this.c.setExtra('handsOff', 'lost');
+    if (!this.grabbedOnce) {
+      this.grabbedOnce = true;
+      this.c.sim.narrate('Mr Figgis hates being picked up. His patience drops.', { icon: 'coin', beat: true });
+    }
+  }
+
+  onAction(a: PlayerAction): void {
+    const s = this.c.sim;
+    // Who the player sends: named in an announcement (or the whole sales team), told, or whispered to.
+    if (a.kind === 'announce' && a.text) {
+      const all = SALES_TEAM_RE.test(a.text) || /\b(everyone|everybody|all staff|all hands)\b/i.test(a.text);
+      for (const id of SALES) if (all || new RegExp(`\\b${displayName(id)}\\b`, 'i').test(a.text)) this.invited.set(id, s.time);
+    }
+    if ((a.kind === 'cue' || a.kind === 'whisper') && a.who && SALES.includes(a.who as CastId)) this.invited.set(a.who, s.time);
+    if (this.c.main() !== 'open' || !this.spawned) return;
+    const f = this.figgis();
+    if (!f) return;
+    // A dog brought in with Anything finds him wherever he is.
+    if (a.kind === 'anything' && a.text && DOG_RE.test(a.text)) {
+      if (this.c.extra('dog') === 'open') {
+        this.bump(30);
+        this.c.setExtra('dog', 'won');
+        this.c.sim.narrate(CLIENT.dogAnything, { beat: true, icon: 'puppy', room: f.room });
+      } else {
+        this.bump(10);
+      }
+    }
+    // "Tell Jim to take Mr Figgis to the conference room", or the same idea whispered to a salesperson.
+    if ((a.kind === 'cue' || a.kind === 'whisper') && a.who && SALES.includes(a.who as CastId) && a.text && CLIENT_RE.test(a.text)) {
+      this.escort(a.who, roomNamedIn(a.text) === 'boss' ? 'boss' : 'meeting');
+    }
   }
 
   onChaosStart(e: ChaosStartInfo): void {
@@ -497,7 +1091,34 @@ class ClientRun implements ChapterRun {
   onSceneDone(e: SceneDoneInfo): void {
     if (!this.spawned || this.c.main() !== 'open' || !e.people.includes(FIGGIS)) return;
     if (e.people.some((id) => SALES.includes(id as CastId))) this.bump(8);
-    if (e.people.includes('michael')) this.bump(-10);
+    if (e.people.includes('michael')) {
+      this.bump(-10);
+      this.c.setExtra('michael', 'lost');
+      if (!this.meddledOnce) {
+        this.meddledOnce = true;
+        this.c.sim.narrate(CLIENT.meddled, { beat: true, icon: 'coin' });
+      }
+    }
+  }
+
+  topics(): string[] {
+    // Settled (signed, or he walked out): the office goes back to its usual chatter.
+    if (this.c.main() !== 'open') return [];
+    return [this.spawned ? CLIENT.topicWaiting : CLIENT.topicComing];
+  }
+
+  warns(): Partial<Record<ActionId, string>> {
+    if (!this.spawned || this.c.main() !== 'open') return {};
+    const out: Partial<Record<ActionId, string>> = { disco: CLIENT.warnDisco };
+    for (const id of CHAOS_IDS) if (CHAOS[id].incident) out[id] = CLIENT.warnDisaster;
+    return out;
+  }
+
+  stakes(): number {
+    if (this.c.main() !== 'open') return 0;
+    if (!this.spawned) return 0.2;
+    if (this.pitchWith) return 0.75;
+    return Math.max(0.3, Math.min(1, 1.1 - this.patience / 100));
   }
 }
 
@@ -1572,19 +2193,24 @@ function fridayRecap(n: WeekNotes): string | null {
 
 export const CHAPTER_DEFS: readonly ChapterDef[] = [
   {
-    chapter: 1, weekday: 'Monday', title: MEMO.title, intro: MEMO.intro, hints: MEMO.hints, goal: MEMO.goal,
-    extras: [{ ...MEMO.extras[0], atFive: 'lost' }, { ...MEMO.extras[1], atFive: 'won' }],
-    locked: MEMO.locked, change: [MEMO.changeWon, MEMO.changeLost], create: (c) => new MemoRun(c)
+    chapter: 1, weekday: 'Monday', title: MEMO.title, intro: MEMO.intro, hints: MEMO.hints, help: MEMO.help, goal: MEMO.goal,
+    extras: [{ ...MEMO.extras[0], atFive: 'lost' }, { ...MEMO.extras[1], atFive: 'lost' }],
+    locked: MEMO.locked, change: [MEMO.changeWon, MEMO.changeLost], suggest: MEMO.suggest,
+    create: (c) => new MemoRun(c)
   },
   {
-    chapter: 2, weekday: 'Tuesday', title: ROW.title, intro: ROW.intro, hints: ROW.hints, goal: ROW.goal,
+    chapter: 2, weekday: 'Tuesday', title: ROW.title, intro: ROW.intro, hints: ROW.hints, help: ROW.help, goal: ROW.goal,
     extras: [{ ...ROW.extras[0], atFive: 'lost' }, { ...ROW.extras[1], atFive: 'lost' }],
-    locked: {}, change: [ROW.changeWon, ROW.changeLost], create: (c) => new RowRun(c)
+    locked: {}, change: [ROW.changeWon, ROW.changeLost], suggest: ROW.suggest,
+    recap: (n) => (n.call === undefined ? null : n.call ? ROW.recapCall : ROW.recapNoCall),
+    create: (c) => new RowRun(c)
   },
   {
-    chapter: 3, weekday: 'Wednesday', title: CLIENT.title, intro: CLIENT.intro, hints: CLIENT.hints, goal: CLIENT.goal,
-    extras: [{ ...CLIENT.extras[0], atFive: 'lost' }, { ...CLIENT.extras[1], atFive: 'won' }],
-    locked: {}, change: [CLIENT.changeWon, CLIENT.changeLost], create: (c) => new ClientRun(c)
+    chapter: 3, weekday: 'Wednesday', title: CLIENT.title, intro: CLIENT.intro, hints: CLIENT.hints, help: CLIENT.help, goal: CLIENT.goal,
+    extras: [{ ...CLIENT.extras[0], atFive: 'lost' }, { ...CLIENT.extras[1], atFive: 'lost' }],
+    locked: {}, change: [CLIENT.changeWon, CLIENT.changeLost], suggest: CLIENT.suggest,
+    recap: (n) => (n.accounts === undefined ? null : n.accounts ? CLIENT.recapAccounts : CLIENT.recapLate),
+    create: (c) => new ClientRun(c)
   },
   {
     chapter: 4, weekday: 'Thursday', title: LEAK.title, intro: LEAK.intro, hints: LEAK.hints, help: LEAK.help, goal: LEAK.goal,
