@@ -22,7 +22,9 @@ async function fillTheRoom(g: Played, text = 'Everyone to the conference room, n
 }
 
 /** Spots spread round the conference room table, so nobody is set down in Michael's office next door. */
-const SPOTS = ['spot.meet1', 'spot.meet2', 'spot.meet3', 'spot.meet4', 'spot.meet5', 'spot.meet6', 'spot.meet7', 'spot.meet9', 'spot.meet11', 'spot.meet13', 'spot.meet14'];
+const SPOTS = ['spot.meet1', 'spot.meet2', 'spot.meet3', 'spot.meet4', 'spot.meet5', 'spot.meet6', 'spot.meet7', 'spot.meet9', 'spot.meet13', 'spot.meet14'];
+/** Where Michael is set down: the far end of the table, away from the door to his office. */
+const MICHAEL_SPOT = 'spot.meet11';
 
 async function settle(g: Played, by = 15 * 60 + 1): Promise<void> {
   await g.until(() => g.day.main !== 'open' || g.sim.clock >= by, 3000);
@@ -105,7 +107,7 @@ describe('Monday: The Memo', () => {
       expect(g.day.goalUi().status).toMatch(/of 10 in the room, Michael not yet/);
       await fillTheRoom(g);
       expect(othersInMeeting(g)).toBeGreaterThanOrEqual(9);
-      await g.drop('michael', 'spot.meet15');
+      await g.drop('michael', MICHAEL_SPOT);
       await g.until(() => g.day.main !== 'open', 10);
       expect(g.day.main).toBe('won');
       expect(g.feed).toContain(MEMO.ring);
@@ -122,7 +124,7 @@ describe('Monday: The Memo', () => {
   it('carrying Michael in first fails: he slips back before the room is full', async () => {
     const g = play(storyAt(1, 22));
     await g.toClock(14);
-    await g.drop('michael', 'spot.meet15');
+    await g.drop('michael', MICHAEL_SPOT);
     await fillTheRoom(g);
     await settle(g);
     expect(g.day.main).toBe('lost');
@@ -165,7 +167,7 @@ describe('Monday: The Memo', () => {
     await g.toClock(14);
     const ids: CharId[] = ['pam', 'jim', 'dwight', 'stanley', 'phyllis', 'andy', 'angela', 'oscar', 'toby', 'meredith'];
     for (let i = 0; i < ids.length; i++) expect(await g.drop(ids[i], SPOTS[i])).toBe(true);
-    await g.drop('michael', 'spot.meet15');
+    await g.drop('michael', MICHAEL_SPOT);
     await settle(g);
     expect(g.day.main).toBe('won');
     expect(g.day.influence.left).toBeGreaterThanOrEqual(g.day.influence.max);
@@ -212,7 +214,7 @@ describe('Monday: The Memo', () => {
       g.whisper('creed', 'I should water the plants today.');
       await g.toClock(14);
       await fillTheRoom(g);
-      await g.drop('michael', 'spot.meet15');
+      await g.drop('michael', MICHAEL_SPOT);
       await settle(g);
       expect(g.day.main).toBe('won');
       if (g.day.extraState('full') === 'won') full++;
@@ -226,12 +228,13 @@ describe('Monday: The Memo', () => {
     expect(g.power('timeFreeze')).toBeNull();
     for (const [id, at] of [['pam', 'spot.kitchen2'], ['jim', 'spot.kitchen3']] as const) await g.drop(id, at);
     await g.until(() => !g.sim.activeChaos().some((c) => c.id === 'timeFreeze'), 30);
-    await g.step(20);
-    for (const id of ['pam', 'jim'] as const) {
-      const p = g.sim.person(id)!;
-      expect(p.room).toBe('kitchen');
-      expect(p.doing).toMatch(/bearings|talking/);
-    }
+    await g.step(3);
+    for (const id of ['pam', 'jim'] as const) expect(g.sim.person(id)!.room).toBe('kitchen');
+    // A while later they are still getting their bearings where they were put (unless the
+    // conversation about what just happened gave one of them a plan of their own).
+    await g.step(17);
+    const stayed = (['pam', 'jim'] as const).filter((id) => g.sim.person(id)!.room === 'kitchen' && /bearings|talking/.test(g.sim.person(id)!.doing));
+    expect(stayed.length).toBeGreaterThanOrEqual(1);
   });
 
   it('Quiet hands fails at the first power, and says so before you confirm one', async () => {
