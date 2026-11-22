@@ -59,6 +59,9 @@ button, input, textarea, select {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
+  /* The browser's own font shorthand for controls turns ligatures back on ("Arst" for "first"). */
+  font-variant-ligatures: inherit;
+  font-feature-settings: inherit;
 }
 
 /* Pixel-snapping for any rasterised content */
