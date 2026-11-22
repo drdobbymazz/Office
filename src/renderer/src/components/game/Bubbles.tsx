@@ -21,6 +21,13 @@ import { layoutBubbles, type BubbleIn, type Box } from './bubbleLayout';
 
 export interface Bounds { left: number; right: number; top: number; bottom: number }
 
+/**
+ * Lines the floor cannot show in full right now (speaker off screen or under the panel, or the line
+ * folded into a "..." tag), by speech id. The subtitle carries exactly these, so every line can be
+ * read somewhere and none is shown twice.
+ */
+export const unshownLines = new Set<string>();
+
 const MAX_W = 220;
 /** Bubble width when the camera shows the whole office (a person is a few pixels tall there). */
 const MAX_W_FITTED = 176;
@@ -230,6 +237,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
 
       const items: BubbleIn[] = [];
       const typedOut = new Map<string, boolean>();
+      unshownLines.clear();
       for (const [id, n] of nodes) {
         if (n.dying) continue;
         const sp = n.sp;
@@ -242,7 +250,11 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
         }
         typedOut.set(id, count >= sp.text.length);
         const head = game.headOnScreen(sp.who);
-        if (!head.visible || head.x < area.minX - 20 || head.x > area.maxX + 20) { n.el.style.visibility = 'hidden'; continue; }
+        if (!head.visible || head.x < area.minX - 20 || head.x > area.maxX + 20) {
+          n.el.style.visibility = 'hidden';
+          unshownLines.add(id);
+          continue;
+        }
         n.el.style.visibility = 'visible';
         const tailH = (sp.kind === 'think' ? PUFF_H : TAIL_H) + (sp.kind === 'shout' ? 4 : 0);
         items.push({
@@ -264,6 +276,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
           if (n.tag) n.tagUntil = now + TAG_HOLD_MS;
           n.el.classList.toggle('is-tag', n.tag);
         }
+        if (!p.full) unshownLines.add(p.id);
         const dim = p.full && n.sp.startedAt < newest && !!typedOut.get(p.id);
         if (dim !== n.dim) { n.dim = dim; n.el.classList.toggle('is-dim', dim); }
         // Slide to the new spot (jump when it changes between tag and bubble).

@@ -18,6 +18,7 @@ import { tileBg, tileIcon } from './Story';
 import { BeatCaption } from './caption';
 import { CHIP_H, CHIP_TOP, HUD_TOP, STRIP_H, STRIP_W, hudBottom } from './hudGeometry';
 import { useLeaving } from './transitions';
+import { unshownLines } from './Bubbles';
 
 type ToastGroup = { ids: string[]; text: string; icon?: string; tone: string };
 const groupKey = (g: ToastGroup) => g.ids[0];
@@ -317,27 +318,15 @@ export function EventsAndToasts({ left, right }: { left: string; right: number }
 
 // ── bottom stack: the story caption, then the subtitle ──
 
-/**
- * True when nobody can see this speaker's bubble: off screen, or under the panel or the HUD.
- * Only then does the subtitle carry the line (otherwise it would say everything twice).
- */
-function speakerHidden(head: { x: number; y: number; visible: boolean }, right: number, bottom: number, top: number): boolean {
-  if (!head.visible) return true;
-  const vw = window.innerWidth, vh = window.innerHeight;
-  if (head.x < 4 || head.x > vw - right - 4) return true;
-  if (head.y > vh - bottom - 4) return true;
-  if (head.y < top && head.x < STRIP_W + 16) return true;
-  return false;
-}
-
 export function Subtitle({ right, bottom }: { right: number; bottom: number }) {
   const game = useGame();
   const cap = useUi((s) => (s.settings.captions ? s.caption : null));
-  const story = useUi((s) => s.mode === 'story' && !!s.story);
   const person = useUi((s) => (cap?.who ? s.people.find((p) => p.id === cap.who) ?? null : null));
   useNow(250, !!cap?.who);
-  const hidden = cap?.who ? speakerHidden(game.headOnScreen(cap.who), right, bottom, hudBottom(story)) : true;
-  const showSub = !!cap && !!cap.text && hidden;
+  // Only for lines the floor cannot show in full (off screen, under the panel, or folded into a "..."):
+  // otherwise the bubble already says it and the subtitle would say everything twice.
+  const unshown = !cap?.who || unshownLines.has(cap.id) || !game.headOnScreen(cap.who).visible;
+  const showSub = !!cap && !!cap.text && unshown;
   const name = person?.name ?? cap?.who ?? '';
   const color = person ? readableOnCream(person.color) : 'var(--cth-ink-700)';
   return (
