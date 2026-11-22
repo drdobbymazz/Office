@@ -8,6 +8,7 @@ import { CAST, displayName } from '@/game/core/cast';
 import type { CastId, CharId, FeedItem } from '@/game/core/types';
 import { Story, memoryStore, pickLeak } from '@/game/story';
 import { LEAK } from '@/game/story/text';
+import { storyThemeOf } from '@/game/brain/instinctRules';
 import { play, storyAt, type Played } from './harness';
 
 interface LeakFacts { beeps: { at: number; there: CharId[] }[]; herrings: CastId[]; nervous: CastId[]; ruled: CharId[] }
@@ -288,5 +289,17 @@ describe('Thursday: The Leak', () => {
     expect(facts(gb).beeps.length).toBeGreaterThan(facts(gq).beeps.length);
     expect(busy.ui(null).recap).toBe(LEAK.recapBusy);
     expect(quiet.ui(null).recap).toBe(LEAK.recapQuiet);
+  });
+
+  it('the office talks about the leak while it is open, and stops once it is settled', async () => {
+    expect(storyThemeOf(LEAK.topics.start)).toBe('leak');
+    expect(storyThemeOf(LEAK.topics.beeps)).toBe('leak');
+    expect(storyThemeOf(LEAK.topics.wronged('Pam'))).toBe('leak');
+    expect(storyThemeOf(LEAK.fact)).toBe('leak');
+    const g = play(storyAt(4, 52));
+    await g.toClock(9, 30);
+    expect(g.day.topics()).toEqual([LEAK.topics.start]);
+    g.day.accuse(g.story.state.notes.leak);
+    expect(g.day.topics()).toEqual([]);
   });
 });

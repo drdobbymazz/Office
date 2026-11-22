@@ -7,6 +7,7 @@
 // tour, and each problem can be dealt with by a word, a hand or a power.
 import { describe, expect, it } from 'vitest';
 import { VERDICT } from '@/game/story/text';
+import { storyThemeOf } from '@/game/brain/instinctRules';
 import { BULLPEN_STAFF, Story, memoryStore, type WeekNotes } from '@/game/story';
 import { play, type Played } from './harness';
 
@@ -225,5 +226,13 @@ describe('Friday: The Verdict', () => {
       runs.push(listening(g));
     }
     expect(runs[1]).toBeLessThan(runs[0]);
+  });
+
+  it('what the office talks about follows the day: the inspector, the speech, then waiting for tonight', () => {
+    expect(storyThemeOf(VERDICT.topics.before)).toBe('inspection');
+    expect(storyThemeOf(VERDICT.topics.tour)).toBe('inspection');
+    expect(storyThemeOf(VERDICT.topics.speech)).toBe('verdict');
+    expect(storyThemeOf(VERDICT.after(80))).toBe('waiting');
+    expect(storyThemeOf(VERDICT.speechWhy)).toBe('verdict');
   });
 });

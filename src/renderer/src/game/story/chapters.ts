@@ -986,7 +986,8 @@ class LeakRun implements ChapterRun {
   }
 
   topics(): string[] {
-    if (this.c.main() === 'won') return [LEAK.topics.caught(displayName(this.leak))];
+    // Once the leak is caught (or has got away), the office stops guessing.
+    if (this.c.main() !== 'open') return [];
     const out = [this.beeps.length ? LEAK.topics.beeps : LEAK.topics.start];
     for (const w of this.c.notes.wronged ?? []) out.push(LEAK.topics.wronged(displayName(w)));
     return out;

@@ -354,10 +354,10 @@ export const LEAK = {
     secretLeak: 'Today this sends one person\'s secret to everyone. On the leak, it exposes them. On anyone else, an innocent secret gets out.',
     announce: 'Mentioning Corporate or the fax over the loudspeaker makes the leak lie low for a while.'
   },
+  // Worded so the small talk files them under the leak ("leak", "fax", "emailing Corporate").
   topics: {
-    start: 'Someone has been faxing Corporate. People are wondering who.',
-    beeps: 'The fax machine keeps beeping. Someone is sending pages to Corporate.',
-    caught: (name: string) => `${name} was the leak all along. Nobody can believe it.`,
+    start: 'Someone has been leaking office gossip to Corporate by fax. People are wondering who.',
+    beeps: 'The fax machine keeps beeping. Someone is leaking pages to Corporate.',
     wronged: (name: string) => `${name} was accused of being the leak, and it was not true.`
   },
   recapBusy: 'Figgis Hardware walked away yesterday, and the leak has plenty to report: the fax machine will be busy today.',
