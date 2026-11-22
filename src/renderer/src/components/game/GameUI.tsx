@@ -13,9 +13,9 @@ import type { CharId, ChaosId } from '@/game/core/types';
 import type { Suggestions, Tips } from '@/game/core/content/types';
 import { GameCtx, useViewport, type UiCtx } from './ctx';
 import { BubbleLayer, type Bounds } from './Bubbles';
-import { EventsAndToasts, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
+import { CHIP_MAX_H, CHIP_TOP, EventsAndToasts, MissionChip, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
 import { Dock, NavCtx, type Nav } from './Dock';
-import { Coach, ReportCard, RotateCard, TitleCard } from './Dialogs';
+import { ChapterCard, Coach, EndingCard, ReportCard, RotateCard, TitleCard } from './Dialogs';
 import { pendingChaos } from './PowersTab';
 import type { TabId } from './words';
 
@@ -46,6 +46,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   const phase = game.store((s) => s.phase);
   const tutorialDone = game.store((s) => s.settings.tutorialDone);
   const selectedId = game.store((s) => s.selectedId);
+  const storyOn = game.store((s) => s.mode === 'story' && !!s.story);
 
   const nav = useMemo<Nav>(() => ({
     tab, open, personId,
@@ -87,14 +88,26 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
     window.addEventListener('resize', measure);
     return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
   }, [measure, open, tab, portrait, blocked]);
+  // Story mode in portrait: the floor fits under the mission chip (the office is wide, so this costs little room).
+  const chipTopInset = portrait && phase === 'playing' && storyOn ? CHIP_TOP + CHIP_MAX_H : 0;
   useEffect(() => {
-    game.setInsets({ left: 0, right: cover.right, top: 0, bottom: cover.bottom });
-  }, [game, cover.right, cover.bottom]);
+    game.setInsets({ left: 0, right: cover.right, top: chipTopInset, bottom: cover.bottom });
+  }, [game, cover.right, cover.bottom, chipTopInset]);
 
-  // Events go beside the status strip when there is room, under it when not.
+  // Events go beside the status strip when there is room, under it (and the mission chip) when not.
   const freeBeside = vp.w - cover.right - (STRIP_W + 24);
   const eventsLeft = freeBeside >= 220 ? `calc(${SAFE_LEFT} + ${STRIP_W + 8}px)` : SAFE_LEFT;
   const playing = phase === 'playing';
+  const chip = playing && storyOn;
+  const underHud = chip ? CHIP_TOP + CHIP_MAX_H + 8 : 76;
+
+  // Tapping the mission chip opens the Director tab at the mission.
+  const openMission = useCallback(() => {
+    setTab('director'); setOpenState(true);
+    window.setTimeout(() => {
+      (document.querySelector('[data-mission]') as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+    }, 60);
+  }, []);
 
   return (
     <GameCtx.Provider value={ctx}>
@@ -104,16 +117,19 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
           {phase !== 'title' && (
             <>
               <StatusStrip left={SAFE_LEFT} />
-              <div style={{ position: 'absolute', inset: 0, top: freeBeside >= 220 ? 0 : 76, pointerEvents: 'none' }}>
+              {chip && <MissionChip left={SAFE_LEFT} onOpen={openMission} />}
+              <div style={{ position: 'absolute', inset: 0, top: freeBeside >= 220 ? 0 : underHud, pointerEvents: 'none' }}>
                 <EventsAndToasts left={eventsLeft} right={cover.right} />
               </div>
               <Subtitle right={cover.right} bottom={cover.bottom} />
-              <OfflineBanner left={SAFE_LEFT} onFix={() => nav.go('settings')} />
+              <OfflineBanner left={SAFE_LEFT} top={chip ? underHud : 80} onFix={() => nav.go('settings')} />
             </>
           )}
           {!blocked && <Dock ref={dockRef} vp={vp} portrait={portrait} />}
           {phase === 'title' && !blocked && <TitleCard vp={vp} />}
+          {phase === 'briefing' && !blocked && <ChapterCard vp={vp} />}
           {phase === 'report' && !blocked && <ReportCard vp={vp} />}
+          {phase === 'ending' && !blocked && <EndingCard vp={vp} />}
           {playing && !tutorialDone && !blocked && (
             <Coach onDone={() => game.updateSettings({ tutorialDone: true })} />
           )}

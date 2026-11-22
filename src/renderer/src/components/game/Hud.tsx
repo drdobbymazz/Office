@@ -6,9 +6,10 @@ import { CSSProperties, useEffect, useState } from 'react';
 import { CHAOS } from '@/game/core/chaos';
 import { formatClock } from '@/game/core/types';
 import { GIcon } from './icons';
-import { Bar, Btn, Head, usePress } from './kit';
+import { Bar, Btn, Head, IconTile, Pips, StandingBar, usePress } from './kit';
 import { useGame, useNow, useUi } from './ctx';
 import { readableOnCream } from './words';
+import { tileBg, tileIcon } from './Story';
 
 const chipPanel: CSSProperties = {
   background: 'var(--cth-cream-100)',
@@ -20,7 +21,8 @@ export const STRIP_W = 228;
 export function StatusStrip({ left }: { left: string }) {
   const s = useUi((st) => ({
     day: st.day, weekday: st.weekday, clock: Math.floor(st.clock), chaos: st.meters.chaos, morale: st.meters.morale,
-    stock: st.meters.stock, delta: st.meters.stockDelta, free: st.incidentFreeDays, paused: st.paused, speed: st.speed
+    stock: st.meters.stock, delta: st.meters.stockDelta, free: st.incidentFreeDays, paused: st.paused, speed: st.speed,
+    story: st.story ? { left: st.story.influence.left, max: st.story.influence.max, standing: Math.round(st.story.standing) } : null
   }));
   const up = s.delta >= 0;
   return (
@@ -42,6 +44,17 @@ export function StatusStrip({ left }: { left: string }) {
           <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '20px' }}>{s.free}</span>
         </span>
       </div>
+      {s.story ? (
+        // Story mode: what the player spends (influence) and what is at stake (branch standing).
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, height: 16 }}>
+          <GIcon name="influence" px={16} title="Influence left today" />
+          <Pips left={s.story.left} max={s.story.max} size={Math.max(s.story.left, s.story.max) > 10 ? 6 : 7} gap={2} title={`Influence: ${s.story.left} of ${s.story.max} left`} />
+          <span style={{ flex: 1 }} />
+          <GIcon name="branch" px={16} title="Branch standing" />
+          <StandingBar value={s.story.standing} w={40} h={10} marks={false} />
+          <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px', minWidth: 18, textAlign: 'right' }}>{s.story.standing}</span>
+        </div>
+      ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
         <GIcon name="chaos" px={16} title="Chaos" />
         <Bar value={s.chaos / 100} w={44} h={10} color="var(--cth-coral)" segments={6} />
@@ -52,7 +65,47 @@ export function StatusStrip({ left }: { left: string }) {
           {s.stock.toFixed(1)}{up ? '▲' : '▼'}
         </span>
       </div>
+      )}
     </div>
+  );
+}
+
+/** Where the mission chip sits (under the status strip), and how much room it can take at most. */
+export const CHIP_TOP = 74;
+export const CHIP_MAX_H = 52;
+
+/**
+ * Story mode: today's mission in a chip under the status strip, the same width. The goal tile,
+ * the short status, a progress bar, influence pips and a small standing bar. A tap opens the
+ * Director tab at the mission.
+ */
+export function MissionChip({ left, onOpen }: { left: string; onOpen: () => void }) {
+  const game = useGame();
+  const g = useUi((st) => st.story?.goal ?? null);
+  const { pressed, handlers } = usePress();
+  if (!g) return null;
+  // One row, so it covers as little of the floor as possible: the goal tile, the live status and its bar.
+  // Influence and standing live in the status strip above.
+  return (
+    <button type="button" className="gu-hit" data-avoid {...handlers} aria-label={`Today's goal: ${g.title}`} title={g.status || g.title}
+      onClick={() => { game.uiSound('open'); onOpen(); }}
+      style={{
+        position: 'absolute', top: CHIP_TOP, left, width: STRIP_W, padding: '5px 8px 5px 6px', border: 'none', textAlign: 'left',
+        display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', touchAction: 'manipulation',
+        fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink-900)',
+        ...chipPanel,
+        boxShadow: pressed ? 'var(--cth-panel-border), 2px 2px 0 rgba(26, 19, 32, 0.25)' : chipPanel.boxShadow,
+        transform: pressed ? 'translate(2px, 2px)' : 'none'
+      }}>
+      <IconTile icon={tileIcon(g)} size={24} bg={tileBg(g.state)} />
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <span style={{
+          fontSize: 14, lineHeight: '15px', overflow: 'hidden',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'
+        }}>{g.status || g.title}</span>
+        {g.state === 'open' && <Bar value={g.progress} color="var(--cth-peach)" h={6} segments={8} />}
+      </div>
+    </button>
   );
 }
 
@@ -145,7 +198,7 @@ export function Subtitle({ right, bottom }: { right: number; bottom: number }) {
   );
 }
 
-export function OfflineBanner({ left, onFix }: { left: string; onFix: () => void }) {
+export function OfflineBanner({ left, top = 80, onFix }: { left: string; top?: number; onFix: () => void }) {
   const offline = useUi((s) => s.brain.state === 'offline');
   // Said once, then out of the way: the red light on the Director tab keeps saying it.
   const [seen, setSeen] = useState(false);
@@ -157,7 +210,7 @@ export function OfflineBanner({ left, onFix }: { left: string; onFix: () => void
   if (!offline || seen) return null;
   return (
     <div className="gu-hit gu-drop" data-avoid style={{
-      position: 'absolute', top: 80, left, width: STRIP_W, display: 'flex', alignItems: 'center', gap: 8,
+      position: 'absolute', top, left, width: STRIP_W, display: 'flex', alignItems: 'center', gap: 8,
       padding: '6px 6px 6px 10px', background: 'var(--cth-lemon-light)',
       boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), 4px 4px 0 rgba(26,19,32,0.25)'
     }}>

@@ -1,14 +1,20 @@
-// Full-screen moments: the start card, the end-of-day report, the
-// "turn your phone sideways" card and the first-run coach marks.
+// Full-screen moments: the start card, the story's chapter card, the
+// end-of-day report, the end of the week, the "turn your phone sideways" card
+// and the first-run coach marks.
 
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import brandLogo from '@brand/logo.png?url';
 import { PixelPanel } from '@/components/PixelPanel';
+import type { StoryUi } from '@/game/app/gameApi';
+import type { EmotionId } from '@/game/core/types';
 import { GIcon } from './icons';
-import { Btn, Head, Label, Portrait } from './kit';
+import { Btn, Head, IconTile, Label, Portrait, Rule, StandingBar, standingWord } from './kit';
 import { useContent, useGame, useNow, useUi, type Viewport } from './ctx';
 import { ModelStatus } from './DirectorTab';
 import { useNav } from './Dock';
+import {
+  EXTRA_WORTH, ExtraRow, HintList, InfluenceMeter, StandingMeter, WeekStrip, INFLUENCE_NOTE, STANDING_NOTE, tileIcon, useStory
+} from './Story';
 
 const backdrop: React.CSSProperties = {
   position: 'absolute', inset: 0, background: 'rgba(26, 19, 32, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -35,7 +41,10 @@ function RotatingTip() {
 export function TitleCard({ vp }: { vp: Viewport }) {
   const game = useGame();
   const day = useUi((s) => s.day);
+  const mode = useUi((s) => s.mode);
+  const saved = useUi((s) => s.storySaved);
   const side = !vp.portrait && vp.w >= 700;
+  const go = (start: () => void) => { start(); game.goFullscreen(); };
   return (
     <div style={backdrop}>
       <div className="gu-pop gu-scroll" style={{ width: side ? 'min(600px, 100%)' : 'min(400px, 100%)', maxHeight: '100%' }}>
@@ -55,10 +64,27 @@ export function TitleCard({ vp }: { vp: Viewport }) {
               <div style={{ padding: 8, background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)' }}>
                 <ModelStatus />
               </div>
-              <RotatingTip />
-              <Btn variant="primary" size="lg" full icon="play" sound="confirm" style={{ height: 52, fontSize: 18 }}
-                onClick={() => { game.begin(); game.goFullscreen(); }}>
-                {day > 1 ? `Start day ${day}` : 'Start the day'}
+              {/* On a very short screen the tip makes way for the two choices. */}
+              {vp.h >= 400 && <RotatingTip />}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <Btn variant="primary" size="lg" full icon="play" sound="confirm" style={{ height: 52, fontSize: 18 }}
+                  onClick={() => go(() => game.startStory())}>
+                  {saved ? `Continue: Day ${saved.chapter}, ${saved.title}` : 'Play the story'}
+                </Btn>
+                {saved && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 32 }}>
+                    <GIcon name="branch" px={16} title="Branch standing" />
+                    <StandingBar value={saved.standing} w={64} h={10} marks={false} />
+                    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px' }}>{Math.round(saved.standing)}</span>
+                    <span className="gu-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>Standing</span>
+                    <span style={{ flex: 1 }} />
+                    <Btn variant="ghost" size="sm" icon="refresh" onClick={() => go(() => game.startStory(true))}>New story</Btn>
+                  </div>
+                )}
+              </div>
+              <Btn variant="secondary" size="md" full icon="powers" onClick={() => go(() => game.startSandbox())}>
+                Sandbox
+                <span style={{ color: 'var(--cth-ink-500)' }}>{mode === 'sandbox' && day > 1 ? `· day ${day}` : '· free play'}</span>
               </Btn>
             </div>
           </div>
@@ -94,10 +120,13 @@ function Stat({ label, value, sub, color }: { label: string; value: string; sub?
 export function ReportCard({ vp }: { vp: Viewport }) {
   const game = useGame();
   const r = useUi((s) => s.report);
+  const story = useStory();
   const typed = useTyped(r?.paragraphs ?? [], !!r?.writing);
   if (!r) return null;
   const two = !vp.portrait && vp.w >= 760;
   const up = r.stats.stockEnd >= r.stats.stockStart;
+  const result = story?.result ?? null;
+  const lastDay = !!story && story.chapter >= story.chapters;
   return (
     <div style={backdrop}>
       <div className="gu-pop" style={{ width: two ? 'min(880px, 100%)' : 'min(460px, 100%)', height: '100%', maxHeight: two ? 640 : '100%', display: 'flex' }}>
@@ -109,7 +138,9 @@ export function ReportCard({ vp }: { vp: Viewport }) {
             <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 16, lineHeight: '24px' }}>DAY {r.day}</span>
             <span style={{ fontSize: 14, color: 'var(--cth-ink-700)' }}>End of day report</span>
           </div>
-          <div className="gu-scroll gu-hit" style={{ flex: 1, minHeight: 0, padding: '12px 16px', display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, alignItems: 'flex-start' }}>
+          <div className="gu-scroll gu-hit" style={{ flex: 1, minHeight: 0, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {story && result && <StoryResult story={story} result={result} two={two} />}
+            <div style={{ display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, alignItems: 'flex-start', flexShrink: 0 }}>
             <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <h2 style={{ margin: 0, fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '20px', fontWeight: 400 }}>{r.headline}</h2>
               {typed.text.map((p, i) => (
@@ -155,9 +186,244 @@ export function ReportCard({ vp }: { vp: Viewport }) {
                 </div>
               ))}
             </div>
+            </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '8px 12px 12px', boxShadow: 'inset 0 1px 0 var(--cth-ink-300)', margin: '0 5px 5px' }}>
-            <Btn variant="primary" size="lg" icon="arrow-right" sound="confirm" onClick={() => game.nextDay()}>Next day</Btn>
+            {story && (
+              <Btn variant="secondary" size="lg" icon="refresh" onClick={() => game.retryDay()} style={{ flexShrink: 1, minWidth: 0 }}>
+                {vp.w < 420 ? 'Try again' : 'Try the day again'}
+              </Btn>
+            )}
+            <Btn variant="primary" size="lg" icon="arrow-right" sound="confirm" onClick={() => game.nextDay()} style={{ flexShrink: 1, minWidth: 0 }}>
+              {story ? (lastDay ? 'See how the week ended' : 'Next day') : 'Next day'}
+            </Btn>
+          </div>
+        </PixelPanel>
+      </div>
+    </div>
+  );
+}
+
+/** Story mode, at the top of the report: won or lost, what happened, and what it did to the standing. */
+function StoryResult({ story, result, two }: { story: StoryUi; result: NonNullable<StoryUi['result']>; two: boolean }) {
+  const won = result.won;
+  const delta = result.standingAfter - result.standingBefore;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px 6px 6px', minHeight: 44,
+        background: won ? 'var(--cth-mint)' : 'var(--cth-coral)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
+      }}>
+        <IconTile icon={won ? 'trophy' : 'x'} size={32} bg="var(--cth-cream-50)" />
+        <span style={{
+          fontFamily: 'var(--cth-font-display)', fontSize: 16, lineHeight: '20px', padding: '4px 6px 2px',
+          background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)', flexShrink: 0
+        }}>{won ? 'WON' : 'LOST'}</span>
+        <span style={{ fontSize: 18, lineHeight: '21px', minWidth: 0 }}>{story.goal.title}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: two ? 'row' : 'column', gap: two ? 16 : 12, padding: '10px 12px 12px' }}>
+        <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {result.text.map((t, i) => (
+            <p key={i} style={{ margin: 0, fontSize: 16, lineHeight: '21px', color: 'var(--cth-ink-900)' }}>{t}</p>
+          ))}
+          {result.changes.length > 0 && <Label style={{ marginTop: 2 }}>Changes to standing</Label>}
+          {result.changes.map((c, i) => <ChangeRow key={i} text={c.text} delta={c.delta} />)}
+        </div>
+        <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <GIcon name="branch" px={16} />
+            <Label style={{ flex: 1 }}>Branch standing</Label>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontFamily: 'var(--cth-font-mono)' }}>
+            <span style={{ fontSize: 24, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>{Math.round(result.standingBefore)}</span>
+            <GIcon name="arrow-right" px={16} style={{ alignSelf: 'center' }} />
+            <span style={{ fontSize: 34, lineHeight: '26px' }}>{Math.round(result.standingAfter)}</span>
+            <span style={{ fontSize: 22, lineHeight: '20px', color: delta >= 0 ? '#2f8a45' : '#c43c3c' }}>{delta >= 0 ? '+' : ''}{Math.round(delta)}</span>
+          </div>
+          <StandingBar value={result.standingAfter} from={result.standingBefore} h={16} style={{ margin: '2px 0' }} />
+          <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+            {STANDING_NOTE}: <span style={{ color: 'var(--cth-ink-700)' }}>{standingWord(result.standingAfter).toLowerCase()}.</span>
+          </div>
+          <div style={{ marginTop: 4 }}><WeekStrip week={story.week} current={story.chapter} /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One standing change: the points in a mint or coral tile, then the plain cause. */
+function ChangeRow({ text, delta }: { text: string; delta: number }) {
+  const up = delta >= 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{
+        width: 44, flexShrink: 0, textAlign: 'center', padding: '2px 0 0', fontFamily: 'var(--cth-font-mono)', fontSize: 22, lineHeight: '20px',
+        background: up ? 'var(--cth-mint)' : 'var(--cth-coral)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
+      }}>{up ? '+' : '-'}{Math.abs(Math.round(delta))}</span>
+      <span style={{ fontSize: 15, lineHeight: '18px', minWidth: 0 }}>{text}</span>
+    </div>
+  );
+}
+
+// ── Story: the chapter card ──
+
+const WEEKDAY_UPPER = (w: string) => w.toUpperCase();
+
+/** Before each day of the story: what is going on, today's job, the ways in, the budget and the week. */
+export function ChapterCard({ vp }: { vp: Viewport }) {
+  const game = useGame();
+  const story = useStory();
+  if (!story) return null;
+  const two = !vp.portrait && vp.w >= 700;
+  return (
+    <div style={backdrop}>
+      <div className="gu-pop" style={{ width: two ? 'min(880px, 100%)' : 'min(460px, 100%)', height: '100%', maxHeight: two ? 640 : '100%', display: 'flex' }}>
+        <PixelPanel variant="dialog" noPadding style={{ boxShadow: hardShadow, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px 6px', background: 'var(--cth-lemon)',
+            boxShadow: 'inset 0 -1px 0 var(--cth-ink-900)', margin: 5, marginBottom: 0
+          }}>
+            <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 16, lineHeight: '24px', whiteSpace: 'nowrap' }}>
+              DAY {story.chapter} · {WEEKDAY_UPPER(story.weekday)}
+            </span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 14, color: 'var(--cth-ink-700)', whiteSpace: 'nowrap' }}>Chapter {story.chapter} of {story.chapters}</span>
+          </div>
+          <div className="gu-scroll gu-hit" style={{ flex: 1, minHeight: 0, padding: '12px 16px', display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, width: two ? undefined : '100%' }}>
+              <h2 style={{ margin: 0, fontFamily: 'var(--cth-font-display)', fontSize: 16, lineHeight: '24px', fontWeight: 400 }}>{story.title.toUpperCase()}</h2>
+              {story.intro.map((p, i) => (
+                <p key={i} style={{ margin: 0, fontSize: 16, lineHeight: '21px', color: 'var(--cth-ink-900)' }}>{p}</p>
+              ))}
+              {!two && <GoalCardTile story={story} />}
+              {!two && <Extras story={story} />}
+              {story.hints.length > 0 && (
+                <>
+                  <Label style={{ marginTop: 4 }}>Ways in</Label>
+                  <HintList hints={story.hints} />
+                </>
+              )}
+            </div>
+            <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, width: two ? undefined : '100%' }}>
+              {two && <GoalCardTile story={story} />}
+              {two && <Extras story={story} />}
+              <Rule />
+              <InfluenceMeter left={story.influence.left} max={story.influence.max} />
+              <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: -4 }}>{INFLUENCE_NOTE}</div>
+              <StandingMeter value={story.standing} />
+              <Label style={{ marginTop: 2 }}>The week</Label>
+              <WeekStrip week={story.week} current={story.chapter} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 12px', boxShadow: 'inset 0 1px 0 var(--cth-ink-300)', margin: '0 5px 5px' }}>
+            <Btn variant="ghost" size="lg" icon="back" label="Back to the title" onClick={() => game.toTitle()} sound="close">Title</Btn>
+            <span style={{ flex: 1 }} />
+            <Btn variant="primary" size="lg" icon="play" sound="confirm" onClick={() => { game.beginChapter(); game.goFullscreen(); }}>Start the day</Btn>
+          </div>
+        </PixelPanel>
+      </div>
+    </div>
+  );
+}
+
+function Extras({ story }: { story: StoryUi }) {
+  if (!story.side.length) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Label style={{ marginTop: 4 }}>Extra goals: +{EXTRA_WORTH} standing each</Label>
+      {story.side.map((x) => <ExtraRow key={x.id} goal={x} live={false} />)}
+    </div>
+  );
+}
+
+/** The day's main goal on the chapter card: a peach-edged tile, like a toast. */
+function GoalCardTile({ story }: { story: StoryUi }) {
+  const g = story.goal;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Label>Today's goal</Label>
+      <div style={{
+        display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 10px 10px 16px', background: 'var(--cth-cream-50)',
+        boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-peach), 2px 2px 0 rgba(26,19,32,0.25)'
+      }}>
+        <IconTile icon={tileIcon(g)} size={40} bg="var(--cth-peach-light)" />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '16px' }}>{g.title.toUpperCase()}</div>
+          <div style={{ fontSize: 15, lineHeight: '19px', color: 'var(--cth-ink-700)' }}>{g.detail}</div>
+          {g.status && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>
+              <GIcon name="clock" px={16} />{g.status}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Story: the end of the week ──
+
+const ENDING_ACCENT: Record<'saved' | 'scraped' | 'closed', string> = { saved: 'var(--cth-mint)', scraped: 'var(--cth-lemon)', closed: 'var(--cth-coral)' };
+const ENDING_FACE: Record<'saved' | 'scraped' | 'closed', EmotionId> = { saved: 'happy', scraped: 'nervous', closed: 'sad' };
+
+export function EndingCard({ vp }: { vp: Viewport }) {
+  const game = useGame();
+  const story = useStory();
+  if (!story || !story.ending) return null;
+  const e = story.ending;
+  const two = !vp.portrait && vp.w >= 700;
+  const won = story.week.filter((d) => d.result === 'won').length;
+  return (
+    <div style={backdrop}>
+      <div className="gu-pop" style={{ width: two ? 'min(880px, 100%)' : 'min(460px, 100%)', maxHeight: two ? 'min(640px, 100%)' : '100%', display: 'flex' }}>
+        <PixelPanel variant="dialog" noPadding style={{ boxShadow: hardShadow, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px 6px', background: ENDING_ACCENT[e.id],
+            boxShadow: 'inset 0 -1px 0 var(--cth-ink-900)', margin: 5, marginBottom: 0
+          }}>
+            <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 16, lineHeight: '24px', whiteSpace: 'nowrap' }}>FRIDAY, 17:00</span>
+            <span style={{ fontSize: 14, color: 'var(--cth-ink-700)', whiteSpace: 'nowrap' }}>The week is over</span>
+          </div>
+          <div className="gu-scroll gu-hit" style={{ flex: 1, minHeight: 0, padding: '14px 16px 12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: two ? 'row' : 'column', alignItems: 'center', gap: two ? 16 : 10, flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                {['michael', 'dwight', 'pam', 'jim', 'angela'].map((id) => (
+                  <Portrait key={id} src={game.avatar(id, ENDING_FACE[e.id]) || game.avatar(id)} scale={2} />
+                ))}
+              </div>
+              <h1 style={{
+                margin: 0, flex: 1, fontFamily: 'var(--cth-font-display)', fontWeight: 400, textAlign: two ? 'left' : 'center',
+                fontSize: two ? 24 : 20, lineHeight: two ? '34px' : '30px', color: 'var(--cth-ink-900)'
+              }}>{e.title}</h1>
+            </div>
+            <div style={{ display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, alignItems: 'flex-start', flexShrink: 0 }}>
+              <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, width: two ? undefined : '100%' }}>
+                {e.text.map((p, i) => (
+                  <p key={i} style={{ margin: 0, fontSize: 16, lineHeight: '21px', color: 'var(--cth-ink-900)' }}>{p}</p>
+                ))}
+              </div>
+              <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8, width: two ? undefined : '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <GIcon name="branch" px={16} />
+                  <Label style={{ flex: 1 }}>Final standing</Label>
+                  <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 34, lineHeight: '24px', color: 'var(--cth-ink-900)' }}>{Math.round(story.standing)}</span>
+                </div>
+                <StandingBar value={story.standing} h={16} />
+                <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                  {STANDING_NOTE}. 65 or more keeps it open, under 40 closes it.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                  <Label style={{ flex: 1 }}>The week</Label>
+                  <span style={{ fontSize: 13, color: 'var(--cth-ink-700)' }}>{won} of {story.week.length} days won</span>
+                </div>
+                <WeekStrip week={story.week} titles />
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 12px', boxShadow: 'inset 0 1px 0 var(--cth-ink-300)', margin: '0 5px 5px' }}>
+            <Btn variant="secondary" size="lg" icon="back" onClick={() => game.toTitle()} sound="close" style={{ flexShrink: 1, minWidth: 0 }}>Back to the title</Btn>
+            <span style={{ flex: 1 }} />
+            <Btn variant="primary" size="lg" icon="play" sound="confirm" onClick={() => game.startStory(true)} style={{ flexShrink: 1, minWidth: 0 }}>Play again</Btn>
           </div>
         </PixelPanel>
       </div>

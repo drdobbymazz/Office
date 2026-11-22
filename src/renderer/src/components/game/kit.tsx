@@ -301,9 +301,13 @@ export function Toggle({ label, hint, on, onChange }: { label: string; hint?: st
 
 // ── Text tool: a box, tappable suggestions and a Send button ──
 
-export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = 'Send', disabled, accent = 'lilac', coach, autoFocus }: {
+export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = 'Send', disabled, accent = 'lilac', coach, autoFocus, cost, short }: {
   placeholder: string; hint?: string; suggestions: string[]; onSend: (text: string) => void; sendLabel?: string;
   disabled?: boolean; accent?: AccentColorName; coach?: string; autoFocus?: boolean;
+  /** Story mode: what sending costs in influence (shown on the button). */
+  cost?: number;
+  /** Story mode: why it cannot be afforded right now ("Not enough influence: ..."), or null. */
+  short?: string | null;
 }) {
   const [text, setText] = useState('');
   const [page, setPage] = useState(0);
@@ -316,11 +320,16 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
   }, [suggestions, page]);
   const send = useCallback(() => {
     const t = text.trim();
-    if (!t || disabled) return;
+    if (!t || disabled || short) return;
     onSend(t);
     setText('');
     ref.current?.blur();
-  }, [text, disabled, onSend]);
+  }, [text, disabled, short, onSend]);
+  const sendBtn = (
+    <Btn variant="primary" size="md" full icon="arrow-right" disabled={disabled || !!short || !text.trim()} onClick={send} sound="whisperSend">
+      {sendLabel}
+    </Btn>
+  );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-coach={coach}>
       {hint && <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{hint}</div>}
@@ -344,14 +353,135 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: cost ? 4 : 0 }}>
         {suggestions.length > 3 && (
           <Btn variant="ghost" size="md" icon="refresh" onClick={() => setPage((p) => p + 1)} label="More ideas">Ideas</Btn>
         )}
-        <Btn variant="primary" size="md" full icon="arrow-right" disabled={disabled || !text.trim()} onClick={send} sound="whisperSend">
-          {sendLabel}
-        </Btn>
+        {cost ? (
+          // Story mode: the cost sits as a tag on the button's top edge, so long labels keep their room.
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex' }}>
+            {sendBtn}
+            <CostPips n={cost} short={!!short} chip style={{ position: 'absolute', top: -7, right: 6, pointerEvents: 'none' }} />
+          </div>
+        ) : sendBtn}
       </div>
+      {short && <Refusal text={short} />}
+    </div>
+  );
+}
+
+// ── Story mode pieces: pips, costs, the standing bar, icon tiles ──
+
+/** A row of square pips: filled for what is left, hollow for what is spent (the influence budget). */
+export function Pips({ left, max, size = 10, gap = 2, color = 'var(--cth-lilac)', style, title }: {
+  left: number; max: number; size?: number; gap?: number; color?: string; style?: CSSProperties; title?: string;
+}) {
+  const n = Math.max(0, Math.max(max, left));
+  const edge = size >= 8 ? 2 : 1;
+  return (
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap, flexShrink: 0, ...style }}>
+      {Array.from({ length: n }, (_, i) => {
+        const on = i < left;
+        return (
+          <span key={i} style={{
+            width: size, height: size, flexShrink: 0,
+            background: on ? color : 'var(--cth-cream-200)',
+            boxShadow: `inset 0 0 0 ${edge}px ${on ? 'var(--cth-ink-900)' : 'var(--cth-ink-300)'}`
+          }} />
+        );
+      })}
+    </span>
+  );
+}
+
+/** What something costs in influence: one small lilac pip per point (coral when it cannot be afforded). */
+export function CostPips({ n, short, chip, style }: { n: number; short?: boolean; chip?: boolean; style?: CSSProperties }) {
+  const pips = (
+    <span style={{ display: 'inline-flex', gap: 2 }}>
+      {Array.from({ length: n }, (_, i) => (
+        <span key={i} style={{
+          width: 6, height: 6, flexShrink: 0, background: short ? 'var(--cth-coral)' : 'var(--cth-lilac)',
+          boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)'
+        }} />
+      ))}
+    </span>
+  );
+  return (
+    <span title={`Costs ${n} influence`} style={{
+      display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+      ...(chip ? { padding: 3, background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' } : null),
+      ...style
+    }}>{pips}</span>
+  );
+}
+
+/** Thresholds for the end of the week: 65 or more keeps the branch open, under 40 closes it. */
+export const STANDING_SAFE = 65;
+export const STANDING_RISK = 40;
+export function standingColor(v: number): string {
+  return v >= STANDING_SAFE ? 'var(--cth-mint)' : v >= STANDING_RISK ? 'var(--cth-lemon)' : 'var(--cth-coral)';
+}
+/** Plain words for where the standing sits now. */
+export function standingWord(v: number): string {
+  return v >= STANDING_SAFE ? 'On course to stay open' : v >= STANDING_RISK ? 'At risk' : 'On course to close';
+}
+
+/**
+ * Branch standing, 0 to 100, filled in the colour of its zone, with small marks at 40 and 65.
+ * With `from`, the part gained or lost since then is hatched.
+ */
+export function StandingBar({ value, from, h = 12, w, marks = true, style }: {
+  value: number; from?: number; h?: number; w?: number | string; marks?: boolean; style?: CSSProperties;
+}) {
+  const clamp = (x: number) => Math.max(0, Math.min(100, x)) / 100;
+  const v = clamp(value);
+  const f = from === undefined ? v : clamp(from);
+  const lo = Math.min(v, f), hi = Math.max(v, f);
+  const gain = v >= f;
+  const color = standingColor(value);
+  const hatch = (c: string) => `repeating-linear-gradient(135deg, ${c} 0 2px, var(--cth-cream-50) 2px 4px)`;
+  return (
+    <div title={`Standing ${Math.round(value)} of 100`} style={{
+      position: 'relative', width: w ?? '100%', height: h, flexShrink: w ? 0 : 1, minWidth: 0,
+      background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)', ...style
+    }}>
+      <div style={{ position: 'absolute', left: 2, top: 2, bottom: 2, width: `calc((100% - 4px) * ${lo})`, background: color }} />
+      {hi > lo && (
+        <div style={{
+          position: 'absolute', top: 2, bottom: 2, left: `calc(2px + (100% - 4px) * ${lo})`, width: `calc((100% - 4px) * ${hi - lo})`,
+          background: hatch(gain ? color : 'var(--cth-coral)'), boxShadow: gain ? undefined : 'inset 0 0 0 1px var(--cth-coral)'
+        }} />
+      )}
+      {marks && [STANDING_RISK, STANDING_SAFE].map((m) => (
+        <div key={m} style={{ position: 'absolute', top: -2, bottom: -2, width: 2, left: `calc(1px + (100% - 4px) * ${m / 100})`, background: 'var(--cth-ink-700)' }} />
+      ))}
+    </div>
+  );
+}
+
+/** A square icon tile with an ink edge, the same as the goal tiles in the Director tab. */
+export function IconTile({ icon, size = 24, bg = 'var(--cth-cream-50)', style, title }: {
+  icon: GIconName | string; size?: number; bg?: string; style?: CSSProperties; title?: string;
+}) {
+  return (
+    <div title={title} style={{
+      width: size, height: size, flexShrink: 0, display: 'grid', placeItems: 'center', background: bg,
+      boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)', ...style
+    }}>
+      <GIcon name={icon} px={size >= 40 ? 32 : 16} />
+    </div>
+  );
+}
+
+/** A refusal line with a coral edge, as under the power cards ("Not enough influence: ..."). */
+export function Refusal({ text, style }: { text: string; style?: CSSProperties }) {
+  return (
+    <div className="gu-drop" style={{
+      display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px 8px 14px', background: 'var(--cth-cream-50)',
+      boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-coral)', fontSize: 14, lineHeight: '18px', ...style
+    }}>
+      <GIcon name="warn" px={16} />
+      <span style={{ minWidth: 0 }}>{text}</span>
     </div>
   );
 }

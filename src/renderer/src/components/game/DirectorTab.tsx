@@ -4,9 +4,11 @@
 import { useEffect, useState } from 'react';
 import { formatClock } from '@/game/core/types';
 import { GIcon } from './icons';
-import { Bar, Btn, Label, Light, Section } from './kit';
+import { Bar, Btn, Label, Light, Rule, Section } from './kit';
 import { useContent, useGame, useUi } from './ctx';
 import { useNav } from './Dock';
+import { ExtraRow, GoalBlock, HintList, InfluenceMeter, StandingMeter, useStory } from './Story';
+import type { StoryUi } from '@/game/app/gameApi';
 
 export function brainLight(state: string): { color: string; text: string; blink: boolean } {
   switch (state) {
@@ -61,6 +63,33 @@ function TipLine() {
   );
 }
 
+/** Story mode: today's job in place of the random goals. */
+function MissionSection({ story }: { story: StoryUi }) {
+  return (
+    <div data-mission style={{ display: 'flex', flexDirection: 'column', scrollMarginTop: 8 }}>
+      <Section title="MISSION" accent="peach" right={<span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, whiteSpace: 'nowrap' }}>{story.title}</span>}>
+        <GoalBlock goal={story.goal} />
+        {story.side.length > 0 && (
+          <>
+            <Label style={{ marginTop: 4 }}>Extra goals</Label>
+            {story.side.map((g) => <ExtraRow key={g.id} goal={g} />)}
+          </>
+        )}
+        <Rule />
+        <StandingMeter value={story.standing} />
+        <InfluenceMeter left={story.influence.left} max={story.influence.max} note />
+        {story.hints.length > 0 && (
+          <>
+            <Rule />
+            <Label>Ways in</Label>
+            <HintList hints={story.hints} />
+          </>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 export function DirectorTab() {
   const game = useGame();
   const nav = useNav();
@@ -69,6 +98,7 @@ export function DirectorTab() {
     progress: st.dayProgress, error: st.brain.state === 'offline' ? st.brain.error : null, thinking: st.brain.thinking, queued: st.brain.queued
   }));
   const objectives = useUi((st) => st.objectives);
+  const story = useStory();
 
   return (
     <>
@@ -110,6 +140,7 @@ export function DirectorTab() {
         </div>
       </Section>
 
+      {story ? <MissionSection story={story} /> : (
       <Section title="TODAY'S GOALS" accent="peach">
         {objectives.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>No goals today. Do as you please.</div>}
         {objectives.map((o) => (
@@ -125,6 +156,7 @@ export function DirectorTab() {
           </div>
         ))}
       </Section>
+      )}
 
       <Section inset pad={10}>
         <Label>Tip</Label>

@@ -6,11 +6,12 @@ import type { CharId, ChaosCategory, ChaosId, ChaosTarget, TargetRoomId } from '
 import { CHAOS, CHAOS_CATEGORIES, CHAOS_LIST, type ChaosDef } from '@/game/core/chaos';
 import { ROOMS } from '@/game/core/world';
 import { GIcon } from './icons';
-import { Btn, Chip, Head, Label, Section, TextTool, usePress } from './kit';
+import { Btn, Chip, CostPips, Head, Label, Pips, Refusal, Section, TextTool, usePress } from './kit';
 import { RoomMap, PersonGrid, PersonStrip } from './pickers';
 import { useContent, useGame, useNow, useUi, useViewport } from './ctx';
 import { useNav } from './Dock';
 import { CONFIRM, fill } from './words';
+import { costOf, useCost, useStory } from './Story';
 
 const ROOM_NAME: Record<string, string> = Object.fromEntries(ROOMS.map((r) => [r.id, r.name]));
 const TARGET_WORD = { room: 'Pick a room', person: 'Pick a person', pair: 'Pick two people', none: '' } as const;
@@ -43,10 +44,14 @@ function CatTabs({ value, onChange }: { value: ChaosCategory; onChange: (c: Chao
 function Card({ def, now, onTap }: { def: ChaosDef; now: number; onTap: () => void }) {
   const cd = useUi((s) => s.cooldowns[def.id]);
   const sandbox = useUi((s) => s.settings.sandbox);
+  const price = useCost(def.id);
   const { pressed, handlers } = usePress();
   const left = !sandbox && cd && cd.readyAt > now ? cd.readyAt - now : 0;
   const frac = left > 0 && cd && cd.total > 0 ? Math.ceil((left / cd.total) * 8) / 8 : 0;
   const accent = accentOf(def.category);
+  // Story mode: locked today, or more than the influence left. Still tappable, to say why.
+  const locked = price?.locked ?? null;
+  const dim = left > 0 || !!locked || !!price?.short;
   return (
     <button type="button" className="gu-hit" {...handlers} onClick={onTap} aria-label={def.name}
       style={{
@@ -58,19 +63,30 @@ function Card({ def, now, onTap }: { def: ChaosDef; now: number; onTap: () => vo
           : `inset 0 0 0 2px var(--cth-ink-900), inset 0 4px 0 var(--cth-${accent}), 0 2px 0 var(--cth-ink-700)`,
         transform: pressed ? 'translateY(2px)' : 'none', marginBottom: 2
       }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', opacity: left ? 0.55 : 1 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', opacity: dim ? 0.55 : 1 }}>
         <GIcon name={def.id} px={32} />
-        {def.target !== 'none' && (
-          <span title={TARGET_WORD[def.target]} style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)' }}>
-            <GIcon name={def.target === 'room' ? 'target' : 'people'} px={16} />
-          </span>
-        )}
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          {price && !locked && price.cost > 0 && <CostPips n={price.cost} short={!!price.short} style={{ marginTop: 1 }} />}
+          {def.target !== 'none' && !locked && (
+            <span title={TARGET_WORD[def.target]} style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)' }}>
+              <GIcon name={def.target === 'room' ? 'target' : 'people'} px={16} />
+            </span>
+          )}
+        </span>
       </div>
-      <span style={{ fontSize: 15, lineHeight: '17px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: left ? 0.55 : 1 }}>{def.name}</span>
+      <span style={{ fontSize: 15, lineHeight: '17px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: dim ? 0.55 : 1 }}>{def.name}</span>
       <span style={{
-        fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)', opacity: left ? 0.55 : 1,
+        fontSize: 12, lineHeight: '14px', color: locked ? 'var(--cth-ink-700)' : 'var(--cth-ink-500)', opacity: dim && !locked ? 0.55 : 1,
         display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-      }}>{def.blurb}</span>
+      }}>{locked ?? def.blurb}</span>
+      {locked && (
+        <span title="Locked today" style={{
+          position: 'absolute', right: 6, top: 10, width: 24, height: 24, display: 'grid', placeItems: 'center',
+          background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
+        }}>
+          <GIcon name="lock" px={16} />
+        </span>
+      )}
       {left > 0 && (
         <>
           <div className="gu-wipe" style={{ height: `${frac * 100}%` }} />
@@ -100,6 +116,7 @@ function Flow({ def, onDone }: { def: ChaosDef; onDone: (fired: boolean) => void
   const targeting = useUi((s) => s.targeting);
   const cd = useUi((s) => s.cooldowns[def.id]);
   const sandbox = useUi((s) => s.settings.sandbox);
+  const price = useCost(def.id);
   const now = useNow(250, !!cd && cd.readyAt > performance.now());
   const [step, setStep] = useState<Step>(() => firstStep(def));
   const [target, setTarget] = useState<ChaosTarget>(() => (def.fixedRoom ? { room: def.fixedRoom } : {}));
@@ -133,6 +150,7 @@ function Flow({ def, onDone }: { def: ChaosDef; onDone: (fired: boolean) => void
   }, [targeting, def.target, step, onDone]);
 
   const left = !sandbox && cd && cd.readyAt > now ? Math.ceil((cd.readyAt - now) / 1000) : 0;
+  const blocked = price ? price.locked ?? price.short : null;
   const complete = def.target === 'none' || (def.target === 'room' && !!target.room) || (def.target === 'person' && !!target.who) || (def.target === 'pair' && !!target.who && !!target.other);
 
   const summary = (() => {
@@ -212,10 +230,12 @@ function Flow({ def, onDone }: { def: ChaosDef; onDone: (fired: boolean) => void
           <span>{error}</span>
         </div>
       )}
+      {!error && blocked && <Refusal text={blocked} />}
 
-      <Btn variant="accent" accent={accent} size="lg" full disabled={!complete || left > 0} onClick={confirm} sound={null}
+      <Btn variant="accent" accent={accent} size="lg" full disabled={!complete || left > 0 || !!blocked} onClick={confirm} sound={null}
         style={{ fontSize: 18 }}>
         {left > 0 ? `Ready in ${left}s` : CONFIRM[def.id]}
+        {price && price.cost > 0 && !price.locked && <CostPips n={price.cost} short={!!price.short} chip />}
       </Btn>
     </Section>
   );
@@ -254,6 +274,7 @@ function ChangeRow({ text, onChange }: { text: string; onChange: () => void }) {
 
 export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFocus?: boolean }) {
   const game = useGame();
+  const price = useCost('whisper');
   const { suggestions } = useContent();
   const people = useUi((s) => s.people);
   const [who, setWho] = useState<CharId | null>(fixedWho ?? null);
@@ -275,7 +296,7 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
       <TextTool coach="whisper" autoFocus={autoFocus}
         hint="Only they hear it. They think it is their own idea."
         placeholder={target ? `A thought for ${target.name}...` : 'Pick someone above first'}
-        suggestions={target ? list : []} disabled={!target} sendLabel="Send whisper"
+        suggestions={target ? list : []} disabled={!target} sendLabel="Send whisper" cost={price?.cost} short={target ? price?.short : null}
         onSend={(t) => { if (!target) return; game.whisper(target.id, t); setSent(`Whispered to ${target.name}.`); }} />
       {sent && <Sent text={sent} />}
     </>
@@ -292,12 +313,13 @@ function Sent({ text }: { text: string }) {
 
 function AnnounceTool() {
   const game = useGame();
+  const price = useCost('announce');
   const { suggestions } = useContent();
   const [sent, setSent] = useState<string | null>(null);
   return (
     <>
       <TextTool hint="Everyone hears this over the loudspeaker." placeholder="Attention, everyone..." accent="peach"
-        suggestions={suggestions.announcements} sendLabel="Announce"
+        suggestions={suggestions.announcements} sendLabel="Announce" cost={price?.cost} short={price?.short}
         onSend={(t) => { game.announce(t); setSent('Announced to the whole office.'); }} />
       {sent && <Sent text={sent} />}
     </>
@@ -306,12 +328,13 @@ function AnnounceTool() {
 
 function AnythingTool() {
   const game = useGame();
+  const price = useCost('anything');
   const { suggestions } = useContent();
   const [sent, setSent] = useState<string | null>(null);
   return (
     <>
       <TextTool hint="Type anything. The office has to deal with it." placeholder="a horse walks into the office" accent="lemon"
-        suggestions={suggestions.customEvents} sendLabel="Make it happen"
+        suggestions={suggestions.customEvents} sendLabel="Make it happen" cost={price?.cost} short={price?.short}
         onSend={(t) => { game.customEvent(t); setSent('On its way. Watch the floor.'); }} />
       {sent && <Sent text={sent} />}
     </>
@@ -351,6 +374,7 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
   const [denied, setDenied] = useState<string | null>(null);
   const cooldowns = useUi((s) => s.cooldowns);
   const sandbox = useUi((s) => s.settings.sandbox);
+  const story = useStory();
   const anyCooling = !sandbox && Object.values(cooldowns).some((c) => c && c.readyAt > performance.now());
   const now = useNow(250, anyCooling);
   useEffect(() => { lastCat = cat; }, [cat]);
@@ -362,6 +386,7 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
 
   return (
     <>
+      {story && <InfluenceRow left={story.influence.left} max={story.influence.max} />}
       <CatTabs value={cat} onChange={(c) => { setCat(c); setDenied(null); }} />
       {denied && (
         <div className="gu-drop" style={{ padding: '8px 10px', background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-coral)', fontSize: 14, paddingLeft: 14 }}>
@@ -371,6 +396,13 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }} data-coach="cards">
         {cards.map((d) => (
           <Card key={d.id} def={d} now={now} onTap={() => {
+            const price = costOf(story, d.id);
+            const why = price ? price.locked ?? price.short : null;
+            if (why) {
+              game.uiSound('deny');
+              setDenied(price?.locked ? `${d.name} is locked today. ${why}` : why);
+              return;
+            }
             const cd = cooldowns[d.id];
             if (!sandbox && cd && cd.readyAt > performance.now()) {
               game.uiSound('deny');
@@ -385,6 +417,22 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
       </div>
       <Tools />
     </>
+  );
+}
+
+/** Story mode: what is left of today's influence, above the cards. */
+function InfluenceRow({ left, max }: { left: number; max: number }) {
+  return (
+    <div title="Influence: today's budget for powers and tools" style={{
+      display: 'flex', alignItems: 'center', gap: 6, minHeight: 32, padding: '4px 8px', flexShrink: 0,
+      background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
+    }}>
+      <GIcon name="influence" px={16} />
+      <Pips left={left} max={max} size={10} gap={2} style={{ flex: 1, minWidth: 0, overflow: 'hidden' }} />
+      <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '18px', color: 'var(--cth-ink-700)', whiteSpace: 'nowrap' }}>
+        {left}<span style={{ color: 'var(--cth-ink-500)' }}>/{max}</span>
+      </span>
+    </div>
   );
 }
 

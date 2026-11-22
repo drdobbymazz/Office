@@ -5,12 +5,13 @@
 import { useEffect, useState } from 'react';
 import type { PersonDetail, PersonUi } from '@/game/app/gameApi';
 import type { CharId } from '@/game/core/types';
-import { formatClock } from '@/game/core/types';
+import { formatClock, isCastId } from '@/game/core/types';
 import { GIcon, emotionIcon, statusIcon } from './icons';
 import { Bar, Btn, Head, Label, LikeBar, Portrait, Section, TextTool, usePress } from './kit';
 import { useContent, useGame, useUi } from './ctx';
 import { useNav } from './Dock';
 import { WhisperTool } from './PowersTab';
+import { useCost, useStory } from './Story';
 import { EMOTION_WORD, STATUS_WORD, ROOM_SHORT, cap, fill, readableOnCream } from './words';
 
 function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
@@ -84,6 +85,7 @@ function StatBar({ label, value, color }: { label: string; value: number; color:
 
 function CueTool({ who, name }: { who: CharId; name: string }) {
   const game = useGame();
+  const price = useCost('cue');
   const { suggestions } = useContent();
   const people = useUi((s) => s.people);
   const [sent, setSent] = useState<string | null>(null);
@@ -91,10 +93,75 @@ function CueTool({ who, name }: { who: CharId; name: string }) {
   return (
     <>
       <TextTool hint={`${name} will try to do exactly this next.`} placeholder="go and apologise to Angela" accent="sky"
-        suggestions={suggestions.cues.map((c) => fill(c, name, other))} sendLabel={`Tell ${name}`}
+        suggestions={suggestions.cues.map((c) => fill(c, name, other))} sendLabel={`Tell ${name}`} cost={price?.cost} short={price?.short}
         onSend={(t) => { game.cue(who, t); setSent(`${name} has their orders.`); }} />
       {sent && <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14 }}><GIcon name="check" px={16} />{sent}</div>}
     </>
+  );
+}
+
+/**
+ * Story mode, when the day allows it (Thursday): accuse this person. The button says how many
+ * tries are left; a tap asks once more on the page before it counts.
+ */
+function Accuse({ who, name }: { who: CharId; name: string }) {
+  const game = useGame();
+  const story = useStory();
+  const [asking, setAsking] = useState(false);
+  const acc = story?.accuse ?? null;
+  if (!story || !acc) return null;
+  if (!isCastId(who)) return null;
+  const open = story.goal.state === 'open' && acc.triesLeft > 0;
+  if (acc.accused.includes(who)) {
+    const right = story.goal.state === 'won' && acc.accused[acc.accused.length - 1] === who;
+    return (
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', background: 'var(--cth-cream-200)',
+        boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)', fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-700)'
+      }}>
+        <GIcon name={right ? 'check' : 'accuse'} px={16} />
+        <span>{right ? `You were right. It was ${name}.` : `Accused. It was not ${name}.`}</span>
+      </div>
+    );
+  }
+  if (!open) return null;
+  const tries = `${acc.triesLeft} ${acc.triesLeft === 1 ? 'try' : 'tries'} left`;
+  if (!asking) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <Btn variant="destructive" size="lg" full icon="accuse" onClick={() => setAsking(true)} sound="open">{acc.label}</Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+          <span style={{ display: 'inline-flex', gap: 2 }}>
+            {Array.from({ length: acc.triesLeft }, (_, i) => (
+              <span key={i} style={{ width: 8, height: 8, background: 'var(--cth-coral)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' }} />
+            ))}
+          </span>
+          <span>{tries}. A wrong guess turns the office against someone innocent.</span>
+        </div>
+      </div>
+    );
+  }
+  const last = acc.triesLeft <= 1;
+  const question = acc.label.startsWith('Accuse ') ? `Accuse ${name} ${acc.label.slice(7)}?` : `${acc.label}: ${name}?`;
+  return (
+    <div className="gu-drop" style={{
+      display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 10px 10px 16px', background: 'var(--cth-cream-50)',
+      boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-coral)'
+    }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <GIcon name="accuse" px={16} />
+        <span style={{ fontSize: 16, lineHeight: '19px' }}>{question}</span>
+      </div>
+      <div style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>
+        If you are wrong, the office turns against {name}{last ? ' and this was your last try.' : `, and you have ${acc.triesLeft - 1} ${acc.triesLeft - 1 === 1 ? 'try' : 'tries'} left.`}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <Btn variant="destructive" size="md" full icon="accuse" sound="confirm" onClick={() => { setAsking(false); game.accuse(who); }}>
+          Accuse {name}
+        </Btn>
+        <Btn variant="ghost" size="md" full onClick={() => setAsking(false)} sound="close">Cancel</Btn>
+      </div>
+    </div>
   );
 }
 
@@ -153,6 +220,7 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
         </div>
         {tool === 'whisper' && <WhisperTool fixedWho={d.id} />}
         {tool === 'cue' && <CueTool who={d.id} name={d.name} />}
+        <Accuse who={d.id} name={d.name} />
       </Section>
 
       <Section title="FEELINGS">
@@ -204,8 +272,10 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
       <Section inset pad={10}>
         <Label>About</Label>
         <div style={{ fontSize: 14, lineHeight: '18px' }}>{d.summary}</div>
-        <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Wants:</b> {d.wants}</div>
-        <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Fears:</b> {d.fears}</div>
+        {d.wants && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Wants:</b> {d.wants}</div>}
+        {d.fears && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Fears:</b> {d.fears}</div>}
+        {/* Visitors (Mr Figgis, the inspector) carry a quirk worth knowing. */}
+        {!isCastId(d.id) && d.quirk && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Quirk:</b> {d.quirk}</div>}
       </Section>
     </>
   );

@@ -3,6 +3,9 @@
 //   ?screen=play|title|report  &tab=director|powers|people|log|settings  &collapsed=1
 //   &target=room|person|pair   &person=dwight  &offline=1  &artifact=1  &portrait=1 (play anyway)
 //   &tutorial=1  &bubbles=1 (demo bubbles, fully typed)  &quiet=1 (no new lines)  &icons=1 (icon sheet)
+// Story mode (any of the above still apply):
+//   ?story=title|title-new|briefing|play|report|ending  &chapter=1..5
+//   &won=0|1 (report)  &ending=saved|scraped|closed  &low=1 (one influence left)  &accused=kelly (Thursday)
 
 import '@fontsource/press-start-2p';
 import '@fontsource/pixelify-sans';
@@ -15,7 +18,7 @@ import { loadOfficeMap } from '@/scene/office/mapLoader';
 import { getCastFrames, type OfficeCharacterName } from '@/scene/office/cast';
 import type { CastId, ChaosId } from '@/game/core/types';
 import { GameUI, type GameUIInitial } from './GameUI';
-import { createMock, type MockGame } from './mockGame';
+import { createMock, type MockGame, type StoryJump } from './mockGame';
 import { PLACEHOLDER_SUGGESTIONS, PLACEHOLDER_TIPS } from './placeholders';
 import { ALL_ICON_NAMES, GIcon, badIconGrids } from './icons';
 import { EMOTIONS } from '@/game/core/types';
@@ -116,6 +119,17 @@ async function main() {
   if (!flag('still')) game.step(2);
 
   if (screen === 'report') game.showReport();
+  const story = q.get('story') as StoryJump['stage'] | null;
+  if (story) {
+    game.jumpStory({
+      stage: story,
+      chapter: q.get('chapter') ? Number(q.get('chapter')) : undefined,
+      won: q.get('won') !== '0',
+      ending: (q.get('ending') as StoryJump['ending']) ?? undefined,
+      left: flag('low') ? 1 : undefined,
+      accused: q.get('accused') ? q.get('accused')!.split(',') : undefined
+    });
+  }
   if (flag('bubbles')) demoBubbles(game);
   if (q.get('cool') === '1') {
     game.triggerChaos('fire', { room: 'kitchen' });
@@ -132,7 +146,8 @@ async function main() {
     say: (who: CastId, text: string, kind?: 'say' | 'shout' | 'whisper' | 'think') => game.say(who, text, kind ?? 'say', true),
     bubbles: () => demoBubbles(game),
     offline: (v: boolean) => game.setOffline(v),
-    fire: (id: ChaosId, room?: string) => game.triggerChaos(id, room ? { room: room as never } : {})
+    fire: (id: ChaosId, room?: string) => game.triggerChaos(id, room ? { room: room as never } : {}),
+    story: (j: StoryJump) => game.jumpStory(j)
   };
   window.setTimeout(() => { window.__ready = true; }, 400);
 }

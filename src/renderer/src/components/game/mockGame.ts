@@ -5,6 +5,10 @@
 //
 // It also owns a tiny camera (world -> screen) so the harness can draw the
 // office and people where headOnScreen() says they are.
+//
+// Story mode is pretend too: the five chapters' texts and numbers come from
+// mockStory.ts, influence is spent, Thursday's accusation works (the leak is
+// Toby), and jumpStory() opens any point of the week for screenshots.
 
 import { create } from 'zustand';
 import type {
@@ -21,6 +25,24 @@ import { CAST, BOND_SEEDS } from '@/game/core/cast';
 import { CHAOS } from '@/game/core/chaos';
 import { MAP_PX_H, MAP_PX_W, ROOMS, TILE, walkableTilesIn, deskOf } from '@/game/core/world';
 import { paintPortrait } from '@/scene/office/portraitArt';
+import type { ActionId } from '@/game/app/gameApi';
+import {
+  buildStory, DEFAULT_WEEK, ENDING_WEEK, MOCK_CHAPTERS, MOCK_LEAK, standingAt,
+  type DayResult, type EndingId, type Stage
+} from './mockStory';
+
+export interface StoryJump {
+  /** title (a story saved on day 3), title-new (nothing saved), briefing, play, report, ending */
+  stage: 'title' | 'title-new' | 'briefing' | 'play' | 'report' | 'ending';
+  chapter?: number;
+  /** report: won or lost */
+  won?: boolean;
+  ending?: EndingId;
+  /** play: only this much influence left */
+  left?: number;
+  /** play, Thursday: people already accused */
+  accused?: CharId[];
+}
 
 export interface MockGame extends GameApi {
   /** World -> screen transform the harness backdrop should use. */
@@ -35,6 +57,8 @@ export interface MockGame extends GameApi {
   setInArtifact(on: boolean): void;
   /** Stop the speech generator (for still screenshots). */
   setChatter(on: boolean): void;
+  /** Story mode: open any point of the week directly. */
+  jumpStory(j: StoryJump): void;
   destroy(): void;
 }
 
@@ -232,6 +256,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     if (target.who && target.who === target.other) return 'Pick two different people.';
     const victim = target.who ? byId.get(target.who as CastId) : undefined;
     if (victim && !victim.present) return `${CAST[victim.id].name} is not in the building.`;
+    const refusal = storyRefusal(id);
+    if (refusal) { toast(refusal, 'bad', 'influence'); return refusal; }
+    storySpend(id);
     if (id === 'secretLeak' && victim) revealed.add(victim.id);
 
     const total = s.settings.sandbox ? 0 : def.cooldown * 1000;
@@ -259,6 +286,55 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     return null;
   }
 
+  // ── story mode ──
+  interface StoryRun { chapter: number; results: DayResult[]; stage: Stage; won?: boolean; left?: number; accused: CharId[]; ending?: EndingId; since: number }
+  let run: StoryRun | null = null;
+  let saved: { chapter: number; results: DayResult[] } | null = null;
+  const blankWeek = (): DayResult[] => MOCK_CHAPTERS.map(() => null);
+
+  function storyUi() {
+    if (!run) return null;
+    return buildStory({ chapter: run.chapter, results: run.results, stage: run.stage, won: run.won, left: run.left, accused: run.accused, ending: run.ending });
+  }
+  function pushStory() { store.setState({ story: storyUi() }); }
+  function savedUi() {
+    if (!saved) return null;
+    const ch = MOCK_CHAPTERS[saved.chapter - 1];
+    return { chapter: saved.chapter, chapters: MOCK_CHAPTERS.length, title: ch.title, weekday: ch.weekday, standing: standingAt(saved.chapter, saved.results) };
+  }
+  function toBriefing(chapter: number, results: DayResult[]) {
+    run = { chapter, results, stage: 'briefing', accused: [], since: simTime };
+    const ch = MOCK_CHAPTERS[chapter - 1];
+    store.setState({
+      mode: 'story', phase: 'briefing', report: null, paused: false, day: chapter, weekday: ch.weekday, clock: 8 * 60 + 50, dayProgress: 0,
+      incidentsToday: 0, activeChaos: [], cooldowns: {}, toasts: [], story: storyUi()
+    });
+    cooldownReady.clear();
+  }
+  /** Story mode: the reason an action cannot be paid for now, or null (sandbox: always null). */
+  function storyRefusal(id: ActionId): string | null {
+    const st = store.getState().story;
+    if (!st || !run) return null;
+    const locked = (st.locked as Record<string, string | undefined>)[id];
+    if (locked) return locked;
+    const cost = st.costs[id] ?? 0;
+    if (cost > st.influence.left) return `Not enough influence: this costs ${cost}, you have ${st.influence.left}.`;
+    return null;
+  }
+  function storySpend(id: ActionId) {
+    const st = store.getState().story;
+    if (!st || !run) return;
+    run.left = Math.max(0, st.influence.left - (st.costs[id] ?? 0));
+    pushStory();
+  }
+  /** For the four tools: pay, or say why not with a toast. */
+  function storyPay(id: ActionId): boolean {
+    const why = storyRefusal(id);
+    if (why) { toast(why, 'bad', 'influence'); return false; }
+    storySpend(id);
+    return true;
+  }
+
   // ── report ──
   let reportTimer = 0;
   function showReport() {
@@ -282,6 +358,12 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       ],
       stats: { incidents: 3, stockStart: 102.6, stockEnd: 104.2, morale: 64, chaosPeak: 71, lines: 148 }
     };
+    if (run) {
+      const goal = s.story?.goal;
+      run.won = goal ? goal.state !== 'lost' : true;
+      run.stage = 'done';
+      pushStory();
+    }
     store.setState({ phase: 'report', report: r });
     let i = 0;
     window.clearInterval(reportTimer);
@@ -321,6 +403,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     if (s.phase !== 'playing' || s.paused) return;
     dt *= s.speed;
     simTime += dt;
+    if (run && run.stage === 'start' && simTime - run.since > 6) { run.stage = 'play'; pushStory(); }
     for (const m of movers) {
       if (!m.present) continue;
       if (m.statuses.some((x) => x.kind === 'frozen' || x.kind === 'asleep')) continue;
@@ -394,8 +477,27 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     }
   }
 
+  // Wednesday's visitor, waiting in reception (story mode only).
+  const FIGGIS = 'visitor:figgis';
+  function visitors(): PersonUi[] {
+    if (!run || run.chapter !== 3 || run.stage === 'briefing' || run.stage === 'ending') return [];
+    return [{
+      id: FIGGIS, name: 'Mr Figgis', role: 'Owner, Figgis Hardware', color: '#8a6a3a', avatar: avatar('creed'), room: 'bullpen',
+      roomName: 'Reception', emotion: 'suspicious', intensity: 0.5, statuses: [], doing: 'waiting in reception', speaking: false, present: true, busy: false
+    }];
+  }
+  function figgisDetail(): PersonDetail {
+    return {
+      ...visitors()[0], fullName: 'Mr Figgis', age: 61,
+      summary: "Owns Figgis Hardware, the branch's biggest customer. Here to decide whether to sign for another year.",
+      wants: 'a straight answer and a fair price', fears: 'jokes, loud noise, being grabbed', quirk: 'loves dogs',
+      secret: null, thought: 'Ten minutes. If nobody comes in ten minutes, I am leaving.', conviction: null, plan: null,
+      mood: -0.1, energy: 0.6, stress: 0.4, bonds: [], memories: [{ day: 3, clock: 630, text: 'Arrived at Munder Difflin. Nobody said hello.' }]
+    };
+  }
+
   function publish() {
-    store.setState({ people: movers.map(personUi), feed: feed.slice() });
+    store.setState({ people: [...movers.map(personUi), ...visitors()], feed: feed.slice() });
   }
 
   function frame() {
@@ -424,16 +526,91 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     store,
     camera,
     begin() { store.setState({ phase: 'playing', paused: false }); },
-    // Story mode: stubs until the story screens are built.
-    startStory() { store.setState({ phase: 'playing', paused: false }); },
-    startSandbox() { store.setState({ phase: 'playing', paused: false }); },
-    beginChapter() { store.setState({ phase: 'playing', paused: false }); },
-    retryDay() { /* story screens */ },
-    accuse() { /* story screens */ },
-    toTitle() { store.setState({ phase: 'title' }); },
+    startStory(fresh) {
+      const from = !fresh && saved ? saved : { chapter: 1, results: blankWeek() };
+      saved = null;
+      toBriefing(from.chapter, from.results.slice());
+      store.setState({ storySaved: null });
+    },
+    startSandbox() {
+      run = null;
+      store.setState({ mode: 'sandbox', story: null, phase: 'playing', paused: false });
+    },
+    beginChapter() {
+      if (!run) return;
+      run.stage = 'start'; run.left = undefined; run.since = simTime;
+      store.setState({ phase: 'playing', paused: false, clock: 540, dayProgress: 0, story: storyUi() });
+      pushFeed({ kind: 'system', text: `Day ${run.chapter} begins. ${MOCK_CHAPTERS[run.chapter - 1].weekday}, 09:00.` });
+      publish();
+    },
+    retryDay() {
+      if (!run) return;
+      const results = run.results.slice();
+      results[run.chapter - 1] = null;
+      toBriefing(run.chapter, results);
+    },
+    accuse(who) {
+      const st = store.getState().story;
+      if (!run || !st?.accuse || st.goal.state !== 'open' || run.accused.includes(who)) return;
+      const name = CAST[who as CastId]?.name ?? who;
+      run.accused = [...run.accused, who];
+      pushStory();
+      const now = store.getState().story!;
+      if (who === MOCK_LEAK) {
+        pushFeed({ kind: 'event', text: `${name} admits sending the emails to Corporate.`, icon: 'secretLeak' });
+        toast(`Goal done: ${now.goal.title}`, 'good', 'check');
+      } else {
+        pushFeed({ kind: 'event', text: `${name} had nothing to do with it, and is not happy about being blamed.`, icon: 'accuse' });
+        if (now.goal.state === 'lost') toast(`Goal failed: ${now.goal.title}`, 'bad', 'x');
+        else toast(`${name} had nothing to do with it. ${now.accuse?.triesLeft ?? 0} ${now.accuse?.triesLeft === 1 ? 'try' : 'tries'} left.`, 'bad', 'accuse');
+      }
+      publish();
+    },
+    toTitle() {
+      if (run && run.stage !== 'ending') saved = { chapter: run.chapter, results: run.results.slice() };
+      if (run && run.stage === 'ending') saved = null;
+      run = null;
+      store.setState({ phase: 'title', report: null, mode: 'sandbox', story: null, storySaved: savedUi() });
+    },
+    jumpStory(j) {
+      const chapter = Math.max(1, Math.min(MOCK_CHAPTERS.length, j.chapter ?? 1));
+      const week = (): DayResult[] => DEFAULT_WEEK.map((r, i) => (i + 1 < chapter ? r : null));
+      window.clearInterval(reportTimer);
+      if (j.stage === 'title' || j.stage === 'title-new') {
+        run = null;
+        saved = j.stage === 'title' ? { chapter: j.chapter ?? 3, results: DEFAULT_WEEK.map((r, i) => (i + 1 < (j.chapter ?? 3) ? r : null)) } : null;
+        store.setState({ phase: 'title', mode: 'sandbox', story: null, report: null, storySaved: savedUi() });
+        return;
+      }
+      if (j.stage === 'ending') {
+        const id = j.ending ?? 'saved';
+        run = { chapter: MOCK_CHAPTERS.length, results: ENDING_WEEK[id].slice(), stage: 'ending', accused: [], ending: id, since: simTime };
+        store.setState({ mode: 'story', phase: 'ending', report: null, day: 5, weekday: 'Friday', clock: 17 * 60, dayProgress: 1, story: storyUi() });
+        return;
+      }
+      toBriefing(chapter, week());
+      if (j.stage === 'briefing') return;
+      run!.stage = 'play';
+      run!.left = j.left;
+      run!.accused = j.accused ?? [];
+      store.setState({ phase: 'playing', clock: 11 * 60 + 25, dayProgress: (11 * 60 + 25 - 540) / 480, story: storyUi() });
+      if (j.stage === 'report') {
+        run!.won = j.won ?? true;
+        showReport();
+        run!.won = j.won ?? true;
+        pushStory();
+      }
+    },
     setPaused(paused) { store.setState({ paused }); },
     setSpeed(speed) { store.setState({ speed }); },
     nextDay() {
+      if (run) {
+        run.results[run.chapter - 1] = run.won === false ? 'lost' : 'won';
+        if (run.chapter < MOCK_CHAPTERS.length) { toBriefing(run.chapter + 1, run.results.slice()); return; }
+        run.stage = 'ending'; run.ending = undefined;
+        store.setState({ phase: 'ending', report: null, clock: 17 * 60, story: storyUi() });
+        return;
+      }
       const s = store.getState();
       const day = s.day + 1;
       store.setState({ phase: 'playing', report: null, day, weekday: WEEKDAYS[(day - 1) % 5], clock: 540, dayProgress: 0, incidentsToday: 0, incidentFreeDays: s.incidentsToday ? 0 : s.incidentFreeDays + 1 });
@@ -441,15 +618,16 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       publish();
     },
     triggerChaos,
-    customEvent(text) { pushFeed({ kind: 'overseer', text: `You made this happen: "${text}"`, icon: 'anything' }); toast('Something is about to happen.', 'info', 'anything'); publish(); },
+    customEvent(text) { if (!storyPay('anything')) return; pushFeed({ kind: 'overseer', text: `You made this happen: "${text}"`, icon: 'anything' }); toast('Something is about to happen.', 'info', 'anything'); publish(); },
     whisper(who, text) {
+      if (!storyPay('whisper')) return;
       pushFeed({ kind: 'overseer', text: `You whispered to ${CAST[who as CastId]?.name ?? who}: "${text}"`, icon: 'whisper' });
       const m = byId.get(who as CastId);
       if (m) { m.thought = text; window.setTimeout(() => say(m.id, 'Wait. I just had the best idea.', 'think'), 900); }
       publish();
     },
-    announce(text) { pushFeed({ kind: 'overseer', text: `Over the loudspeaker: "${text}"`, icon: 'announce' }); toast('Announcement made.', 'info', 'announce'); publish(); },
-    cue(who, instruction) { pushFeed({ kind: 'overseer', text: `You told ${CAST[who as CastId]?.name ?? who} to ${instruction}.`, icon: 'tell' }); publish(); },
+    announce(text) { if (!storyPay('announce')) return; pushFeed({ kind: 'overseer', text: `Over the loudspeaker: "${text}"`, icon: 'announce' }); toast('Announcement made.', 'info', 'announce'); publish(); },
+    cue(who, instruction) { if (!storyPay('cue')) return; pushFeed({ kind: 'overseer', text: `You told ${CAST[who as CastId]?.name ?? who} to ${instruction}.`, icon: 'tell' }); publish(); },
     poke(who) {
       const m = byId.get(who as CastId);
       if (m) { m.emotion = 'surprised'; say(m.id, 'Hey! Who did that?', 'shout'); }
@@ -463,6 +641,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     resetCamera() { /* no-op */ },
     setInsets(i) { Object.assign(insets, i); fitCamera(); },
     person(who): PersonDetail | null {
+      if (who === FIGGIS && visitors().length) return figgisDetail();
       const m = byId.get(who as CastId);
       if (!m) return null;
       const c = CAST[m.id];
