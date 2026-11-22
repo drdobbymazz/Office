@@ -173,8 +173,18 @@ function getUp(core: SimCore, p: Person, air: AirState): void {
   }
 }
 
+/**
+ * People put down while they could not move (time stopped, held by an event). When that ends they
+ * stay where they were put for a while, like anyone else put down (see lingerAfterRelease).
+ */
+const placedWhileHeld = new WeakSet<Person>();
+
 function afterLanding(core: SimCore, p: Person): void {
-  if (p.frozen || p.seized) return;
+  if (p.frozen || p.seized) {
+    placedWhileHeld.add(p);
+    return;
+  }
+  placedWhileHeld.delete(p);
   if (p.has('dizzy') && core.rng() < 0.5) core.bark(p.id, 'dizzy');
   if (p.goingHome) {
     core.sendHome(p);
@@ -187,11 +197,28 @@ function afterLanding(core: SimCore, p: Person): void {
   }
   // Put down somewhere new, they stay a while to get their bearings before wandering back
   // to the routine, so the player can move people about on purpose. A plan still comes first.
+  linger(p);
+}
+
+function linger(p: Person): void {
   const at = p.res ?? p.tile;
   p.job = makeJob('settle', { kind: 'tile', tile: { x: at.x, y: at.y } }, {
     doing: 'getting back up',
     act: idleAct(`getting ${p.his} bearings`, LINGER)
   });
+}
+
+/**
+ * Someone was just let go by an event (time starting again, a beam switching off). If the player
+ * put them down somewhere while they were held, they stay there a while, as after any drop.
+ * Returns true when it gave them that job.
+ */
+export function lingerAfterRelease(p: Person): boolean {
+  if (!placedWhileHeld.has(p)) return false;
+  placedWhileHeld.delete(p);
+  if (!p.onFloor || p.air || p.goingHome || p.frozen || p.seized) return false;
+  linger(p);
+  return true;
 }
 
 export function updateAir(core: SimCore, p: Person, dt: number): void {

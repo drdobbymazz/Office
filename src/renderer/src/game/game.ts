@@ -217,6 +217,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       feedBuffer.push(item);
       if (item.kind === 'say') linesToday += 1;
       // Story narration worth seeing on the floor, not only in the Log.
+      // A story moment that needs the player (Mr Figgis walking in) brings the game back to normal speed.
+      if (item.slow && mode === 'story' && !finishing && get().speed > 1) set({ speed: 1 });
       if (item.beat && !finishing) {
         const words = item.text.split(/\s+/).length;
         set({ beat: { id: item.id, text: item.text, icon: item.icon, room: item.room, holdFor: Math.max(3.5, Math.min(9, 2 + words * 0.32)) } });

@@ -196,6 +196,8 @@ export interface FeedItem {
   icon?: string;
   /** Story narration worth showing on the floor as a caption, not only in the Log. */
   beat?: boolean;
+  /** A story moment that needs the player: the game drops back to normal speed for it. */
+  slow?: boolean;
 }
 
 /** A plan a person has formed (usually chosen by the model) and will act on. */
