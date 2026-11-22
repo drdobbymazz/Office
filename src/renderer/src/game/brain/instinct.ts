@@ -684,7 +684,8 @@ export class InstinctBrain implements Brain, Reflexes {
       const known = new Set(story.lines.map(lineKey));
       // The story's own beats from the log (the client walking in, the phone ringing) lead up to the result.
       const beats = events.filter((e) => !known.has(lineKey(e)) && storyThemeOf(e) !== null);
-      const said = quotes.filter((q) => storyThemeOf(q) !== null).pop() ?? quotes[quotes.length - 1];
+      // Only a line that is about the story belongs next to it.
+      const said = quotes.filter((q) => storyThemeOf(q) !== null).pop();
       const lead = sentences([...beats.slice(-2), ...story.lines, said ? spoken(said) : '']) || `${story.title}: ${story.goal}.`;
       const elsewhere = events.filter((e) => !known.has(lineKey(e)) && !beats.includes(e)).slice(-2);
       const tally = s.incidents ? `The day saw ${incidents}.` : 'There were no incidents.';
