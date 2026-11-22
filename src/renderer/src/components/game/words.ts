@@ -51,6 +51,27 @@ export const ROOM_SHORT: Record<string, string> = {
   outside: 'Outside'
 };
 
+/** Room names for the tiles of the mini plan (they wrap onto two short lines in the narrow tiles). */
+export const ROOM_TILE: Record<string, string> = {
+  boss: "Michael's office", meeting: 'Conference room', annex: 'Annex', accounts: 'Accounts', bullpen: 'Bullpen', kitchen: 'Break room',
+  outside: 'Outside'
+};
+
+/** Words in an activity that already say where someone is ("hiding in his office", "waiting at the door"). */
+const PLACE_IN_DOING = /\b(in|at|into|inside|outside)\b|\b(office|room|kitchen|bullpen|annex|accounts|corner|desk|door|lift|pavement|building|home|loo|toilet|stairs)\b/i;
+
+/**
+ * One sentence on what someone is doing and where, saying the place once: "Typing in the bullpen."
+ * but "Hiding in his office." (not "Hiding in his office in the bullpen.").
+ */
+export function doingWhere(doing: string, roomName: string): string {
+  const d = cap((doing || 'standing about').trim().replace(/\.$/, ''));
+  if (!roomName || PLACE_IN_DOING.test(doing)) return `${d}.`;
+  // "the pavement outside" is somewhere you are on, not in.
+  const prep = /^the pavement/i.test(roomName) ? 'on' : 'in';
+  return `${d} ${prep} ${roomName}.`;
+}
+
 /** Darken a '#rrggbb' cast colour until it reads on cream (names in their colour). */
 export function readableOnCream(hex: string): string {
   const n = parseInt(hex.replace('#', ''), 16);
