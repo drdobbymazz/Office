@@ -12,12 +12,13 @@
 // The sim keeps the office moving by itself in between. The director only
 // ever asks the sim to do things through its public surface.
 
-import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo } from '@/game/brain/api';
+import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo, StoryTheme } from '@/game/brain/api';
+import { detectChaos, storyThemeOf } from '@/game/brain/instinctRules';
 import type { ScriptLine } from '@/game/story/types';
 import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
-import type { CharId, Plan, RoomId, ShiftKind, TargetRoomId } from '@/game/core/types';
+import type { CharId, LineAct, Plan, RoomId, ShiftKind, Speech, TargetRoomId } from '@/game/core/types';
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
-import { room as roomDef } from '@/game/core/world';
+import { TILE, room as roomDef } from '@/game/core/world';
 import { Guests } from './guests';
 import { invitesPeople, mentionsFood, roomNamedIn, speaksToEveryone, summonChance, summonLine, withoutRooms } from './summon';
 
@@ -58,6 +59,23 @@ interface Pending {
   fromPlayer: boolean;
 }
 
+/** A hand-written story scene, waiting or being played. */
+interface ScriptRun {
+  lines: ScriptLine[];
+  /** What has been said so far, "Name: "line"", for the model's carry-on. */
+  said: string[];
+  /** Who has spoken (in order), for the carry-on. */
+  people: CharId[];
+  /** What voices with no body (the vice president on the phone) said: not in anyone's "said just before". */
+  phone: string[];
+  opts: ScriptOptions;
+  nextAt: number;
+  started: boolean;
+  startedAt: number;
+  /** The speakers held together, facing each other, while it plays (null: they were busy, or apart). */
+  handle: SceneHandle | null;
+}
+
 interface Running {
   ask: SceneAsk;
   handle: SceneHandle;
@@ -80,6 +98,8 @@ interface Running {
   linesDone: boolean;
   /** Sim time the people were let go while the summary was still coming (0 = not yet). */
   releasedAt: number;
+  /** Story mode: the story theme this scene is about. */
+  topic?: StoryTheme;
 }
 
 const SHIFT_DELTA: Record<ShiftKind, number> = {
@@ -88,6 +108,11 @@ const SHIFT_DELTA: Record<ShiftKind, number> = {
 
 /** Seconds people answering an announcement wait where they were sent. */
 const SUMMON_STAY = 100;
+
+/** Story mode: the share of small talk and chance meetings that are about the story while it has topics. */
+const STORY_SHARE = 0.35;
+/** A story beat even when the sentence also names an office event ("the inspector", "a farewell"). */
+const STORY_BEAT = /\bfarewell\b|\bspeakerphone\b|\bvice president\b|\bfiggis\b|\bemailing corporate\b|\bnot speaking\b|\bmade up\b/i;
 
 let seq = 0;
 const nextId = (p: string): string => `${p}-${(seq += 1).toString(36)}`;
@@ -114,9 +139,16 @@ export class Director {
   private lastTopic = '';
   /** Sim time each pair last finished talking, so the same two do not hog the floor. */
   private pairAt = new Map<string, number>();
-  /** Facts already seen, and the newest one while it is still news. */
+  /** Facts already seen, and the newest one while it is still news (a fact, or a new story topic). */
   private knownFacts = new Set<string>();
-  private breaking: { fact: string; at: number; scenes: number } | null = null;
+  private breaking: { fact: string; at: number; scenes: number; topic?: boolean } | null = null;
+  /** Story mode: topic sentences seen today (a new one mid-day is news), and when each was last talked about. */
+  private seenTopics = new Set<string>();
+  private topicUsedAt = new Map<string, number>();
+  /** The story theme of a scene asked for here (small talk about the story, a chance meeting given a topic). */
+  private askTopic = new WeakMap<SceneAsk, StoryTheme>();
+  /** Lines spoken in the story's scenes today ("who|text"), so the report can quote them first. */
+  private storySaid = new Set<string>();
   private factsAt = 0;
   /** People holding a whispered idea: when they next act on it, and how often they have. */
   private drives = new Map<CharId, { nextAt: number; acts: number }>();
@@ -126,8 +158,8 @@ export class Director {
   /** What the Anything power put on the floor: guests, creatures, things (director/guests.ts). */
   private guests: Guests;
   private disposed = false;
-  /** A hand-written story scene being played, line by line. While it plays no other scene starts. */
-  private script: { lines: ScriptLine[]; said: string[]; people: CharId[]; opts: ScriptOptions; nextAt: number } | null = null;
+  /** Hand-written story scenes, played in order. While one plays no other scene starts. */
+  private scripts: ScriptRun[] = [];
 
   constructor(opts: DirectorOptions) {
     this.opts = opts;
@@ -144,15 +176,26 @@ export class Director {
 
   dispose(): void {
     this.disposed = true;
-    this.script = null;
+    this.closeScript();
+    this.scripts = [];
     this.stopScene(false);
     this.queue.length = 0;
     this.guests.clear();
   }
 
-  /** A fresh day: drop anything left over from yesterday. */
+  /**
+   * A fresh day: drop anything left over from yesterday. Story scenes asked for while the office was
+   * being set up (before nine) are today's and are kept; any later ones (the rest of the day is being
+   * skipped) end now, and whoever asked for them is told they are done.
+   */
   reset(): void {
-    this.script = null;
+    // Before nine a new day is being set up; later, the rest of today is being skipped.
+    const newDay = this.api.clock < 9 * 60;
+    if (!newDay) this.flushScripts();
+    else {
+      this.topicUsedAt.clear();
+      this.storySaid.clear();
+    }
     this.stopScene(false);
     this.queue.length = 0;
     this.guests.clear();
@@ -164,8 +207,18 @@ export class Director {
     this.knownFacts.clear();
     // What is already true when the day starts is the background, not breaking news.
     for (const f of this.sim.facts().slice(1)) this.knownFacts.add(f);
+    this.seenTopics = new Set(this.storyTopics());
     this.breaking = null;
     this.drives.clear();
+  }
+
+  /** Story mode: what the office is talking about now (empty in the sandbox). */
+  private storyTopics(): string[] {
+    try {
+      return (this.opts.storyTopics?.() ?? []).filter((t) => typeof t === 'string' && t.trim().length > 0).map((t) => t.trim());
+    } catch {
+      return [];
+    }
   }
 
   get thinking(): boolean {
@@ -348,17 +401,20 @@ export class Director {
   update(dt: number): void {
     if (this.disposed || dt <= 0) return;
     const now = this.api.time;
-    for (const ask of this.sim.takeSceneAsks()) this.enqueue(ask, false);
+    for (const ask of this.sim.takeSceneAsks()) this.enqueue(this.withStoryTopic(ask), false);
+    // While a story scene plays nothing else may start, so what is waiting does not go stale meanwhile.
+    if (this.scripts.length) for (const q of this.queue) q.at = Math.min(now, q.at + dt);
     this.pruneQueue(now);
     this.guests.update(dt);
 
     if (now >= this.factsAt) {
       this.factsAt = now + 1;
       this.watchFacts(now);
+      this.watchTopics(now);
       this.driveConvictions(now);
     }
 
-    if (this.script) this.advanceScript(now);
+    if (this.scripts.length) this.advanceScript(now);
     else if (this.running) this.advanceScene(now);
     else this.startNext(now);
 
@@ -397,11 +453,70 @@ export class Director {
     // Forget what is no longer true, so the same thing happening again counts as news again.
     for (const f of this.knownFacts) if (!facts.includes(f)) this.knownFacts.delete(f);
     if (!fresh) return;
-    this.breaking = { fact: fresh, at: now, scenes: 0 };
+    this.breakNews(fresh, now, false);
+  }
+
+  private breakNews(text: string, now: number, topic: boolean): void {
+    this.breaking = { fact: text, at: now, scenes: 0, topic };
     const r = this.running;
     if (r && r.ask.trigger === 'ambient' && !r.fromPlayer && !r.releasedAt) this.stopScene(true);
     this.ambientAt = Math.min(this.ambientAt, now + 0.8);
     this.idleAt = Math.min(this.idleAt, now + 0.8);
+  }
+
+  /**
+   * Story mode: a topic that appears during the day (the call has happened, the client has arrived)
+   * is news too, worth the next two conversations. Each sentence counts once a day; a fresh fact on
+   * the floor in the last few seconds goes first.
+   */
+  private watchTopics(now: number): void {
+    let fresh: string | null = null;
+    for (const t of this.storyTopics()) {
+      if (this.seenTopics.has(t)) continue;
+      this.seenTopics.add(t);
+      fresh ??= t;
+    }
+    if (!fresh || (this.breaking && !this.breaking.topic && now - this.breaking.at < 20)) return;
+    this.breakNews(fresh, now, true);
+  }
+
+  /** One of the story's topics, the one talked about least lately (and not the same twice running). */
+  private pickTopic(topics: string[], now: number): string {
+    const ranked = topics
+      .map((t, i) => ({ t, at: this.topicUsedAt.get(t) ?? -999 - i }))
+      .sort((a, b) => a.at - b.at);
+    const pick = ranked[0].t;
+    this.topicUsedAt.set(pick, now);
+    return pick;
+  }
+
+  /** Remember that a scene is about a story topic, so the written lines can match it. */
+  private tagTopic<T extends SceneAsk>(ask: T, text: string): T {
+    const theme = storyThemeOf(text);
+    if (theme) this.askTopic.set(ask, theme);
+    return ask;
+  }
+
+  /** Story mode: about a third of the sim's chance meetings are about what the office is talking about. */
+  private withStoryTopic(ask: SceneAsk): SceneAsk {
+    if (ask.trigger !== 'ambient') return ask;
+    const topics = this.storyTopics();
+    if (!topics.length || this.api.rng() >= STORY_SHARE) return ask;
+    const topic = this.pickTopic(topics, this.api.time);
+    return this.tagTopic({ ...ask, why: `${ask.why.replace(/\s*$/, '')} They are talking about this: ${topic}` }, topic);
+  }
+
+  /**
+   * The story theme a scene is about, for the written lines: one tagged here, or (story mode only) one
+   * the story asked for, like the call on Monday. An office event (a fire, a puppy) keeps its own lines.
+   */
+  private topicFor(ask: SceneAsk): StoryTheme | undefined {
+    const tagged = this.askTopic.get(ask);
+    if (tagged) return tagged;
+    if (!this.storyTopics().length) return undefined;
+    if (ask.trigger !== 'event' && ask.trigger !== 'aftermath' && ask.trigger !== 'plan') return undefined;
+    if (detectChaos(ask.why) && !STORY_BEAT.test(ask.why)) return undefined;
+    return storyThemeOf(ask.why) ?? undefined;
   }
 
   /**
@@ -477,8 +592,14 @@ export class Director {
   // ── queue ──────────────────────────────────────────────────────────────────
 
   private enqueue(ask: SceneAsk, fromPlayer: boolean): void {
-    // One ambient chat waiting is plenty.
-    if (ask.trigger === 'ambient' && this.queue.some((q) => q.ask.trigger === 'ambient')) return;
+    // One ambient chat waiting is plenty; one about the story takes the place of one that is not.
+    if (ask.trigger === 'ambient') {
+      const waiting = this.queue.findIndex((q) => q.ask.trigger === 'ambient');
+      if (waiting >= 0) {
+        if (this.askTopic.has(ask) && !this.askTopic.has(this.queue[waiting].ask)) this.queue.splice(waiting, 1);
+        else return;
+      }
+    }
     this.queue.push({ ask, at: this.api.time, fromPlayer });
     this.queue.sort((a, b) => b.ask.priority - a.ask.priority || a.at - b.at);
     if (this.queue.length > 12) this.queue.length = 12;
@@ -552,14 +673,27 @@ export class Director {
       })
       .sort((x, y) => y.score - x.score);
 
+    const storyTopics = this.storyTopics();
     if (!near.length) {
       if (news) {
         news.scenes += 1;
         this.lastTopic = 'news';
-        return {
+        const ask: SceneAsk = {
           people: [a.id], room: a.room, trigger: 'event', priority: 6, minLines: 1, maxLines: 1, gather: false,
-          why: `This is happening right now: ${news.fact} ${a.name} says something about it out loud.`
+          why: news.topic
+            ? `${a.name} has just heard this: ${news.fact} ${a.name} says something about it out loud.`
+            : `This is happening right now: ${news.fact} ${a.name} says something about it out loud.`
         };
+        return news.topic ? this.tagTopic(ask, news.fact) : ask;
+      }
+      // Story mode: alone, they mutter about what the office is talking about.
+      if (storyTopics.length && quiet(a) >= 30 && rng() < STORY_SHARE) {
+        const topic = this.pickTopic(storyTopics, now);
+        this.lastTopic = 'story';
+        return this.tagTopic({
+          people: [a.id], room: a.room, trigger: 'ambient', priority: 1, minLines: 1, maxLines: 1, gather: false,
+          why: `${a.name} is alone in ${place}, thinking about this: ${topic} ${a.name} says one thing about it out loud.`
+        }, topic);
       }
       // Alone in the room: a line down the phone or under the breath.
       if (quiet(a) < 45) return null;
@@ -577,10 +711,24 @@ export class Director {
     if (news) {
       news.scenes += 1;
       this.lastTopic = 'news';
-      return {
+      const names = people.map((id) => this.api.person(id)?.name ?? id).join(' and ');
+      const ask: SceneAsk = {
         people, room: a.room, trigger: 'event', priority: 6, minLines: 2, maxLines: 3, gather: dist > 110,
-        why: `This is happening right now: ${news.fact} ${people.map((id) => this.api.person(id)?.name ?? id).join(' and ')} are reacting to it.`
+        why: news.topic
+          ? `${names} have just heard this and are talking about it: ${news.fact}`
+          : `This is happening right now: ${news.fact} ${names} are reacting to it.`
       };
+      return news.topic ? this.tagTopic(ask, news.fact) : ask;
+    }
+
+    // Story mode: about a third of the chats are about what the office is talking about in the story.
+    if (storyTopics.length && rng() < STORY_SHARE) {
+      const topic = this.pickTopic(storyTopics, now);
+      this.lastTopic = 'story';
+      return this.tagTopic({
+        people, room: a.room, trigger: 'ambient', priority: 1, minLines: 2, maxLines: people.length > 2 ? 4 : 3, gather: dist > 110,
+        why: `${people.map((id) => this.api.person(id)?.name ?? id).join(' and ')} are talking about this: ${topic}`
+      }, topic);
     }
 
     const bond = this.api.bond(a.id, b.id);
@@ -591,10 +739,13 @@ export class Director {
     if (bond <= -20) topics.push(['feud', `${a.name} and ${b.name} do not get on. ${a.name} has found something small to pick at.`]);
     if (bond >= 30) topics.push(['pals', `${a.name} and ${b.name} get on well. They are having a quiet word instead of working.`]);
     if (a.thought) topics.push(['thought', `${a.name} keeps thinking: "${a.thought}" Now ${a.name} says something about it to ${b.name}.`]);
-    // A whispered idea is what they most want to talk about, all day.
-    const sure = a.conviction ?? b.conviction;
+    // A whispered idea is what they most want to talk about, all day. Not someone keeping a secret for
+    // the story: they act on what they are sure of but would never bring it up.
+    const sureA = a.conviction && !this.keepsSecret(a.id) ? a.conviction : null;
+    const sureB = b.conviction && !this.keepsSecret(b.id) ? b.conviction : null;
+    const sure = sureA ?? sureB;
     if (sure) {
-      const who = a.conviction ? a : b;
+      const who = sureA ? a : b;
       const other = who === a ? b : a;
       const line: [string, string] = ['conviction', `${who.name} has been sure all day that "${sure.text}", and brings it up with ${other.name} again.`];
       topics.push(line, line);
@@ -614,6 +765,15 @@ export class Director {
       // Neighbours call across the desks; anyone further away walks over.
       gather: dist > 110
     };
+  }
+
+  /** The story has them keeping a secret (a hidden note): what they are sure of is not to be said out loud. */
+  private keepsSecret(who: CharId): boolean {
+    try {
+      return !!this.sim.briefFor(who, []).hidden;
+    } catch {
+      return false;
+    }
   }
 
   // ── scenes ─────────────────────────────────────────────────────────────────
@@ -636,15 +796,15 @@ export class Director {
     if (!handle) return false;
 
     const abort = new AbortController();
+    const req = this.buildRequest(id, ask, ids, room);
     const r: Running = {
       ask, handle, people: ids, room, abort, buffer: [], spoken: 0, result: null, failed: false,
       nextAt: now + 0.4, startedAt: now, waitedSince: now, dotted: false, fromPlayer: p.fromPlayer,
-      linesDone: false, releasedAt: 0
+      linesDone: false, releasedAt: 0, topic: req.topic
     };
     this.running = r;
     this.focusOn(ids, ask.priority);
 
-    const req = this.buildRequest(id, ask, ids, room);
     // A brain that may not be called on a timer (Claude inside an Artifact) only writes for the player's own actions.
     const brain = this.brain.autonomous || p.fromPlayer ? this.brain : this.instinct;
     void brain
@@ -691,6 +851,7 @@ export class Director {
       r.spoken += 1;
       r.dotted = false;
       this.lastSpoke.set(line.who, now);
+      if (r.topic) this.storySaid.add(`${line.who}|${speech.text}`);
       const gap = 0.25 + this.api.rng() * 0.35;
       r.nextAt = now + speech.durationMs / 1000 + gap;
       r.waitedSince = r.nextAt;
@@ -720,44 +881,40 @@ export class Director {
   // ── hand-written story scenes ──────────────────────────────────────────────
 
   /**
-   * Play a story's hand-written lines now, in order: whatever is being said gives way, and no
-   * other scene starts until the last line is spoken. Voice lines (someone on the phone) show as
-   * captions. With `then: 'model'`, the model carries the scene on afterwards.
+   * Play a story's hand-written lines, in order, once any story scene before it has finished: what
+   * is being said gives way, and no other scene starts until the last line is spoken. The speakers
+   * stop and turn to each other (taking a step or two when close but not together). Voice lines
+   * (someone on the phone) show as captions. With `then: 'model'` the model carries the scene on
+   * afterwards, on the same subject. `done` always runs once, even if the day ends first.
    */
   playScript(lines: ScriptLine[], opts: ScriptOptions = {}): void {
     if (this.disposed || !lines.length) {
-      opts.done?.();
+      scriptDone(opts);
       return;
     }
-    this.stopScene(false);
-    this.script = { lines: [...lines], said: [], people: [], opts, nextAt: this.api.time };
+    this.scripts.push({ lines: [...lines], said: [], people: [], phone: [], opts, nextAt: 0, started: false, startedAt: 0, handle: null });
   }
 
   private advanceScript(now: number): void {
-    const sc = this.script;
-    if (!sc || now < sc.nextAt) return;
+    const sc = this.scripts[0];
+    if (!sc) return;
+    if (!sc.started) {
+      this.beginScript(sc, now);
+      return;
+    }
+    if (now < sc.nextAt) return;
+    // A moment for the speakers to turn to each other (or take a step or two), never long.
+    if (sc.handle && sc.handle.alive && !sc.handle.ready && now - sc.startedAt < 4) return;
     const line = sc.lines.shift();
     if (!line) {
-      this.script = null;
-      if (sc.opts.then === 'model') {
-        const people = sc.people.filter((id) => this.api.person(id)?.present).slice(0, 4);
-        if (people.length) {
-          this.enqueue({
-            people, trigger: 'event', priority: 9, minLines: 2, maxLines: 3, staleAfter: 30, gather: false,
-            why: `${sc.opts.why ? sc.opts.why + ' ' : ''}Already said: ${sc.said.slice(-4).join(' ')}`.trim()
-          }, false);
-        }
-      }
-      try {
-        sc.opts.done?.();
-      } catch (err) {
-        console.error('[director] script done failed', err);
-      }
+      this.endScript(sc);
       return;
     }
     if (line.voice) {
-      this.api.narrate(`${line.voice.name}: "${line.text}"`, { icon: line.voice.icon ?? 'phone', room: line.voice.room ?? sc.opts.room, beat: true });
-      sc.said.push(`${line.voice.name}: "${line.text}"`);
+      const said = `${line.voice.name}: "${line.text}"`;
+      this.api.narrate(said, { icon: line.voice.icon ?? 'phone', room: line.voice.room ?? sc.opts.room, beat: true });
+      sc.said.push(said);
+      sc.phone.push(said);
       sc.nextAt = now + Math.max(2.5, line.text.length / 14) + 0.6;
       return;
     }
@@ -766,11 +923,105 @@ export class Director {
       sc.nextAt = now;
       return;
     }
-    const speech = this.api.say(line.who, line.text, { kind: line.kind, emotion: line.emotion, to: line.to ?? null });
-    this.lastSpoke.set(line.who, now);
-    if (!sc.people.includes(line.who)) sc.people.push(line.who);
+    const speech = this.speakScriptLine(sc, line, p);
+    this.lastSpoke.set(p.id, now);
+    if (speech.text) this.storySaid.add(`${p.id}|${speech.text}`);
+    if (!sc.people.includes(p.id)) sc.people.push(p.id);
     sc.said.push(`${p.name}: "${line.text}"`);
-    sc.nextAt = now + speech.durationMs / 1000 + 0.6;
+    sc.nextAt = now + Math.max(1.2, speech.durationMs / 1000) + 0.5;
+  }
+
+  /** Clear the floor for a story scene: what is being said gives way, and the speakers turn to each other. */
+  private beginScript(sc: ScriptRun, now: number): void {
+    sc.started = true;
+    sc.startedAt = now;
+    sc.nextAt = now + 0.3;
+    const r = this.running;
+    // A reaction the player asked for that has not started talking yet waits its turn instead of being lost.
+    if (r && r.fromPlayer && r.spoken === 0 && !r.releasedAt) this.queue.unshift({ ask: r.ask, at: now, fromPlayer: true });
+    this.stopScene(false);
+    const speakers = [...new Set(sc.lines.map((l) => l.who).filter((id): id is CharId => !!id))]
+      .map((id) => this.api.person(id))
+      .filter((p): p is SimPerson => !!p && p.present);
+    sc.handle = this.huddle(speakers);
+    if (speakers.length) this.focusOn(speakers.map((p) => p.id), 9);
+  }
+
+  /**
+   * Hold the speakers together while their lines are said, facing each other. Only people who are
+   * free (not walking somewhere for the story, asleep or held) and in one room; close but not side by
+   * side, they take a step or two; far apart, they stay where they are and just turn.
+   */
+  private huddle(people: SimPerson[]): SceneHandle | null {
+    if (people.length < 2 || people.length > 4) return null;
+    const room = people[0].room;
+    if (people.some((p) => !p.available || p.urgent || p.room !== room)) return null;
+    let far = 0;
+    for (const a of people) for (const b of people) far = Math.max(far, Math.hypot(a.x - b.x, a.y - b.y));
+    try {
+      return this.sim.openScene({ id: nextId('script'), people: people.map((p) => p.id), gather: far > 2.5 * TILE && far < 9 * TILE });
+    } catch {
+      return null;
+    }
+  }
+
+  private speakScriptLine(sc: ScriptRun, line: ScriptLine, p: SimPerson): Speech {
+    const act: LineAct = line.kind === 'shout' ? 'shout' : line.kind === 'whisper' ? 'whisper' : 'none';
+    if (sc.handle && sc.handle.alive && sc.handle.people.includes(p.id) && line.kind !== 'think') {
+      return sc.handle.line({ who: p.id, say: line.text, feel: line.emotion ?? p.emotion, to: line.to ?? null, act });
+    }
+    // Not in a huddle (busy, or somewhere else): turn to whoever it is said to, or to the last speaker.
+    const toward = line.to ?? [...sc.people].reverse().find((id) => id !== p.id && this.api.person(id)?.present);
+    if (toward && line.kind !== 'think' && !this.api.isAirborne(p.id)) this.api.face(p.id, toward);
+    return this.api.say(p.id, line.text, { kind: line.kind, emotion: line.emotion, to: line.to ?? null });
+  }
+
+  private endScript(sc: ScriptRun): void {
+    if (this.scripts[0] === sc) this.scripts.shift();
+    this.closeScript(sc);
+    if (sc.opts.then === 'model') this.carryOn(sc);
+    scriptDone(sc.opts);
+  }
+
+  private closeScript(sc: ScriptRun | undefined = this.scripts[0]): void {
+    if (!sc?.handle) return;
+    try {
+      sc.handle.close();
+    } catch {
+      /* the scene may already be over */
+    }
+    sc.handle = null;
+  }
+
+  /** End every story scene now (the day is ending, or being skipped): each one's `done` still runs. */
+  private flushScripts(): void {
+    const all = this.scripts;
+    this.scripts = [];
+    for (const sc of all) {
+      this.closeScript(sc);
+      scriptDone(sc.opts);
+    }
+  }
+
+  /**
+   * The model takes the scene on from where the hand-written lines stop, on the same subject: the
+   * lines said out loud are in "Said just before"; what a voice on the phone said is not, so it goes in
+   * the reason. Written lines (no model) follow the story theme the reason is about.
+   */
+  private carryOn(sc: ScriptRun): void {
+    const people = sc.people.filter((id) => this.canSpeak(id)).slice(0, 4);
+    if (!people.length) return;
+    const what = sc.opts.why?.trim() ?? '';
+    const phone = sc.phone.slice(-2);
+    const why = [
+      what ? (/[.!?]$/.test(what) ? what : `${what}.`) : '',
+      phone.length ? `On the phone: ${phone.join(' ')}` : '',
+      'They carry on from what was just said, in their own words, without repeating it.'
+    ].filter(Boolean).join(' ');
+    const ask: SceneAsk = { people, room: sc.opts.room, trigger: 'event', priority: 9, minLines: 2, maxLines: 3, staleAfter: 40, gather: false, why };
+    if (what) this.tagTopic(ask, what);
+    else if (phone.length) this.tagTopic(ask, phone.join(' '));
+    this.enqueue(ask, false);
   }
 
   private finishScene(r: Running): void {
@@ -834,6 +1085,7 @@ export class Director {
     const onlookers = this.api.peopleIn(room).filter((p) => p.present && !ids.includes(p.id)).map((p) => p.name).slice(0, 5);
     const solo = ids.length === 1;
     const lively = this.api.chaos > 45;
+    const topic = this.topicFor(ask);
     return {
       id,
       day: this.api.day,
@@ -847,7 +1099,8 @@ export class Director {
       recent: this.sim.recentLines(room, 5),
       minLines: ask.minLines ?? (solo ? 1 : 2),
       maxLines: ask.maxLines ?? (solo ? 2 : lively ? 4 : 3),
-      chaos: Math.min(1, this.api.chaos / 100)
+      chaos: Math.min(1, this.api.chaos / 100),
+      ...(topic ? { topic } : {})
     };
   }
 
@@ -917,6 +1170,9 @@ export class Director {
     const idle = this.api.people().filter((p) => p.present && p.available && p.isCast && !p.speaking && now - (this.lastSpoke.get(p.id) ?? -99) > 20);
     if (!idle.length) return;
     const p = idle[Math.floor(this.api.rng() * idle.length)];
+    // Story mode: now and then the idle thought is about what the office is talking about.
+    const topics = this.storyTopics();
+    const theme = topics.length && this.api.rng() < STORY_SHARE ? storyThemeOf(topics[Math.floor(this.api.rng() * topics.length)]) : null;
     try {
       const [m] = await this.instinct.minds({
         id: nextId('muse'),
@@ -926,7 +1182,8 @@ export class Director {
         facts: [],
         allowed: ['work'],
         others: [],
-        chaos: 0
+        chaos: 0,
+        ...(theme ? { topic: theme } : {})
       });
       const again = this.api.person(p.id);
       if (this.disposed || !m?.thought || !again || !again.present || !again.available || again.speaking) return;
@@ -943,13 +1200,13 @@ export class Director {
 
   /** Ask for the day's write-up. Always resolves (the brain falls back to a plain summary). */
   async writeReport(stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number }, story?: StoryReportInfo): Promise<ReportResult> {
-    this.script = null;
+    this.flushScripts();
     this.stopScene(false);
     this.queue.length = 0;
     const req = {
       id: nextId('report'),
       day: this.api.day,
-      log: this.sim.dayLog().slice(-40),
+      log: pickLog(this.sim.dayLog(), REPORT_LOG),
       stats,
       people: this.api.people().filter((p) => p.isCast).map((p) => ({ id: p.id, name: p.name, mood: p.emotion })),
       ...(story ? { story } : {})
@@ -968,6 +1225,19 @@ export class Director {
     }
     this.sim.setTakeaways(res.takeaways.filter((t) => isCastId(t.who) && !!t.text));
     return res;
+  }
+
+  /**
+   * Quotes of the day, from the day's spoken lines (in order): lines from the story's scenes first,
+   * up to two of them, spread through the day, then the rest. Returned in the order they were said.
+   */
+  pickQuotes<T extends { who?: CharId; text: string }>(items: readonly T[], n: number): T[] {
+    if (n <= 0 || !items.length) return [];
+    const story = items.filter((f) => !!f.who && this.storySaid.has(`${f.who}|${f.text}`));
+    const rest = items.filter((f) => !story.includes(f));
+    const chosen = spreadOut(story, Math.min(story.length, Math.max(1, n - 1)));
+    for (const f of spreadOut(rest, n - chosen.length)) chosen.push(f);
+    return chosen.sort((a, b) => items.indexOf(a) - items.indexOf(b)).slice(0, n);
   }
 
   // ── choosing people ────────────────────────────────────────────────────────
@@ -1051,6 +1321,45 @@ export class Director {
 function tidy(text: string, max: number): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** How many lines of the day's log the report is written from (the prompt keeps them all). */
+const REPORT_LOG = 30;
+/** Lines that open and close every day: no news in them. */
+const ROUTINE_LINE = /staff are arriving for work|^it's five o'clock|^day \d+ is over/i;
+/** A spoken line in the log: `Jim: "Morning."` */
+const SPOKEN_LINE = /^[^:"]{1,40}: ".*"$/;
+
+/**
+ * The lines the day's write-up works from: everything that happened (story beats, events), newest
+ * kept if there are too many, then the newest spoken lines to fill up, all in the order they came.
+ * The last forty lines alone would be the afternoon's chatter, with the morning's story cut off.
+ */
+export function pickLog(log: readonly string[], max: number): string[] {
+  const lines = log.map((l, i) => ({ l: l.trim(), i })).filter((x) => x.l && !ROUTINE_LINE.test(x.l));
+  const events = lines.filter((x) => !SPOKEN_LINE.test(x.l));
+  const spoken = lines.filter((x) => SPOKEN_LINE.test(x.l));
+  const keep = events.slice(-Math.ceil(max * 0.7));
+  for (const x of spoken.slice(-(max - keep.length))) keep.push(x);
+  return keep.sort((a, b) => a.i - b.i).slice(-max).map((x) => x.l);
+}
+
+/** Up to n items spread through a list (first, middle, last...). */
+function spreadOut<T>(items: readonly T[], n: number): T[] {
+  if (n <= 0) return [];
+  if (items.length <= n) return [...items];
+  const out: T[] = [];
+  for (let i = 0; i < n; i++) out.push(items[Math.floor(((i + 0.5) / n) * items.length)]);
+  return out;
+}
+
+/** Tell a story scene's owner it is over; a mistake there must not stop the director. */
+function scriptDone(opts: ScriptOptions): void {
+  try {
+    opts.done?.();
+  } catch (err) {
+    console.error('[director] script done failed', err);
+  }
 }
 
 function pairKey(a: CharId, b: CharId): string {
