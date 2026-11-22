@@ -16,7 +16,8 @@ const hex = (n: number): string => '#' + n.toString(16).padStart(6, '0');
 /** Load every face and weight the interface uses, but never hold the game up for more than a couple of seconds. */
 function fontsReady(): Promise<void> {
   const faces = ['400 14px "Pixelify Sans"', '500 14px "Pixelify Sans"', '700 16px "Pixelify Sans"', '12px "Press Start 2P"', '16px "VT323"'];
-  const all = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => undefined, () => undefined);
+  // 'Aa5': the digit 5 comes from its own small face (see design/global.css), so ask for it too.
+  const all = Promise.all(faces.map((f) => document.fonts.load(f, 'Aa5'))).then(() => undefined, () => undefined);
   const limit = new Promise<void>((resolve) => setTimeout(resolve, 2500));
   return Promise.race([all, limit]);
 }

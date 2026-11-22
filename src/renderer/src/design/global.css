@@ -1,5 +1,33 @@
 @import './tokens.css';
 
+/* Pixelify Sans draws "5" exactly like "S" ("15:00" reads "1S:00"). These one-glyph faces give it a
+   proper 5 (flat top bar, straight left stroke; same width and lower half). Declared after the
+   @fontsource faces, so for U+0035 alone they take precedence. Made by tools/fonts/make_five.py. */
+@font-face {
+  font-family: 'Pixelify Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/pixelify-five-400.woff2') format('woff2');
+  unicode-range: U+0035;
+}
+@font-face {
+  font-family: 'Pixelify Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('../assets/fonts/pixelify-five-500.woff2') format('woff2');
+  unicode-range: U+0035;
+}
+@font-face {
+  font-family: 'Pixelify Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('../assets/fonts/pixelify-five-700.woff2') format('woff2');
+  unicode-range: U+0035;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
