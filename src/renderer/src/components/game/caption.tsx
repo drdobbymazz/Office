@@ -14,7 +14,8 @@ const TYPE_CPS = 42;
 export function BeatCaption() {
   const game = useGame();
   const beat = useUi((s) => s.beat);
-  const phase = useUi((s) => s.phase);
+  // While the day is played, and during the week's last scene on the floor (phase 'ending' with the finale running).
+  const onFloor = useUi((s) => s.phase === 'playing' || (s.phase === 'ending' && s.finale));
   const [shown, setShown] = useState<{ beat: BeatUi; at: number } | null>(null);
   const timer = useRef(0);
 
@@ -30,7 +31,7 @@ export function BeatCaption() {
 
   const typing = !!shown && (performance.now() - shown.at) / 1000 < shown.beat.text.length / TYPE_CPS;
   useNow(40, typing);
-  if (!shown || phase !== 'playing') return null;
+  if (!shown || !onFloor) return null;
   const b = shown.beat;
   // Read the clock here (the hook only re-renders), so the last frame always shows the whole line.
   const count = Math.min(b.text.length, Math.floor(((performance.now() - shown.at) / 1000) * TYPE_CPS));

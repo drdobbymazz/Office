@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import '@fontsource/pixelify-sans/700.css';
 import './gameui.css';
+import './screens.css';
 import type { GameApi } from '@/game/app/gameApi';
 import type { CharId, ChaosId } from '@/game/core/types';
 import type { Suggestions, Tips } from '@/game/core/content/types';
@@ -16,7 +17,9 @@ import { BubbleLayer, type Bounds } from './Bubbles';
 import { EventsAndToasts, hudBottom, hudInset, MissionChip, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
 import { StoryCoach } from './coach';
 import { Dock, NavCtx, type Nav } from './Dock';
-import { ChapterCard, Coach, EndingCard, ReportCard, RotateCard, TitleCard } from './Dialogs';
+import { ChapterCard, Coach, EndingCard, FinaleSkip, ReportCard, RotateCard, TitleCard } from './Dialogs';
+import { CeremonyBanner } from './ceremony';
+import { DayBand, useDayBand, useScreenWipe } from './transitions';
 import { pendingChaos } from './PowersTab';
 import type { TabId } from './words';
 
@@ -45,6 +48,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   if (initial?.chaos && pendingChaos.id === null && tab === 'powers') pendingChaos.set(initial.chaos);
 
   const phase = game.store((s) => s.phase);
+  const finale = game.store((s) => s.phase === 'ending' && s.finale);
   const tutorialDone = game.store((s) => s.settings.tutorialDone);
   const selectedId = game.store((s) => s.selectedId);
   const storyOn = game.store((s) => s.mode === 'story' && !!s.story);
@@ -68,6 +72,20 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   const portrait = vp.portrait;
   const blocked = portrait && !playAnyway;
 
+  // What is on screen trails the game's phase by half a wipe: the paper sheet covers the old screen
+  // before the new one is shown (transitions.tsx). The week's last scene counts as its own screen.
+  const { shown: screen, wipe } = useScreenWipe(finale ? 'finale' : phase, game);
+  // The panel and the HUD belong to the day itself; the full-screen cards get the office behind them.
+  const dockOn = screen === 'playing';
+  // A band across the floor each time a day starts (from its card, a report or the title).
+  const lastScreen = useRef(screen);
+  const [daysStarted, setDaysStarted] = useState(0);
+  useEffect(() => {
+    if (screen === 'playing' && lastScreen.current !== 'playing') setDaysStarted((n) => n + 1);
+    lastScreen.current = screen;
+  }, [screen]);
+  const band = useDayBand(daysStarted);
+
   // Tell the camera how much of the screen the panel covers, whenever it changes.
   const measure = useCallback(() => {
     const el = dockRef.current;
@@ -88,9 +106,11 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
     if (el && ro) ro.observe(el);
     window.addEventListener('resize', measure);
     return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
-  }, [measure, open, tab, portrait, blocked]);
-  // The camera keeps the office below the HUD block (status strip and mission row), so nothing that matters hides under it.
-  const chipTopInset = phase !== 'title' ? hudInset(storyOn) : 0;
+  }, [measure, open, tab, portrait, blocked, dockOn]);
+  // The camera keeps the office below the HUD block (status strip and mission row), so nothing that matters
+  // hides under it. Set behind the day's card and report too, so the floor does not jump when the day starts.
+  const framedForHud = screen === 'playing' || screen === 'briefing' || screen === 'report';
+  const chipTopInset = framedForHud ? hudInset(storyOn) : 0;
   useEffect(() => {
     game.setInsets({ left: 0, right: cover.right, top: chipTopInset, bottom: cover.bottom });
   }, [game, cover.right, cover.bottom, chipTopInset]);
@@ -115,7 +135,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
       <NavCtx.Provider value={nav}>
         <div className="gu-root">
           <BubbleLayer bounds={bounds} />
-          {phase !== 'title' && (
+          {screen === 'playing' && (
             <>
               <StatusStrip left={SAFE_LEFT} />
               {chip && <MissionChip left={SAFE_LEFT} onOpen={openMission} />}
@@ -124,17 +144,23 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
               </div>
               <Subtitle right={cover.right} bottom={cover.bottom} />
               <OfflineBanner left={SAFE_LEFT} top={underHud} onFix={() => nav.go('settings')} />
+              <CeremonyBanner right={cover.right} top={Math.round(vp.h * 0.3)} />
+              {band && <DayBand right={cover.right} bottom={cover.bottom} />}
             </>
           )}
-          {!blocked && <Dock ref={dockRef} vp={vp} portrait={portrait} />}
-          {phase === 'title' && !blocked && <TitleCard vp={vp} />}
-          {phase === 'briefing' && !blocked && <ChapterCard vp={vp} />}
-          {phase === 'report' && !blocked && <ReportCard vp={vp} />}
-          {phase === 'ending' && !blocked && <EndingCard vp={vp} />}
-          {playing && !blocked && (storyOn
+          {/* The week's last scene is narrated on the floor: its captions (and lines from off screen) still show. */}
+          {screen === 'finale' && <Subtitle right={0} bottom={0} />}
+          {!blocked && dockOn && <Dock ref={dockRef} vp={vp} portrait={portrait} />}
+          {screen === 'title' && !blocked && <TitleCard vp={vp} />}
+          {screen === 'briefing' && !blocked && <ChapterCard vp={vp} />}
+          {screen === 'report' && !blocked && <ReportCard vp={vp} />}
+          {screen === 'ending' && !blocked && <EndingCard vp={vp} />}
+          {screen === 'finale' && !blocked && <FinaleSkip />}
+          {screen === 'playing' && !blocked && (storyOn
             ? <StoryCoach />
             : !tutorialDone && <Coach onDone={() => game.updateSettings({ tutorialDone: true })} />)}
           {blocked && <RotateCard onPlay={() => { game.uiSound('tap'); setPlayAnyway(true); }} />}
+          {wipe}
         </div>
       </NavCtx.Provider>
     </GameCtx.Provider>

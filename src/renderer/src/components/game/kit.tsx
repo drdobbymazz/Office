@@ -10,6 +10,7 @@ import { PixelPanel } from '@/components/PixelPanel';
 import { PORTRAIT_H, PORTRAIT_W } from '@/scene/office/portraitArt';
 import { GIcon, type GIconName } from './icons';
 import { useGame } from './ctx';
+import { CLOSED_BELOW, SAVED_AT } from './storyNumbers';
 
 // ── press handling ──
 
@@ -484,12 +485,9 @@ export function uiToast(game: GameApi, text: string, tone: ToastUi['tone'] = 'ba
   window.setTimeout(() => game.dismissToast(id), 3600);
 }
 
-/**
- * Thresholds for the end of the week, as the lead set them for Branch Standing: 75 or more (with
- * Friday won) keeps the branch open, under 45 closes it. Keep in step with story/rules.ts endingFor.
- */
-export const STANDING_SAFE = 75;
-export const STANDING_RISK = 45;
+/** Thresholds for the end of the week, from the story rules (storyNumbers.ts): the marks on the bar. */
+export const STANDING_SAFE = SAVED_AT;
+export const STANDING_RISK = CLOSED_BELOW;
 export function standingColor(v: number): string {
   return v >= STANDING_SAFE ? 'var(--cth-mint)' : v >= STANDING_RISK ? 'var(--cth-lemon)' : 'var(--cth-coral)';
 }

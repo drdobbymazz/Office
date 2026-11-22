@@ -1,11 +1,13 @@
-// SETTINGS: brain, game, sound and data.
+// SETTINGS: the story (in story mode), sound, game, brain and data.
 
 import { useState } from 'react';
 import type { ProviderKind } from '@/game/brain/api';
 import type { GameSettings } from '@/game/app/gameApi';
-import { GIcon } from './icons';
+import { GIcon, type GIconName } from './icons';
+import { STANDING_START } from '@/game/story/rules';
 import { Btn, Label, Light, Section, Seg, Toggle } from './kit';
 import { useGame, useUi } from './ctx';
+import { useStory } from './Story';
 
 const PROVIDERS: { id: ProviderKind; name: string; hint: string }[] = [
   { id: 'ollama', name: 'Ollama', hint: 'Your own model server.' },
@@ -129,17 +131,27 @@ function GameSection() {
   const game = useGame();
   const s = useUi((st) => ({
     dayMinutes: st.settings.dayMinutes, autoCamera: st.settings.autoCamera, captions: st.settings.captions,
-    sandbox: st.settings.sandbox, haptics: st.settings.haptics, quality: st.settings.quality
+    sandbox: st.settings.sandbox, haptics: st.settings.haptics, quality: st.settings.quality, story: st.mode === 'story'
   }));
   const set = (p: Partial<GameSettings>) => game.updateSettings(p);
   return (
     <Section title="GAME" accent="lemon">
-      <Label>Length of a day</Label>
-      <Seg value={s.dayMinutes} onChange={(v) => set({ dayMinutes: v })}
-        options={[{ value: 6, label: '6 min' }, { value: 10, label: '10 min' }, { value: 16, label: '16 min' }]} />
+      {s.story ? (
+        // A story day always runs at the length it was balanced for, and keeps its cooldowns:
+        // the two sandbox settings would do nothing here, so they wait for the sandbox.
+        <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+          Story days always last 10 minutes. Day length and No cooldowns apply in the sandbox.
+        </div>
+      ) : (
+        <>
+          <Label>Length of a sandbox day</Label>
+          <Seg value={s.dayMinutes} onChange={(v) => set({ dayMinutes: v })}
+            options={[{ value: 6, label: '6 min' }, { value: 10, label: '10 min' }, { value: 16, label: '16 min' }]} />
+        </>
+      )}
       <Toggle label="Camera follows the action" on={s.autoCamera} onChange={(v) => set({ autoCamera: v })} />
       <Toggle label="Subtitles" hint="Show the line being spoken." on={s.captions} onChange={(v) => set({ captions: v })} />
-      <Toggle label="Sandbox" hint="No cooldowns on powers." on={s.sandbox} onChange={(v) => set({ sandbox: v })} />
+      {!s.story && <Toggle label="No cooldowns" hint="Sandbox only: powers can be used again at once." on={s.sandbox} onChange={(v) => set({ sandbox: v })} />}
       <Toggle label="Vibration" on={s.haptics} onChange={(v) => set({ haptics: v })} />
       <Label>Picture quality</Label>
       <Seg value={s.quality} onChange={(v) => set({ quality: v })}
@@ -161,7 +173,7 @@ function SoundSection() {
       <Toggle label="Mute" on={muted} onChange={(v) => game.updateSettings({ muted: v })} />
       {VOLS.map((v) => (
         <div key={v.key} style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: muted ? 0.5 : 1 }}>
-          <span style={{ width: 78, fontSize: 14 }}>{v.label}</span>
+          <span style={{ flex: '0 0 84px', minWidth: 84, fontSize: 14 }}>{v.label}</span>
           <input type="range" className="gu-range gu-hit" min={0} max={10} value={Math.round(vol[v.key] * 10)}
             onChange={(e) => game.updateSettings({ volumes: { ...vol, [v.key]: Number(e.target.value) / 10 } })}
             onPointerUp={() => game.uiSound('tap')} />
@@ -171,21 +183,77 @@ function SoundSection() {
   );
 }
 
+/** One story action with its own "are you sure" in place, as on the title card. */
+function StoryAction({ icon, label, ask, go, onGo, danger }: {
+  icon: GIconName; label: string; ask: string; go: string; onGo: () => void; danger?: boolean;
+}) {
+  const [sure, setSure] = useState(false);
+  if (!sure) return <Btn variant="secondary" size="md" full icon={icon} onClick={() => setSure(true)} sound="open">{label}</Btn>;
+  return (
+    <div className="gu-drop" style={{
+      display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 10px 10px 14px', background: 'var(--cth-cream-50)',
+      boxShadow: `inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-${danger ? 'coral' : 'lemon'})`
+    }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <GIcon name="warn" px={16} style={{ marginTop: 2 }} />
+        <span style={{ fontSize: 14, lineHeight: '18px' }}>{ask}</span>
+      </div>
+      {/* One above the other: the panel is narrow on a phone, and both labels must read in full. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <Btn variant={danger ? 'destructive' : 'primary'} size="md" full onClick={() => { setSure(false); onGo(); }} sound="confirm">{go}</Btn>
+        <Btn variant="secondary" size="md" full onClick={() => setSure(false)} sound="close">Keep playing</Btn>
+      </div>
+    </div>
+  );
+}
+
+/** Story mode: start the day or the week again, or leave for the title. */
+function StorySection() {
+  const game = useGame();
+  const story = useStory();
+  const phase = useUi((s) => s.phase);
+  if (!story) return null;
+  const day = story.weekday;
+  return (
+    <Section title="STORY" accent="peach">
+      <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>
+        Closing Time, day {story.chapter} of {story.chapters}: {day}, {story.title}.
+      </div>
+      {(phase === 'playing' || phase === 'briefing') && (
+        <StoryAction icon="refresh" label="Restart this day" go={`Restart ${day}`}
+          ask={`Start ${day} again from 08:50? Everything done today is undone and the influence comes back.`}
+          onGo={() => game.retryDay()} />
+      )}
+      <StoryAction icon="back" label="Back to the title" go="Leave"
+        ask={`Leave for the title? The week is saved, but ${day} starts again from the morning when you come back.`}
+        onGo={() => game.toTitle()} />
+      <StoryAction icon="play" label="Start the week again" go="New week" danger
+        ask={`Start a new week from Monday? Standing goes back to ${STANDING_START} and this week is lost.`}
+        onGo={() => game.startStory(true)} />
+    </Section>
+  );
+}
+
 function DataSection() {
   const game = useGame();
+  const story = useUi((s) => s.mode === 'story');
   const [sure, setSure] = useState(false);
   return (
     <Section title="DATA" accent="peach">
       {!sure ? (
         <>
-          <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>The office saves itself as you play.</div>
-          <Btn variant="destructive" size="md" full onClick={() => setSure(true)} sound="open">Start again from day 1</Btn>
+          <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>
+            {story ? 'The sandbox office and the story week save themselves separately. This wipes the sandbox only.' : 'The office saves itself as you play.'}
+          </div>
+          <Btn variant="destructive" size="md" full onClick={() => setSure(true)} sound="open">{story ? 'Wipe the sandbox office' : 'Start again from day 1'}</Btn>
         </>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <GIcon name="warn" px={16} style={{ marginTop: 2 }} />
-            <span style={{ fontSize: 14, lineHeight: '18px' }}>This wipes every memory, feeling and day so far. It cannot be undone.</span>
+            <span style={{ fontSize: 14, lineHeight: '18px' }}>
+              {story ? 'This wipes every memory, feeling and day of the sandbox office. The story week is kept. It cannot be undone.' : 'This wipes every memory, feeling and day so far. It cannot be undone.'}
+            </span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn variant="secondary" size="md" full onClick={() => setSure(false)} sound="close">Keep playing</Btn>
@@ -198,11 +266,13 @@ function DataSection() {
 }
 
 export function SettingsTab() {
+  // The things a player changes most come first; the model setup is for the owner, further down.
   return (
     <>
-      <BrainSection />
-      <GameSection />
+      <StorySection />
       <SoundSection />
+      <GameSection />
+      <BrainSection />
       <DataSection />
     </>
   );

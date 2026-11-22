@@ -6,7 +6,7 @@
 // The HUD is kept slim on purpose: the camera keeps the office below hudBottom() (GameUI passes it as
 // the top inset), so Michael's office and the conference room never hide under it.
 
-import { CSSProperties, useEffect, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useState } from 'react';
 import { CHAOS } from '@/game/core/chaos';
 import { formatClock } from '@/game/core/types';
 import type { ActionId, StoryUi } from '@/game/app/gameApi';
@@ -17,6 +17,10 @@ import { readableOnCream } from './words';
 import { tileBg, tileIcon } from './Story';
 import { BeatCaption } from './caption';
 import { CHIP_H, CHIP_TOP, HUD_TOP, STRIP_H, STRIP_W, hudBottom } from './hudGeometry';
+import { useLeaving } from './transitions';
+
+type ToastGroup = { ids: string[]; text: string; icon?: string; tone: string };
+const groupKey = (g: ToastGroup) => g.ids[0];
 
 const chipPanel: CSSProperties = {
   background: 'var(--cth-cream-100)',
@@ -268,14 +272,19 @@ function catAccent(c: string): string {
 export function EventsAndToasts({ left, right }: { left: string; right: number }) {
   const game = useGame();
   const active = useUi((s) => s.activeChaos);
-  const toasts = useUi((s) => s.toasts);
+  const raw = useUi((s) => s.toasts);
   // The same words twice in a row (two refusals, say) show once, with a count.
-  const groups: { ids: string[]; text: string; icon?: string; tone: string }[] = [];
-  for (const t of toasts) {
-    const last = groups[groups.length - 1];
-    if (last && last.text === t.text) last.ids.push(t.id);
-    else groups.push({ ids: [t.id], text: t.text, icon: t.icon, tone: t.tone });
-  }
+  const grouped = useMemo(() => {
+    const out: ToastGroup[] = [];
+    for (const t of raw) {
+      const last = out[out.length - 1];
+      if (last && last.text === t.text) last.ids.push(t.id);
+      else out.push({ ids: [t.id], text: t.text, icon: t.icon, tone: t.tone });
+    }
+    return out;
+  }, [raw]);
+  // Toasts leave with a short exit instead of vanishing (transitions.tsx).
+  const toasts = useLeaving(grouped, groupKey);
   return (
     <div style={{
       position: 'absolute', top: 8, left, right: right + 8,
@@ -287,8 +296,8 @@ export function EventsAndToasts({ left, right }: { left: string; right: number }
           {active.length > 3 && <span style={{ ...chipPanel, padding: '6px 8px', fontSize: 14 }}>+{active.length - 3}</span>}
         </div>
       )}
-      {groups.map((t) => (
-        <button key={t.ids[0]} type="button" className="gu-hit gu-drop"
+      {toasts.map(({ item: t, out }) => (
+        <button key={t.ids[0]} type="button" className={out ? 'gu-hit sc-leave' : 'gu-hit gu-drop'}
           onClick={() => { game.uiSound('close'); for (const id of t.ids) game.dismissToast(id); }}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, maxWidth: 'min(360px, 100%)', padding: '8px 12px 8px 14px',

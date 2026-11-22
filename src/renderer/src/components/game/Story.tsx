@@ -4,15 +4,18 @@
 // the overlay (icon tiles, bars, pips, the pixel fonts); nothing new.
 
 import type { ActionId, StoryGoalUi, StoryUi } from '@/game/app/gameApi';
+import { STANDING } from '@/game/story/rules';
 import { GIcon } from './icons';
 import { Bar, IconTile, Label, Light, Pips, StandingBar, standingWord } from './kit';
+import { ENDING_RULE_TEXT } from './storyNumbers';
 import { useUi } from './ctx';
 
-/** Each extra goal done is worth this much standing (see the story rules). */
-export const EXTRA_WORTH = 5;
+/** Each extra goal done is worth this much standing (from the story rules, so the two never disagree). */
+export const EXTRA_WORTH = STANDING.extra;
 
 export const STANDING_NOTE = 'How likely Corporate is to keep the branch open';
-export const MARKS_NOTE = 'On Friday, 65 or more keeps it open and under 40 closes it.';
+/** How the week ends, from the story rules (the same numbers the standing bar marks). */
+export const MARKS_NOTE = ENDING_RULE_TEXT;
 export const INFLUENCE_NOTE = 'Powers and tools cost influence. Picking people up and poking them is free.';
 
 export function useStory(): StoryUi | null {
@@ -160,36 +163,48 @@ export function HintList({ hints }: { hints: string[] }) {
 
 /**
  * Five tiles, Monday to Friday: a check on days won, a cross on days lost, today in lemon.
- * With `titles`, each tile carries the chapter name underneath (the ending).
+ * With `titles`, each tile carries the chapter name underneath (the ending). `compact` is the
+ * small one-line version for a card's footer.
  */
-export function WeekStrip({ week, current, titles = false }: { week: StoryUi['week']; current?: number; titles?: boolean }) {
+export function WeekStrip({ week, current, titles = false, compact = false }: { week: StoryUi['week']; current?: number; titles?: boolean; compact?: boolean }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${week.length}, minmax(0, 1fr))`, gap: 4 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${week.length}, minmax(0, 1fr))`, gap: compact ? 3 : 4 }}>
       {week.map((d) => {
         const today = d.chapter === current && !d.result;
         const future = !d.result && !today;
         const bg = d.result === 'won' ? 'var(--cth-mint)' : d.result === 'lost' ? 'var(--cth-coral)' : today ? 'var(--cth-lemon)' : 'var(--cth-cream-50)';
+        // Days still to come are drawn lighter, but their text stays readable (ink-500, not ink-300).
+        const ink = future ? 'var(--cth-ink-500)' : 'var(--cth-ink-900)';
         return (
           <div key={d.chapter} title={`${d.weekday}: ${d.title}${d.result ? (d.result === 'won' ? ', won' : ', lost') : ''}`}
             style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 0,
-              padding: titles ? '6px 4px 6px' : '5px 2px 4px', background: bg,
-              boxShadow: future ? 'inset 0 0 0 2px var(--cth-ink-300)' : today ? 'inset 0 0 0 2px var(--cth-ink-900), 0 2px 0 var(--cth-ink-900)' : 'inset 0 0 0 2px var(--cth-ink-900)',
-              marginBottom: 2
+              display: 'flex', flexDirection: compact ? 'row' : 'column', alignItems: 'center', justifyContent: 'center', gap: compact ? 0 : 3, minWidth: 0,
+              height: compact ? 20 : undefined,
+              padding: compact ? 0 : titles ? '6px 4px 6px' : '5px 2px 4px', background: bg,
+              boxShadow: future ? 'inset 0 0 0 2px var(--cth-ink-300)' : today ? `inset 0 0 0 2px var(--cth-ink-900)${compact ? '' : ', 0 2px 0 var(--cth-ink-900)'}` : 'inset 0 0 0 2px var(--cth-ink-900)',
+              marginBottom: compact ? 0 : 2
             }}>
-            <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '10px', color: future ? 'var(--cth-ink-300)' : 'var(--cth-ink-900)' }}>
-              {d.weekday.slice(0, 3).toUpperCase()}
-            </span>
-            <div style={{ height: 16, display: 'grid', placeItems: 'center' }}>
-              {d.result
+            {compact ? (
+              d.result
                 ? <GIcon name={d.result === 'won' ? 'check' : 'x'} px={16} />
-                : <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px', color: future ? 'var(--cth-ink-300)' : 'var(--cth-ink-900)' }}>{d.chapter}</span>}
-            </div>
-            {titles && (
-              <span style={{
-                fontSize: 12, lineHeight: '14px', textAlign: 'center', color: 'var(--cth-ink-900)', minHeight: 28,
-                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-              }}>{d.title}</span>
+                : <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '10px', color: ink }}>{d.weekday.slice(0, 1).toUpperCase()}</span>
+            ) : (
+              <>
+                <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '10px', color: ink }}>
+                  {d.weekday.slice(0, 3).toUpperCase()}
+                </span>
+                <div style={{ height: 16, display: 'grid', placeItems: 'center' }}>
+                  {d.result
+                    ? <GIcon name={d.result === 'won' ? 'check' : 'x'} px={16} />
+                    : <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px', color: ink }}>{d.chapter}</span>}
+                </div>
+                {titles && (
+                  <span style={{
+                    fontSize: 12, lineHeight: '14px', textAlign: 'center', color: 'var(--cth-ink-900)', minHeight: 28,
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                  }}>{d.title}</span>
+                )}
+              </>
             )}
           </div>
         );
