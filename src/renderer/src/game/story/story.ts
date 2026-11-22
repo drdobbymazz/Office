@@ -19,6 +19,8 @@ import type { ChapterDef, ChapterResult, WeekNotes } from './types';
 
 export const STATE_KEY = 'story.state.v1';
 export const WORLD_KEY = 'story.world.v1';
+/** The chapter with the leak (a retry picks a new one). */
+const LEAK_CHAPTER = 4;
 
 /** Where the story keeps its saves (the browser's storage in the game; a map in tests). */
 export interface StoryStore {
@@ -250,6 +252,12 @@ export class Story {
   retry(): SaveData | null {
     // A day already counted as lost has had its try; a retry from the middle of a day counts as one.
     if (!(this.state.stage === 'done' && this.result && !this.result.won)) this.bumpTries();
+    // Thursday again: someone else is the leak this time (the report may have named the last one).
+    if (this.state.chapter === LEAK_CHAPTER) {
+      const was = this.state.notesAtStart.leak;
+      const rng = createRng((this.state.seed ^ Math.imul(this.state.tries[LEAK_CHAPTER - 1] + 1, 0x2c1b3c6d)) >>> 0);
+      this.state.notesAtStart.leak = rng.pick(LEAK.candidates.filter((id) => id !== was));
+    }
     this.state.standing = this.state.standingAtStart;
     this.state.notes = clone(this.state.notesAtStart);
     this.state.results[this.state.chapter - 1] = null;

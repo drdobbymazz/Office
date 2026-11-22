@@ -4,14 +4,15 @@
 // here works with no language model: the levers are deterministic, and whatever
 // the model's conversations add comes on top.
 
+import type { ActionId } from '@/game/app/gameApi';
 import type { CastId, ChaosId, CharId, RoomId } from '@/game/core/types';
-import { isCastId } from '@/game/core/types';
+import { formatClock, isCastId } from '@/game/core/types';
 import { CAST, registerVisitor, displayName } from '@/game/core/cast';
 import { CHAOS } from '@/game/core/chaos';
 import { anchor, deskOf, feetOf } from '@/game/core/world';
 import type { SimPerson } from '@/game/core/simApi';
 import { summonChance } from '@/game/director/summon';
-import type { ChapterCtx, ChapterDef, ChapterRun, ChaosStartInfo, PlayerAction, SceneDoneInfo, WeekNotes } from './types';
+import type { ChapterCtx, ChapterDef, ChapterRun, ChaosStartInfo, PlayerAction, SceneDoneInfo, ScriptLine, WeekNotes } from './types';
 import { CLIENT, LEAK, MEMO, ROW, VERDICT } from './text';
 
 const DAY = (h: number, m = 0): number => h * 60 + m;
@@ -500,16 +501,63 @@ class ClientRun implements ChapterRun {
 }
 
 // ── Thursday: The Leak ───────────────────────────────────────────────────────
+//
+// The leak sends a page to Corporate from the fax machine every hour or so, and
+// the fax machine beeps. Other people use the fax machine too, for their own
+// reasons, under the same label, so one sighting is never enough: the first two
+// pages always have someone else at the machine. Kevin and Toby sit in the annex
+// and think about who they saw. Private thoughts hint at motives (the leak's,
+// after the first page) or at other secrets (two nervous innocents). Tests cost:
+// Truth Serum (4 today), Paranoia (the leak runs to tear up the fax log once a
+// page has gone), a pointed announcement (the leak lies low, the nervous flinch),
+// Leak a Secret (exposes the leak; on anyone else an innocent secret gets out),
+// and informants told to watch the fax machine.
 
-const THOUGHT_EVERY = 60;
-const FAX_EVERY = 80;
+const FAX_SPOT = 'spot.annex4';
+const WATCH_SPOT = 'spot.annex1';
+/** Seconds between the leak's pages, by how much there is to report (Wednesday's result). */
+const FAX_GAPS = { busy: [66, 76], normal: [82, 94], quiet: [98, 112] } as const;
+const FIRST_SEND = 48;
+const LEAK_STAY = 14;
+const BEEP_AFTER = 2;
+const HERRING_STAY = 34;
+/** On an overlap trip the leak waits for the other person to reach the fax machine, at most this long. */
+const HERRING_WAIT = 30;
+const LEAK_THOUGHT_EVERY = 60;
+const NERVOUS_EVERY = 70;
+const WATCH_FOR = 170;
+const AT_FAX = 14;
+const POINTED_RE = /\b(fax|faxes|faxing|faxed|corporate|e-?mails?|leak|leaks|leaking|leaker|trac(e|es|ed|ing)|head office)\b/i;
+const WATCH_RE = /\b(watch|watching|keep an eye|eye on|stake ?out|spy|guard|look out|keep watch|monitor)\b/i;
+const FAX_WORD_RE = /\b(fax|faxes|annex)\b/i;
+/** Informants who do not report straight. */
+const SHAKY: Partial<Record<CastId, 'vague' | 'random' | 'jim'>> = { kevin: 'vague', creed: 'random', dwight: 'jim' };
+
+interface FaxTrip {
+  stage: 'herring' | 'leak' | 'atFax';
+  started: number;
+  herring: CastId | null;
+  herringThere: boolean;
+  arrivedAt: number;
+}
 
 class LeakRun implements ChapterRun {
-  private thoughtAt = 0;
-  private faxAt = 0;
   private triesLeft = 2;
   private accused: CharId[] = [];
-  private trips: { who: CastId; at: number; done: boolean; text: { doing: string; stay: string } }[] = [];
+  private ruled = new Set<CharId>();
+  private beeps: { at: number; there: CharId[] }[] = [];
+  private nextSend = 0;
+  private postponed = 0;
+  private trip: FaxTrip | null = null;
+  private quietUntil = 0;
+  private herrings: CastId[] = [];
+  private nervous: CastId[] = [];
+  private solo: { who: CastId; at: number; done: boolean }[] = [];
+  private thoughtAt = Infinity;
+  private nervousAt = 0;
+  private watchers = new Map<CastId, number>();
+  private echoes: { who: CharId; text: string; at: number }[] = [];
+  private gaps: readonly [number, number] = FAX_GAPS.normal;
 
   constructor(private c: ChapterCtx) {}
 
@@ -517,133 +565,414 @@ class LeakRun implements ChapterRun {
     return this.c.notes.leak;
   }
 
+  private faxPoint(): { x: number; y: number } {
+    return feetOf(anchor(FAX_SPOT).tile);
+  }
+
   setup(): void {
     const s = this.c.sim;
-    const name = displayName(this.leak);
-    s.setHiddenNote(this.leak, LEAK.hidden(name));
+    const rng = this.c.rng;
+    const leak = this.leak;
+    const lp = LEAK.person(leak);
+    s.setHiddenNote(leak, LEAK.hidden(displayName(leak), lp.motive));
     s.setFact('story.leak', LEAK.fact);
-    // Two innocent people also pop into the annex once or twice, for their own reasons.
-    const others = this.c.rng.shuffle(LEAK.candidates.filter((id) => id !== this.leak)).slice(0, 2);
-    others.forEach((who, i) => {
-      const n = i === 0 ? 2 : 1 + (this.c.rng() < 0.5 ? 1 : 0);
-      for (let k = 0; k < n; k++) {
-        this.trips.push({ who, at: DAY(10) + this.c.rng() * 6 * 60, done: false, text: LEAK.herrings[(i + k) % LEAK.herrings.length] });
-      }
-    });
-    this.thoughtAt = s.time + 25;
-    this.faxAt = s.time + 50;
+    const f = this.c.notes.figgis;
+    this.gaps = f === true ? FAX_GAPS.quiet : f === false ? FAX_GAPS.busy : FAX_GAPS.normal;
+    // Two innocent people with errands at the fax machine (not Kevin or Toby, who watch it from their desks).
+    this.herrings = rng.shuffle(LEAK.candidates.filter((id) => id !== leak && !LEAK.witnesses.includes(id))).slice(0, 2);
+    // Two more with something else to hide.
+    const rest = (Object.keys(CAST) as CastId[]).filter((id) => id !== leak && !this.herrings.includes(id));
+    this.nervous = rng.shuffle(rest).slice(0, 2);
+    for (const id of this.nervous) s.setHiddenNote(id, LEAK.nervousNote(displayName(id), CAST[id].persona.secret));
+    // Each errand runner also makes one trip on their own, later in the day.
+    for (const h of this.herrings) this.solo.push({ who: h, at: DAY(11, 20) + rng() * 4 * 60, done: false });
+    this.nextSend = s.time + FIRST_SEND;
+    this.nervousAt = s.time + 28;
   }
 
   update(): void {
     const s = this.c.sim;
+    this.echo();
     if (this.c.main() !== 'open') return;
-    const leak = s.person(this.leak);
-    if (s.time >= this.thoughtAt) {
-      this.thoughtAt = s.time + THOUGHT_EVERY;
-      const text = this.c.rng.pick(LEAK.thoughts);
-      s.setThought(this.leak, text);
-      if (leak && leak.present && leak.available && !leak.speaking && this.c.rng() < 0.6) s.say(this.leak, text, { kind: 'think', emotion: 'nervous' });
-    }
-    if (s.time >= this.faxAt) {
-      if (leak && leak.present && leak.available && !leak.plan && !leak.sceneId) {
-        s.goTo(this.leak, { room: 'annex' }, { doing: LEAK.fax.doing, stay: 12, stayDoing: LEAK.fax.stay });
-        this.faxAt = s.time + FAX_EVERY + this.c.rng() * 15;
-      } else {
-        this.faxAt = s.time + 5;
-      }
-    }
-    for (const t of this.trips) {
-      if (t.done || s.clock < t.at) continue;
+    this.sendLoop();
+    for (const t of this.solo) {
+      if (t.done || s.clock < t.at || this.trip?.herring === t.who) continue;
       const p = s.person(t.who);
       if (!p || !p.present) continue;
-      if (!p.available || p.sceneId) continue;
+      if (!p.available || p.sceneId || p.plan) continue;
       t.done = true;
-      s.goTo(t.who, { room: 'annex' }, { doing: t.text.doing, stay: 10, stayDoing: t.text.stay });
+      this.sendHerring(t.who, 14);
     }
+    if (s.time >= this.thoughtAt) {
+      this.thoughtAt = s.time + LEAK_THOUGHT_EVERY;
+      this.think(this.leak, this.c.rng.pick(LEAK.person(this.leak).thoughts), 0.4);
+    }
+    if (s.time >= this.nervousAt && this.nervous.length) {
+      this.nervousAt = s.time + NERVOUS_EVERY;
+      const who = this.c.rng.pick(this.nervous);
+      this.think(who, this.c.rng.pick(LEAK.person(who).secret), 0.4);
+    }
+    // Informants stay at their post (a chat may pull them away for a moment).
+    for (const [w, until] of this.watchers) {
+      if (s.time > until) {
+        this.watchers.delete(w);
+        continue;
+      }
+      const p = s.person(w);
+      if (p && p.present && p.available && !p.sceneId && p.room !== 'annex' && p.doing !== LEAK.fax.doing && p.doing !== LEAK.fax.stay) {
+        s.goTo(w, { anchor: WATCH_SPOT }, { doing: LEAK.watch.doing, stay: Math.max(10, until - s.time), stayDoing: LEAK.watch.stay });
+      }
+    }
+  }
+
+  /** A thought on their card, and now and then as a bubble on the floor. */
+  private think(who: CharId, text: string, bubble: number): void {
+    const s = this.c.sim;
+    const p = s.person(who);
+    s.setThought(who, text);
+    if (p && p.present && p.available && !p.speaking && this.c.rng() < bubble) s.say(who, text, { kind: 'think', emotion: 'nervous' });
+  }
+
+  /** Re-assert witness and informant thoughts for a while (the model's own thoughts may replace them). */
+  private echo(): void {
+    if (!this.echoes.length) return;
+    const now = this.c.sim.time;
+    const due = this.echoes.filter((e) => e.at <= now);
+    if (!due.length) return;
+    this.echoes = this.echoes.filter((e) => e.at > now);
+    for (const e of due) this.c.sim.setThought(e.who, e.text);
+  }
+
+  private remind(who: CharId, text: string): void {
+    const now = this.c.sim.time;
+    for (const dt of [15, 30, 45]) this.echoes.push({ who, text, at: now + dt });
+  }
+
+  // ── the pages ──
+
+  private sendLoop(): void {
+    const s = this.c.sim;
+    const leak = s.person(this.leak);
+    const t = this.trip;
+    if (!t) {
+      if (s.time < this.nextSend || s.time < this.quietUntil) return;
+      if (!leak || !leak.present || !leak.available || leak.plan || leak.sceneId) {
+        this.nextSend = s.time + 5;
+        return;
+      }
+      const n = this.beeps.length + 1;
+      let herring: CastId | null = n <= 2 ? this.herrings[n - 1] ?? null : this.c.rng() < 0.35 ? this.c.rng.pick(this.herrings) : null;
+      if (herring) {
+        const h = s.person(herring);
+        if (!h || !h.present || !h.available || h.sceneId) {
+          // The first two pages wait a little for their company; after that the leak goes alone.
+          if (n <= 2 && this.postponed < 8) {
+            this.postponed += 1;
+            this.nextSend = s.time + 5;
+            return;
+          }
+          herring = null;
+        }
+      }
+      this.postponed = 0;
+      this.trip = { stage: herring ? 'herring' : 'leak', started: s.time, herring, herringThere: false, arrivedAt: -1 };
+      if (herring) {
+        const who = herring;
+        this.sendHerring(who, HERRING_STAY, () => {
+          if (this.trip?.herring === who) this.trip.herringThere = true;
+        });
+      } else this.leakGoes();
+      return;
+    }
+    if (t.stage === 'herring') {
+      const waited = s.time - t.started;
+      if (t.herringThere || waited > HERRING_WAIT) {
+        if (leak && leak.present && leak.available && !leak.sceneId) this.leakGoes();
+        else if (waited > HERRING_WAIT + 25) this.abandon();
+      }
+      return;
+    }
+    if (t.stage === 'leak') {
+      // Picked up or pulled into a conversation on the way: try again soon.
+      if (s.time - t.started > 60) this.abandon();
+      return;
+    }
+    if (s.time >= t.arrivedAt + BEEP_AFTER) {
+      if (leak && leak.present && leak.doing === LEAK.fax.stay) this.beep();
+      else this.abandon();
+    }
+  }
+
+  private leakGoes(): void {
+    const t = this.trip;
+    if (!t) return;
+    t.stage = 'leak';
+    t.started = this.c.sim.time;
+    this.c.sim.goTo(this.leak, { anchor: FAX_SPOT }, {
+      doing: LEAK.fax.doing, stay: LEAK_STAY, stayDoing: LEAK.fax.stay,
+      then: () => {
+        if (this.trip === t && t.stage === 'leak') {
+          t.stage = 'atFax';
+          t.arrivedAt = this.c.sim.time;
+        }
+      }
+    });
+  }
+
+  private abandon(): void {
+    this.trip = null;
+    this.nextSend = this.c.sim.time + 12;
+  }
+
+  private sendHerring(who: CastId, stay: number, then?: () => void): void {
+    this.c.sim.goTo(who, { anchor: FAX_SPOT }, { doing: LEAK.fax.doing, stay, stayDoing: LEAK.fax.stay, then });
+    this.c.sim.setThought(who, LEAK.person(who).errand);
+  }
+
+  /** Everyone standing at the fax machine right now. */
+  private atFax(): CastId[] {
+    const f = this.faxPoint();
+    return this.c.sim.people()
+      .filter((p) => p.isCast && p.present && (p.doing === LEAK.fax.stay || p.doing === LEAK.shred.stay || near(p, f, AT_FAX)))
+      .map((p) => p.id as CastId);
+  }
+
+  private beep(): void {
+    const s = this.c.sim;
+    const n = this.beeps.length + 1;
+    const there = this.atFax();
+    if (!there.includes(this.leak)) there.unshift(this.leak);
+    this.beeps.push({ at: s.clock, there });
+    (this.c.notes.leakTimes ??= []).push(Math.floor(s.clock));
+    const f = this.faxPoint();
+    s.sfx('fax', f.x);
+    s.narrate(LEAK.beep(n, formatClock(s.clock)), { icon: 'phone', room: 'annex', beat: true });
+    s.setFact('story.leakBeeps', LEAK.beepsFact(n));
+    // A pile of paper by the fax machine that grows with every page.
+    if (n <= 4) s.addEffect({ id: `story-fax-paper-${n}`, kind: 'item', item: 'paperPile', x: f.x - 12 + (n % 2) * 7, y: f.y + 6 - Math.floor((n - 1) / 2) * 3 });
+    this.witnessesSee(there);
+    this.informantsReport(there);
+    if (n >= 2) this.c.setExtra('quick', 'lost');
+    if (n === 1) this.thoughtAt = s.time + 8;
+    this.trip = null;
+    this.nextSend = s.time + this.gaps[0] + this.c.rng() * (this.gaps[1] - this.gaps[0]);
+  }
+
+  private witnessesSee(there: CastId[]): void {
+    const s = this.c.sim;
+    for (const w of LEAK.witnesses) {
+      const p = s.person(w);
+      if (!p || !p.present || p.room !== 'annex' || there.includes(w)) continue;
+      const text = LEAK.witness(w, there.map((id) => displayName(id)));
+      s.setThought(w, text);
+      this.remind(w, text);
+      if (p.available && !p.speaking && this.c.rng() < 0.5) s.say(w, text, { kind: 'think', emotion: 'surprised' });
+    }
+  }
+
+  private informantsReport(there: CastId[]): void {
+    const s = this.c.sim;
+    for (const [w] of this.watchers) {
+      const p = s.person(w);
+      if (!p || !p.present || p.room !== 'annex' || there.includes(w)) continue;
+      const shaky = w === this.leak ? 'lie' : SHAKY[w];
+      let text: string;
+      if (shaky === 'vague') text = LEAK.vagueReport;
+      else if (shaky === 'jim') text = LEAK.dwightReport;
+      else if (shaky === 'random' || shaky === 'lie') {
+        const others = (Object.keys(CAST) as CastId[]).filter((id) => id !== w && id !== this.leak && id !== 'michael');
+        text = LEAK.report([displayName(this.c.rng.pick(others))]);
+      } else text = LEAK.report(there.map((id) => displayName(id)));
+      s.say(w, text, { kind: 'say', emotion: 'surprised' });
+      s.setThought(w, text);
+      this.remind(w, text);
+    }
+  }
+
+  // ── the tests ──
+
+  onChaosStart(e: ChaosStartInfo): void {
+    const who = e.target.who;
+    if (!who || this.c.main() !== 'open') return;
+    const s = this.c.sim;
+    if (e.id === 'truth') {
+      this.c.after(3, () => {
+        if (this.c.main() !== 'open') return;
+        const p = s.person(who);
+        if (!p || !p.present) return;
+        if (who === this.leak) {
+          this.c.script([{ who, text: LEAK.person(this.leak).confession, kind: 'shout', emotion: 'embarrassed' }], { room: p.room });
+          s.narrate(LEAK.confessed(p.name), { icon: 'truth', room: p.room, beat: true });
+          s.remember('all', LEAK.caughtFact(p.name), 2);
+        } else if (isCastId(who)) {
+          s.say(who, LEAK.person(who).denial, { kind: 'say', emotion: 'confused' });
+          s.narrate(LEAK.ruledOut(p.name, CAST[who].pronoun), { icon: 'truth', room: p.room, beat: true });
+          this.ruled.add(who);
+        }
+      });
+    }
+    if (e.id === 'paranoia' && this.beeps.length > 0) {
+      if (who === this.leak) {
+        this.c.after(3.5, () => {
+          if (this.c.main() !== 'open') return;
+          s.goTo(who, { anchor: FAX_SPOT }, {
+            style: 'run', doing: LEAK.shred.doing, stay: 15, stayDoing: LEAK.shred.stay,
+            then: () => {
+              if (this.c.main() === 'open') s.narrate(LEAK.shredding(displayName(who)), { icon: 'paranoia', room: 'annex', beat: true });
+            }
+          });
+        });
+      } else if (isCastId(who)) {
+        this.c.after(16, () => {
+          if (this.c.main() !== 'open' || !s.person(who)?.present) return;
+          s.narrate(LEAK.noShred(displayName(who)), { icon: 'paranoia', beat: true });
+          this.ruled.add(who);
+        });
+      }
+    }
+    if (e.id === 'secretLeak') {
+      if (who === this.leak) this.c.after(1, () => this.catch('exposed'));
+      else if (isCastId(who)) {
+        this.c.after(1.5, () => {
+          if (this.c.main() !== 'open') return;
+          s.narrate(LEAK.notInIt(displayName(who)), { icon: 'secretLeak', beat: true });
+          this.ruled.add(who);
+        });
+      }
+    }
+  }
+
+  onAction(a: PlayerAction): void {
+    if (this.c.main() !== 'open') return;
+    const s = this.c.sim;
+    if (a.kind === 'announce' && a.text && POINTED_RE.test(a.text)) {
+      // The leak lies low for a while; anyone with something to hide flinches as well.
+      this.quietUntil = Math.max(this.quietUntil, s.time + 70);
+      for (const id of [this.leak, ...this.nervous]) {
+        if (!s.person(id)?.present) continue;
+        s.emote(id, 'sweat');
+        s.feel(id, 'nervous', 0.9, 25);
+      }
+      s.narrate(LEAK.pointed, { icon: 'announce', beat: true });
+      return;
+    }
+    if ((a.kind === 'cue' || a.kind === 'whisper') && a.who && isCastId(a.who) && a.text && WATCH_RE.test(a.text) && FAX_WORD_RE.test(a.text)) {
+      const who = a.who;
+      this.watchers.set(who, s.time + WATCH_FOR + 20);
+      s.goTo(who, { anchor: WATCH_SPOT }, { doing: LEAK.watch.doing, stay: WATCH_FOR, stayDoing: LEAK.watch.stay });
+      s.narrate(LEAK.informant(displayName(who)), { icon: 'tell', room: 'annex' });
+    }
+  }
+
+  // ── accusing ──
+
+  accuse(who: CharId): void {
+    if (this.c.main() !== 'open' || this.accused.includes(who)) return;
+    const s = this.c.sim;
+    s.sfx('gavel');
+    if (who === this.leak) {
+      this.catch('accused');
+      return;
+    }
+    this.accused.push(who);
+    this.triesLeft -= 1;
+    const name = displayName(who);
+    s.narrate(LEAK.wrong(name), { icon: 'accuse', beat: true });
+    const p = s.person(who);
+    if (p?.present) s.say(who, isCastId(who) ? LEAK.person(who).denial : 'Me? I have never sent Corporate anything!', { kind: 'shout', emotion: 'angry' });
+    // Those close by take it to heart; the rest of the office just raises an eyebrow.
+    const close = new Set(p ? s.peopleNear(p.x, p.y, 140).map((o) => o.id) : []);
+    for (const o of s.people()) {
+      if (!o.isCast || o.id === who) continue;
+      s.shiftBond(o.id, who, close.has(o.id) ? -12 : -4, LEAK.wrongNote);
+    }
+    s.bumpMood(who, -0.3);
+    s.feel(who, 'angry', 0.9, 20);
+    s.remember('all', LEAK.wrongFact(name), 1.5);
+    s.setFact('story.leakWrong', LEAK.wrongFact(name));
+    if (isCastId(who)) {
+      const w = (this.c.notes.wronged ??= []);
+      if (!w.includes(who)) w.push(who);
+    }
+    this.ruled.add(who);
+    this.c.setExtra('firstTry', 'lost');
+    if (this.triesLeft <= 0) {
+      this.c.notes.leakFound = false;
+      this.c.sim.setFact('story.leak', LEAK.notCaughtFact);
+      this.c.lose([LEAK.outOfTries, this.itWas(), LEAK.motiveLine(LEAK.person(this.leak).motive)]);
+    }
+  }
+
+  private catch(how: 'accused' | 'exposed'): void {
+    if (this.c.main() !== 'open') return;
+    const s = this.c.sim;
+    const leak = this.leak;
+    const name = displayName(leak);
+    const lp = LEAK.person(leak);
+    const p = s.person(leak);
+    s.narrate(how === 'accused' ? LEAK.right(name) : LEAK.exposed(name), { icon: how === 'accused' ? 'accuse' : 'secretLeak', room: p?.room, beat: true });
+    const by = p ? s.peopleNear(p.x, p.y, 140).filter((o) => o.isCast && o.id !== leak && o.present && !s.isSeized(o.id)).map((o) => o.id) : [];
+    const lines: ScriptLine[] = [{ who: leak, text: lp.confession, kind: 'say', emotion: 'embarrassed' }];
+    if (by[0]) lines.push({ who: by[0], text: this.c.rng.pick(LEAK.reactions), kind: 'say', emotion: 'surprised', to: leak });
+    this.c.script(lines, { room: p?.room, then: 'model', why: LEAK.caughtWhy(name, lp.motive) });
+    s.setHiddenNote(leak, null);
+    for (const id of this.nervous) s.setHiddenNote(id, null);
+    s.setFact('story.leak', LEAK.caughtFact(name));
+    s.setFact('story.leakBeeps', null);
+    s.remember('all', LEAK.caughtFact(name), 2.5);
+    s.feel(leak, 'embarrassed', 0.9, 40);
+    for (const id of by.slice(0, 4)) s.feel(id, 'surprised', 0.7, 8);
+    this.c.notes.leakFound = true;
+    this.c.setExtra('firstTry', how === 'accused' && this.accused.length === 0 ? 'won' : 'lost');
+    this.c.setExtra('quick', this.beeps.length < 2 ? 'won' : 'lost');
+    this.c.win([how === 'accused' ? LEAK.right(name) : LEAK.exposed(name), LEAK.motiveLine(lp.motive)]);
+  }
+
+  private itWas(): string {
+    const leak = this.leak;
+    return LEAK.itWas(displayName(leak), CAST[leak].pronoun, this.beeps.map((b) => formatClock(b.at)));
   }
 
   atFive(): void {
     if (this.c.main() !== 'open') return;
     this.c.notes.leakFound = false;
-    this.c.lose([LEAK.nobody, LEAK.itWas(displayName(this.leak))]);
+    this.c.sim.setFact('story.leak', LEAK.notCaughtFact);
+    this.c.lose([LEAK.nobody, this.itWas(), LEAK.motiveLine(LEAK.person(this.leak).motive)]);
   }
 
   status(): { progress: number; status: string } {
     const st = this.c.main();
     if (st === 'won') return { progress: 1, status: `Caught: ${displayName(this.leak)}` };
     if (st === 'lost') return { progress: 0, status: 'The leak got away' };
-    return { progress: 0, status: `Find the leak, ${LEAK.tries(this.triesLeft)}` };
-  }
-
-  onChaosStart(e: ChaosStartInfo): void {
-    const who = e.target.who;
-    if (!who) return;
-    const s = this.c.sim;
-    if (e.id === 'truth') {
-      if (this.c.main() === 'open') this.c.setExtra('noSerum', 'lost');
-      this.c.after(3, () => {
-        if (this.c.main() !== 'open') return;
-        const p = s.person(who);
-        if (!p || !p.present) return;
-        if (who === this.leak) {
-          s.say(who, LEAK.confession, { kind: 'shout', emotion: 'embarrassed' });
-          s.narrate(LEAK.confessed(p.name), { icon: 'truth', room: p.room });
-          s.remember('all', LEAK.caughtFact(p.name), 2);
-        } else if (isCastId(who)) {
-          s.say(who, LEAK.denial, { kind: 'say', emotion: 'confused' });
-          s.narrate(LEAK.ruledOut(p.name, CAST[who].pronoun), { icon: 'truth', room: p.room });
-        }
-      });
-    }
-    if (e.id === 'paranoia' && who === this.leak) {
-      this.c.after(3.5, () => {
-        if (this.c.main() !== 'open') return;
-        s.goTo(who, { room: 'annex' }, { style: 'run', doing: LEAK.shred.doing, stay: 15, stayDoing: LEAK.shred.stay });
-      });
-    }
-  }
-
-  accuse(who: CharId): void {
-    if (this.c.main() !== 'open' || this.accused.includes(who)) return;
-    const s = this.c.sim;
-    const name = displayName(who);
-    if (who === this.leak) {
-      s.narrate(LEAK.right(name), { icon: 'accuse' });
-      s.say(who, 'All right. It was me. I am sorry.', { kind: 'say', emotion: 'embarrassed' });
-      const p = s.person(who);
-      const others = p ? s.peopleNear(p.x, p.y, 120).filter((o) => o.isCast && o.id !== who && o.available).slice(0, 2).map((o) => o.id) : [];
-      s.requestScene({ people: [who, ...others], trigger: 'event', why: LEAK.caughtWhy(name), priority: 9, minLines: 3, staleAfter: 40 });
-      s.setHiddenNote(who, null);
-      s.setFact('story.leak', LEAK.caughtFact(name));
-      s.remember('all', LEAK.caughtFact(name), 2.5);
-      this.c.notes.leakFound = true;
-      this.c.setExtra('firstTry', this.accused.length === 0 ? 'won' : 'lost');
-      if (this.c.extra('noSerum') === 'open') this.c.setExtra('noSerum', 'won');
-      this.c.win([LEAK.right(name)]);
-      return;
-    }
-    this.accused.push(who);
-    this.triesLeft -= 1;
-    s.narrate(LEAK.wrong(name), { icon: 'accuse' });
-    if (s.person(who)?.present) s.say(who, 'Me? I have never emailed Corporate in my life!', { kind: 'shout', emotion: 'angry' });
-    // The office turns on them, and they take it badly.
-    for (const p of s.people()) {
-      if (!p.isCast || p.id === who) continue;
-      s.shiftBond(p.id, who, -12, LEAK.wrongNote);
-    }
-    s.bumpMood(who, -0.3);
-    s.feel(who, 'angry', 0.9, 20);
-    s.remember('all', `${name} was accused of leaking to Corporate, and it was not true.`, 1.5);
-    this.c.setExtra('firstTry', 'lost');
-    if (this.triesLeft <= 0) {
-      this.c.notes.leakFound = false;
-      this.c.lose([LEAK.outOfTries, LEAK.itWas(displayName(this.leak))]);
-    }
+    return { progress: Math.min(1, this.beeps.length * 0.3 + this.ruled.size * 0.07), status: LEAK.status(this.beeps.length, this.ruled.size) };
   }
 
   accuseUi(): { triesLeft: number; accused: CharId[]; label: string } | null {
     if (this.c.main() !== 'open') return null;
     return { triesLeft: this.triesLeft, accused: [...this.accused], label: LEAK.label };
+  }
+
+  topics(): string[] {
+    if (this.c.main() === 'won') return [LEAK.topics.caught(displayName(this.leak))];
+    const out = [this.beeps.length ? LEAK.topics.beeps : LEAK.topics.start];
+    for (const w of this.c.notes.wronged ?? []) out.push(LEAK.topics.wronged(displayName(w)));
+    return out;
+  }
+
+  warns(): Partial<Record<ActionId, string>> {
+    if (this.c.main() !== 'open') return {};
+    return { secretLeak: LEAK.warns.secretLeak, announce: LEAK.warns.announce };
+  }
+
+  stakes(): number {
+    if (this.c.main() !== 'open') return 0.1;
+    const late = this.c.sim.clock >= DAY(16) ? 0.85 : 0;
+    return Math.max(late, Math.min(0.8, 0.3 + this.beeps.length * 0.12));
+  }
+
+  /** Read by tests. */
+  get facts(): { beeps: { at: number; there: CharId[] }[]; herrings: CastId[]; nervous: CastId[]; ruled: CharId[] } {
+    return { beeps: this.beeps.map((b) => ({ at: b.at, there: [...b.there] })), herrings: [...this.herrings], nervous: [...this.nervous], ruled: [...this.ruled] };
   }
 }
 
@@ -844,9 +1173,13 @@ export const CHAPTER_DEFS: readonly ChapterDef[] = [
     locked: {}, change: [CLIENT.changeWon, CLIENT.changeLost], create: (c) => new ClientRun(c)
   },
   {
-    chapter: 4, weekday: 'Thursday', title: LEAK.title, intro: LEAK.intro, hints: LEAK.hints, goal: LEAK.goal,
+    chapter: 4, weekday: 'Thursday', title: LEAK.title, intro: LEAK.intro, hints: LEAK.hints, help: LEAK.help, goal: LEAK.goal,
     extras: [{ ...LEAK.extras[0], atFive: 'lost' }, { ...LEAK.extras[1], atFive: 'lost' }],
-    locked: {}, change: [LEAK.changeWon, LEAK.changeLost], create: (c) => new LeakRun(c)
+    locked: {}, change: [LEAK.changeWon, LEAK.changeLost], suggest: LEAK.suggest,
+    // Today the tests that settle it outright are dear.
+    costs: { truth: 4, secretLeak: 4 },
+    recap: (n) => (n.figgis === true ? LEAK.recapQuiet : n.figgis === false ? LEAK.recapBusy : null),
+    create: (c) => new LeakRun(c)
   },
   {
     chapter: 5, weekday: 'Friday', title: VERDICT.title, intro: VERDICT.intro, hints: VERDICT.hints, goal: VERDICT.goal,
@@ -861,7 +1194,8 @@ export function weekFacts(notes: WeekNotes, chapter: number): [string, string][]
   if (chapter >= 2 && notes.closureKnown) out.push(['story.closure', MEMO.closure]);
   if (chapter >= 3 && notes.accounts !== undefined) out.push(['story.accounts', notes.accounts ? ROW.madeUp : ROW.lateFact]);
   if (chapter >= 4 && notes.figgis !== undefined) out.push(['story.figgis', notes.figgis ? CLIENT.signedFact : CLIENT.goneFact]);
-  if (chapter >= 5 && notes.leakFound) out.push(['story.leakCaught', LEAK.caughtFact(displayName(notes.leak))]);
+  if (chapter >= 5 && notes.leakFound !== undefined) out.push(['story.leakCaught', notes.leakFound ? LEAK.caughtFact(displayName(notes.leak)) : LEAK.notCaughtFact]);
+  if (chapter >= 5 && notes.wronged?.length) out.push(['story.leakWrong', LEAK.wrongFact(notes.wronged.map((id) => displayName(id)).join(' and '))]);
   return out;
 }
 

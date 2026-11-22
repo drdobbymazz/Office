@@ -79,6 +79,31 @@ describe('Try the day again', () => {
     expect(where(again)).toEqual(at10);
   });
 
+  it('trying Thursday again picks someone else as the leak, so the loss report does not give it away', async () => {
+    const store = memoryStore();
+    const story = Story.create(store, 86);
+    story.state.chapter = 4;
+    story.state.notesAtStart = { ...story.state.notes };
+    const g = play(story, store);
+    const first = story.state.notes.leak;
+    await g.toEnd();
+    story.finishDay(g.day, g.sim.serialize());
+    g.day.dispose();
+    expect(story.result?.won).toBe(false);
+    story.retry();
+    const second = story.state.notes.leak;
+    expect(second).not.toBe(first);
+    expect(story.state.notesAtStart.leak).toBe(second);
+    expect(story.state.tries[3]).toBe(1);
+    // And again, mid-day.
+    const again = play(story, store);
+    await again.toClock(10);
+    story.retry();
+    expect(story.state.notes.leak).not.toBe(second);
+    expect(story.state.tries[3]).toBe(2);
+    expect(story.ui(null).help.length).toBeGreaterThan(0);
+  });
+
   it('a day played after another starts from the end of the one before', async () => {
     const store = memoryStore();
     const story = Story.create(store, 85);

@@ -2,6 +2,7 @@
 // no-model brain: doing nothing loses, and three different plans win.
 import { describe, expect, it } from 'vitest';
 import { MEMO } from '@/game/story/text';
+import { STANDING } from '@/game/story';
 import { play, storyAt, type Played } from './harness';
 
 const othersInMeeting = (g: Played): number =>
@@ -25,7 +26,7 @@ describe('Monday: The Memo', () => {
     expect(g.story.state.notes.closureKnown).toBe(true);
     const r = g.story.finishDay(g.day, g.sim.serialize());
     expect(r.won).toBe(false);
-    expect(r.changes[0]).toEqual({ text: MEMO.changeLost, delta: -10 });
+    expect(r.changes[0]).toEqual({ text: MEMO.changeLost, delta: STANDING.lost });
     expect(r.text).toEqual([MEMO.missed]);
   });
 
