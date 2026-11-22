@@ -52,8 +52,8 @@ export interface Game extends GameApi {
 const SAVE_KEY = 'world.v2';
 /** Story days always run at the length they were balanced for. */
 const STORY_DAY_MINUTES = 10;
-/** How fast the rest of a story day runs after "Finish the day" (sim seconds per real second). */
-const FINISH_SPEED = 16;
+/** How fast the rest of a story day runs after "Finish the day" (sim seconds per real second): about 15 s from mid-morning. */
+const FINISH_SPEED = 40;
 const FEED_MAX = 300;
 const UI_TICK = 0.2;
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
