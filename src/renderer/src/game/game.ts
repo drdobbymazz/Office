@@ -115,7 +115,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     phase: 'title', paused: false, speed: 1, day: sim.day, weekday: sim.weekday, clock: sim.clock, dayProgress: sim.dayProgress,
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
-    settings, holding: null, targeting: null, inArtifact: false
+    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: null
   }));
   const set = store.setState;
   const get = store.getState;
@@ -531,6 +531,14 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       audio.setMusicMood({ menu: false });
       saveJson(SAVE_KEY, sim.serialize());
     },
+
+    // Story mode: stubs until the story engine is wired in.
+    startStory() { game.begin(); },
+    startSandbox() { game.begin(); },
+    beginChapter() { game.begin(); },
+    retryDay() { /* story engine */ },
+    accuse() { /* story engine */ },
+    toTitle() { /* story engine */ },
 
     triggerChaos,
     customEvent(text) {

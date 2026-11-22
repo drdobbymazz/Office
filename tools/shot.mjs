@@ -19,6 +19,9 @@
 //   --touch              emulate a touch device (hasTouch + isMobile)
 //   --quiet              do not print console messages from the page
 //
+// Safe by default: requests to the real model box are blocked, and a fresh page is
+// pointed at the stand-in model server on port 11500 (node tools/mock-ollama.mjs).
+//
 // Prints page console errors and uncaught exceptions, so a blank screenshot
 // usually comes with its reason. Exit code 1 if the page threw.
 
@@ -65,6 +68,20 @@ try {
     deviceScaleFactor: Number(opts.dpr),
     hasTouch: !!opts.touch,
     isMobile: !!opts.touch
+  });
+  // Never reach the real model box from a test (someone may be using it): requests to its
+  // addresses are refused, and a fresh page is pointed at the stand-in server
+  // (node tools/mock-ollama.mjs) before any of its own scripts run.
+  await context.route(/msi\.tail780d1f\.ts\.net|\bmsi\.lan\b|\bmsi\.local\b|192\.168\.1\.124|:11434\b/i, (route) => route.abort());
+  await context.addInitScript(() => {
+    try {
+      if (!localStorage.getItem('mdgame.settings.v1')) {
+        localStorage.setItem('mdgame.settings.v1', JSON.stringify({
+          brain: { provider: 'ollama', baseUrl: 'http://localhost:11500', model: 'artemis-custom', apiKey: '', temperature: 0.9, keepAlive: '30m', claudeTier: 'quick' },
+          tutorialDone: true
+        }));
+      }
+    } catch { /* storage blocked: the game falls back by itself */ }
   });
   const page = await context.newPage();
   if (!opts.quiet) {

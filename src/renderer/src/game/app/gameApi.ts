@@ -16,8 +16,84 @@ import type { AudioVolumes } from '@/game/audio/api';
 
 export type GamePhase =
   | 'title'     // title screen, nothing running
+  | 'briefing'  // story mode: the chapter card before the day starts
   | 'playing'
-  | 'report';   // end-of-day report is showing
+  | 'report'    // end-of-day report is showing
+  | 'ending';   // story mode: the week is over, the ending card is showing
+
+export type GameMode = 'sandbox' | 'story';
+
+// ── Story mode ("Closing Time": five days, one main job a day) ──────────────
+
+/** Everything an action can cost in story mode, keyed by power id or one of the four tools. */
+export type ActionId = ChaosId | 'whisper' | 'announce' | 'cue' | 'anything';
+
+export interface StoryGoalUi {
+  id: string;
+  /** "All hands for the call" */
+  title: string;
+  /** One plain sentence saying exactly what to make happen. */
+  detail: string;
+  /** A GIcon name. */
+  icon: string;
+  /** 0..1 */
+  progress: number;
+  /** A short live line, a few words: "7 of 10 in the room, Michael not yet". Empty when nothing to say. */
+  status: string;
+  state: 'open' | 'won' | 'lost';
+}
+
+export interface StandingChangeUi {
+  /** Plain cause: "The call with Corporate went ahead", "2 incidents were reported". */
+  text: string;
+  /** Points of standing, + or -. */
+  delta: number;
+}
+
+export interface StoryUi {
+  /** 1..chapters */
+  chapter: number;
+  chapters: number;
+  /** "The Memo" */
+  title: string;
+  /** "Monday" */
+  weekday: string;
+  /** Chapter card paragraphs, plain words. */
+  intro: string[];
+  /** Short tips on ways to approach today's job (shown on the card and in the Director tab). */
+  hints: string[];
+  goal: StoryGoalUi;
+  /** Optional extra goals for the day (each worth some standing). */
+  side: StoryGoalUi[];
+  /** 0..100: how likely Corporate is to keep the branch open. */
+  standing: number;
+  /** Today's budget for powers and tools. Picking people up and poking are free. */
+  influence: { left: number; max: number };
+  /** What each action costs today. Missing = free. */
+  costs: Partial<Record<ActionId, number>>;
+  /** Powers not available today, with the plain reason. */
+  locked: Partial<Record<ChaosId, string>>;
+  /** When the player may accuse someone (Thursday): tries left and who was already accused. Otherwise null. */
+  accuse: { triesLeft: number; accused: CharId[]; label: string } | null;
+  /** Filled in when the day ends, for the report. */
+  result: {
+    won: boolean;
+    /** What happened, plain sentences. */
+    text: string[];
+    changes: StandingChangeUi[];
+    standingBefore: number;
+    standingAfter: number;
+  } | null;
+  /** After the last chapter: how the week ended. */
+  ending: {
+    id: 'saved' | 'scraped' | 'closed';
+    /** "THE BRANCH STAYS OPEN" */
+    title: string;
+    text: string[];
+  } | null;
+  /** The whole week at a glance. */
+  week: { chapter: number; title: string; weekday: string; result: 'won' | 'lost' | null }[];
+}
 
 /** Live summary of one person, for chips, pickers and the roster. */
 export interface PersonUi {
@@ -200,6 +276,11 @@ export interface UiState {
   targeting: TargetingUi | null;
   /** Running inside a claude.ai Artifact (no network: only Claude or instinct can be the brain). */
   inArtifact: boolean;
+  mode: GameMode;
+  /** Story mode state; null in the sandbox. */
+  story: StoryUi | null;
+  /** A story in progress that can be continued from the title screen, or null. */
+  storySaved: { chapter: number; chapters: number; title: string; weekday: string; standing: number } | null;
 }
 
 export interface TargetingUi {
@@ -231,8 +312,22 @@ export interface GameApi {
   begin(): void;
   setPaused(paused: boolean): void;
   setSpeed(speed: 1 | 2): void;
-  /** From the report screen: start the next day. */
+  /** From the report screen: start the next day (story mode: the next chapter's card, or the ending). */
   nextDay(): void;
+
+  // ── story mode ──
+  /** From the title screen: play the story. fresh = start a new week even if one is saved. */
+  startStory(fresh?: boolean): void;
+  /** From the title screen: free play with no goals or budget. */
+  startSandbox(): void;
+  /** From the chapter card: start the day. Call from a tap (unlocks audio). */
+  beginChapter(): void;
+  /** From the report (story mode): play the same day again from its start. */
+  retryDay(): void;
+  /** Story mode, when allowed (StoryUi.accuse): name someone. */
+  accuse(who: CharId): void;
+  /** Back to the title screen (from the ending, or to switch mode). */
+  toTitle(): void;
 
   // ── overseer powers ──
   /** Start an event. Resolves to null on success or a plain reason why not ("Still cooling down"). */

@@ -177,7 +177,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       { id: 'o3', title: 'Steady hands', detail: 'Keep morale above 50 until 5pm.', progress: 1, done: true, icon: 'stock' }
     ],
     toasts: [], report: null, settings: baseSettings, holding: null, targeting: null,
-    inArtifact: !!opts.inArtifact
+    inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null
   }));
 
   function personUi(m: Mover): PersonUi {
@@ -424,6 +424,13 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     store,
     camera,
     begin() { store.setState({ phase: 'playing', paused: false }); },
+    // Story mode: stubs until the story screens are built.
+    startStory() { store.setState({ phase: 'playing', paused: false }); },
+    startSandbox() { store.setState({ phase: 'playing', paused: false }); },
+    beginChapter() { store.setState({ phase: 'playing', paused: false }); },
+    retryDay() { /* story screens */ },
+    accuse() { /* story screens */ },
+    toTitle() { store.setState({ phase: 'title' }); },
     setPaused(paused) { store.setState({ paused }); },
     setSpeed(speed) { store.setState({ speed }); },
     nextDay() {
