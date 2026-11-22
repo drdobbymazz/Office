@@ -12,11 +12,11 @@ const othersInMeeting = (g: Played): number =>
 const WIN: Record<number, (g: Played) => Promise<void>> = {
   1: async (g) => {
     await g.toClock(14);
-    for (let i = 0; i < 3 && othersInMeeting(g) < 9; i++) {
+    for (let i = 0; i < 3 && othersInMeeting(g) < 11; i++) {
       g.announce('Everyone to the conference room, now!');
-      await g.until(() => othersInMeeting(g) >= 9, 16);
+      await g.until(() => othersInMeeting(g) >= 11, 16);
     }
-    await g.drop('michael', 'spot.meet8');
+    await g.drop('michael', 'spot.meet15');
   },
   2: async (g) => {
     await g.toClock(9, 10);
@@ -30,8 +30,8 @@ const WIN: Record<number, (g: Played) => Promise<void>> = {
   },
   3: async (g) => {
     await g.toClock(10, 33);
+    await g.drop('stanley', 'spot.meet10');
     await g.drop(FIGGIS, 'spot.meet8');
-    await g.drop('dwight', 'spot.meet10');
   },
   4: async (g) => {
     let seen: string | null = null;
@@ -73,7 +73,7 @@ describe('saving the story', () => {
     expect(ui.intro).toEqual(MEMO.intro);
     expect(ui.hints).toEqual(MEMO.hints);
     expect(ui.goal).toMatchObject({ id: 'call', title: 'All hands for the call', state: 'open', status: MEMO.before });
-    expect(ui.side.map((x) => x.title)).toEqual(['Quiet hands', 'Calm Monday']);
+    expect(ui.side.map((x) => x.title)).toEqual(['Quiet hands', 'Full room']);
     expect(ui.influence).toEqual({ left: 8, max: 8 });
     expect(ui.costs.whisper).toBe(1);
     expect(ui.costs.fire).toBe(4);

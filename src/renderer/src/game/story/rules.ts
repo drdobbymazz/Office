@@ -9,7 +9,7 @@ import { CHAOS } from '@/game/core/chaos';
 import { CHANGES } from './text';
 
 /** Influence for each day of the week, Monday first. */
-export const BUDGETS = [8, 8, 9, 7, 10] as const;
+export const BUDGETS = [8, 8, 6, 7, 10] as const;
 export const CHAPTERS = 5;
 
 /** Branch Standing at the start of the week. */

@@ -12,37 +12,99 @@ export const MEMO = {
   title: 'The Memo',
   intro: [
     'Corporate is closing one of its branches on Friday, and this one is on the list. Michael got the memo this morning. He has told nobody and shut himself in his office.',
-    'At 15:00 the regional vice president will phone the conference room to explain. If Michael and most of the staff are not in that room, Corporate will take it as a sign that nobody here cares.',
+    'Between 14:00 and 15:00 the regional vice president will phone the conference room to explain. He will only talk to a room with Michael and at least 9 of the staff in it. Anything less, and Corporate will decide that nobody here cares.',
     'You are the unseen force in this building. You cannot speak to them, but you can move them, put thoughts in their heads and make things happen.'
   ],
   goal: {
     id: 'call', title: 'All hands for the call', icon: 'meeting',
-    detail: 'Get Michael and at least 9 others into the conference room at the same time, between 14:00 and 15:00.'
+    detail: 'Get Michael and at least 9 others into the conference room at the same time, between 14:00 and 15:00.',
+    stamp: ['CALL MADE', 'CALL MISSED'] as [string, string], room: 'meeting' as const
   },
+  /** Clues for the card: what to notice, not what to do. */
   hints: [
-    'Michael thinks hiding in his office makes the closure less real. His card in People shows what he believes.',
-    'An announcement that names a room sends people there. Not everyone listens.',
-    'People you drop somewhere stay put for a little while.',
-    'Whispering to someone replaces what they were sure of.'
+    'Michael has not left his office since nine. His card says why.',
+    'An announcement that names a room sends people there, if they feel like going. Count who turns up.',
+    'Some people will not come just because they are asked. Their cards say what would move them.',
+    'Michael threw something in the bin this morning. Not everyone minds their own business.'
+  ],
+  /** Recipes, shown only after a failed try or a retry. */
+  help: [
+    'From about 13:30, announce "Everyone to the conference room, please." People wait there for over an hour.',
+    'Carry Michael into the room last, once the others are there. Left alone, he slips back to his office.',
+    'Or whisper Michael a new idea that names the conference room, and he goes there by himself.',
+    'At about 10:20 Creed goes through Michael\'s bin. Whisper him something else to think about, or carry him away, and the memo stays secret.',
+    'If the memo gets out: Kevin comes for food, Ryan comes when asked by name, and Kelly goes wherever Ryan goes.'
   ],
   extras: [
     { id: 'quiet', title: 'Quiet hands', icon: 'poke', detail: 'Win the call without a power, Anything or Tell them to. Whispers, announcements and your hand only.' },
-    { id: 'calm', title: 'Calm Monday', icon: 'check', detail: 'Get through the day without a single incident.' }
+    { id: 'full', title: 'Full room', icon: 'people', detail: 'Have at least 12 others in the room with Michael when the phone rings.' }
   ],
   locked: { meeting: 'Michael has cancelled every meeting today.' },
-  conviction: 'If I stay in my office, the closure is not real.',
+  conviction: 'If I stay in my office, today will be a normal day.',
   hidden: 'Michael knows Corporate may close the branch on Friday and is hiding it.',
   hiding: 'hiding in his office',
+  toOffice: 'hurrying back to his office',
   fact: 'Michael has shut himself in his office and is not taking visitors.',
-  before: 'The call is at 15:00',
+  topicHiding: 'Michael has not come out of his office all day.',
+  topicCancelled: 'Michael has cancelled every meeting today.',
+  before: 'Corporate rings between 14:00 and 15:00',
+  two: 'It is 14:00. The vice president rings as soon as Michael and 9 others are in the conference room.',
+  late: 'It is 14:45. At 15:00 the vice president gives up and hangs up.',
+  slipBack: 'Michael slips back to his office.',
+  freed: 'Michael stops hiding and comes out of his office.',
   ring: 'The phone rings in the conference room. Michael puts the vice president on speaker.',
-  sceneWhy: 'The regional vice president is on the speakerphone in the conference room, explaining that Corporate will close one branch on Friday and that this branch is on the list.',
+  vp: 'The vice president',
+  call: {
+    hello: 'Good afternoon, everyone. I will keep this short.',
+    news: 'Corporate is closing one branch on Friday, and yours is on the list.',
+    michael: 'On the list. Not closed. A list is just a list.',
+    inspector: 'Our inspector visits on Friday. Show us this branch is worth keeping.',
+    staff: 'Friday. That is four days.',
+    rally: 'Nobody panic. We have four days, and we have me.'
+  },
+  sceneWhy: 'The regional vice president has just told the office on the speakerphone that the branch may close on Friday, and that an inspector visits on Friday.',
   closure: 'Everyone now knows Corporate may close this branch on Friday.',
   won: 'The call with Corporate went ahead, and the whole office heard it together.',
   missed: 'At 15:00 the vice president phoned an almost empty conference room and hung up after a minute.',
   lockedOut: 'After being shut in the conference room, Michael gives up on hiding. He stays there.',
   changeWon: 'The call with Corporate went ahead',
-  changeLost: 'Nobody was there for the call'
+  changeLost: 'Nobody was there for the call',
+  warnQuiet: 'Using this fails Quiet hands.',
+  // The bin, and what happens if the memo gets out.
+  bin: {
+    goes: 'Creed is going through the bin outside Michael\'s office.',
+    going: 'heading for Michael\'s bin',
+    searching: 'going through Michael\'s bin',
+    stopped: 'Creed wanders off without finding anything in the bin.',
+    found: 'Creed found Michael\'s memo in the bin. Now everyone is whispering that a branch is closing.',
+    fact: 'Creed found a memo in Michael\'s bin. People are whispering that a branch is closing.',
+    topic: 'Creed found a memo in Michael\'s bin saying a branch is closing.'
+  },
+  stragglers: [
+    {
+      id: 'kevin' as CastId,
+      conviction: 'If there are going to be layoffs, I am staying by the snacks. Only food would get me out of here.',
+      doing: 'guarding the snacks', going: 'heading for the snacks', at: { room: 'kitchen' as const },
+      beat: 'Kevin has gone to stand by the snacks in the break room.'
+    },
+    {
+      id: 'ryan' as CastId,
+      conviction: 'I am updating my CV in the annex. I will only come out if someone asks for me by name.',
+      doing: 'updating his CV', going: 'slipping off to the annex', at: { anchor: 'spot.annex2' },
+      beat: 'Ryan is hiding in the annex, updating his CV.'
+    },
+    {
+      id: 'kelly' as CastId,
+      conviction: 'I am not going anywhere unless Ryan goes too.',
+      doing: 'sticking close to Ryan', going: 'following Ryan', at: { near: 'ryan' as CastId },
+      beat: 'Kelly has followed Ryan into the annex.'
+    }
+  ],
+  kellyFollows: 'Kelly follows Ryan to the conference room.',
+  suggest: {
+    announce: ['Everyone to the conference room for the call, please.'],
+    whisper: ['I should be in the conference room at two.']
+  }
 };
 
 // ── Tuesday: Not Speaking ────────────────────────────────────────────────────
@@ -52,33 +114,70 @@ export const ROW = {
   intro: [
     "Corporate wants the quarter's accounts by 17:00. Angela, Oscar and Kevin do the accounts.",
     'Angela and Oscar had a row yesterday about the figures and are not speaking. Kevin cannot finish alone.',
-    'Get Angela and Oscar back on good terms before five, so the accounts go in on time.'
+    'Get Angela and Oscar talking again before five, so the accounts go in on time.'
   ],
   goal: {
     id: 'makeup', title: 'Make up', icon: 'love',
-    detail: 'Before 17:00, get Angela to like Oscar and Oscar to like Angela (both feelings at +15 or better).'
+    detail: 'Before 17:00, get Angela and Oscar through 3 talks that go well, or get them to like each other again.',
+    stamp: ['MADE UP', 'NOT SPEAKING'] as [string, string], room: 'accounts' as const
   },
   hints: [
-    'Every real conversation between the two of them helps. One they were pushed into helps more.',
-    'Dwight is sure Oscar is plotting against Angela, and keeps telling her so. His card in People shows it.',
-    'Two people locked in a room have to talk to each other.',
-    "Cupid's Arrow makes one person fall for another for a while."
+    "Angela's opinion of Oscar keeps getting worse. Someone has been talking to her.",
+    'A talk helps, most of all one they did not choose to have.',
+    'Two people stuck in a room together have to talk.',
+    'Read their cards. What each of them likes, or cannot stand, could bring them together.'
+  ],
+  help: [
+    'Dwight keeps telling Angela that Oscar is plotting against her. Whisper Dwight a kinder idea about Oscar.',
+    'Whisper Angela and Oscar the idea of making peace with each other, and use Tell them to: "Go and make peace with Oscar."',
+    'Locked In shuts them in the conference room together. Cupid\'s Arrow makes one fall for the other for a while.',
+    'A surprise party for one with the other in the room, Truth Serum on either of them, or a raccoon in the accounting corner all bring them closer.',
+    'After lunch Kevin starts worrying Oscar about the deadline. Change his mind too.'
   ],
   extras: [
-    { id: 'stirring', title: 'Who keeps stirring?', icon: 'whisper', detail: "Change Dwight's mind about Oscar's plot." },
-    { id: 'team', title: 'The accounts team', icon: 'people', detail: 'Once they have made up, get Angela, Oscar and Kevin into the accounting corner together.' }
+    { id: 'stirring', title: 'Who keeps stirring?', icon: 'whisper', detail: 'Find who keeps turning Angela against Oscar, and change their mind.' },
+    { id: 'kind', title: 'Kind words only', icon: 'quote', detail: 'Make up without Locked In or Cupid\'s Arrow.' }
   ],
   bondNote: 'the row about the accounts',
   fact: "Corporate wants the quarter's accounts by 17:00. Angela and Oscar are not speaking after a row about the figures.",
   dwight: 'Oscar is plotting to get Angela fired.',
   gossip: "Oscar's plot",
+  dwightWarns: 'Dwight warns Angela about Oscar\'s plot again. She trusts Oscar a little less.',
+  kevin: 'Angela is going to blame Oscar for the late accounts.',
+  kevinGossip: 'Angela blaming Oscar for the late accounts',
+  kevinStarts: 'After lunch Kevin starts worrying out loud about the deadline. He keeps going over to Oscar.',
+  kevinWarns: 'Kevin tells Oscar that Angela will blame him for the late accounts. Oscar goes quiet again.',
+  talkPushed: 'Angela and Oscar have a proper talk. It goes well.',
+  talkChat: 'Angela and Oscar exchange a few polite words.',
   lockedTalk: 'Angela and Oscar were locked in together. They had to talk.',
+  party: (who: string, other: string) => `${other} brings ${who} a slice of the birthday cake. ${who} almost smiles.`,
+  truthOscar: 'Oscar cannot lie, and says he misses working with Angela. Word gets back to her.',
+  truthAngela: "Angela cannot lie, and admits Oscar's figures were right. Oscar hears about it.",
+  enemy: (thing: string) => `Angela and Oscar team up against the ${thing}.`,
+  puppy: 'Angela cannot stand the puppy. Oscar takes her side, and she notices.',
+  status: (n: number) => `Talks that went well: ${n} of 3`,
+  scene: {
+    angela: 'Your figures were right, Oscar.',
+    oscar: 'And your summary was clearer than mine.',
+    kevin: 'So can we finish the accounts now? I am hungry.'
+  },
   won: 'Angela and Oscar are speaking again. They sit down with Kevin to finish the accounts.',
   madeUp: 'Angela and Oscar have made up.',
   lost: 'The accounts went to Corporate late, with two sets of figures that do not match.',
   lateFact: "The quarter's accounts went to Corporate late.",
   changeWon: 'The accounts went in on time',
-  changeLost: 'The accounts went in late'
+  changeLost: 'The accounts went in late',
+  warnKind: 'Using this fails Kind words only.',
+  topicRow: 'Angela and Oscar are not speaking after a row about the figures.',
+  topicDue: 'The accounts are due at five.',
+  topicDwight: 'Dwight keeps saying Oscar is plotting against Angela.',
+  topicMadeUp: 'Angela and Oscar are speaking again.',
+  recapCall: 'Yesterday the vice president told the whole office that the branch may close on Friday.',
+  recapNoCall: 'Yesterday nobody was there for Corporate\'s call, but the news that the branch may close got round anyway.',
+  suggest: {
+    announce: ['Angela and Oscar, please come to the conference room.'],
+    whisper: ['Maybe I was wrong about Oscar.', 'Life is too short to stay angry.']
+  }
 };
 
 // ── Wednesday: The Client ────────────────────────────────────────────────────
@@ -87,21 +186,29 @@ export const CLIENT = {
   title: 'The Client',
   intro: [
     "Mr Figgis of Figgis Hardware, the branch's biggest customer, comes at 10:30 to decide whether to sign for another year. Without him the branch has no chance on Friday.",
-    'He is easily annoyed. Get him into the conference room with a salesperson while he is still in a good mood.'
+    'He is easily annoyed, and his patience starts running out the moment he walks in. Get him into a meeting with the right salesperson while he is still willing to talk business.'
   ],
   goal: {
     id: 'sign', title: 'Sign Mr Figgis', icon: 'coin',
-    detail: 'Get Mr Figgis and a salesperson together in the conference room (or Michael\'s office) for a while, before his patience drops below 50.'
+    detail: "Get Mr Figgis and a salesperson together in the conference room (or Michael's office) for a while. Under 50 patience he will not talk business.",
+    stamp: ['SIGNED', 'NO DEAL'] as [string, string], room: 'meeting' as const
   },
   hints: [
-    'His card in People says what he likes and what he cannot stand.',
-    'Salespeople: Jim, Dwight, Phyllis, Stanley and Andy. Michael is not one today, whatever he thinks.',
-    'A disaster anywhere near him costs patience.',
-    'Michael is sure he can close the deal himself, and keeps going over to try. Mr Figgis cannot stand his jokes.'
+    'His card says what he loves and what he cannot stand.',
+    'Not every salesperson suits him. Think about how each of them sells.',
+    'Michael is sure he can close the deal himself. Give him something else to think about.',
+    'A disaster anywhere near him costs patience.'
+  ],
+  help: [
+    'As soon as he arrives, announce "Mr Figgis and Jim, please come to the conference room." Phyllis and Stanley work too.',
+    'Andy tells jokes and Dwight shouts. Mr Figgis hates both, so they only win him over when he is in a very good mood.',
+    'The Office Puppy in the room where he is cheers him up a lot. So does a dog brought in with Anything.',
+    'Whisper anything to Michael and he stops bothering Mr Figgis.',
+    'You can also tell a salesperson to take Mr Figgis to the conference room.'
   ],
   extras: [
-    { id: 'dog', title: 'Dog person', icon: 'puppy', detail: 'Use the Office Puppy in the room where Mr Figgis is.' },
-    { id: 'handsOff', title: 'Hands off', icon: 'poke', detail: 'Never pick Mr Figgis up.' }
+    { id: 'dog', title: 'Dog person', icon: 'puppy', detail: 'Bring a dog to the room where Mr Figgis is.' },
+    { id: 'michael', title: 'Keep Michael away', icon: 'door', detail: 'Michael never talks to Mr Figgis.' }
   ],
   name: 'Mr Figgis',
   role: 'Owner, Figgis Hardware',
@@ -112,17 +219,77 @@ export const CLIENT = {
   fact: "Mr Figgis of Figgis Hardware, the branch's biggest customer, is coming at 10:30 to decide whether to sign for another year.",
   waitingFact: 'Mr Figgis, the branch\'s biggest customer, is waiting in reception. He is easily annoyed.',
   before: 'Mr Figgis arrives at 10:30',
-  arrives: 'Mr Figgis from Figgis Hardware walks in and waits in reception.',
+  arrives: 'Mr Figgis from Figgis Hardware walks in. His patience starts running out now.',
+  arrivesLate: 'Mr Figgis from Figgis Hardware walks in. He has heard the accounts went in late yesterday, and his patience is already short.',
   waiting: 'waiting in reception',
   meddle: 'the deal he is sure he can close',
+  meddled: 'Michael tells Mr Figgis a joke. Mr Figgis does not laugh.',
+  fedUp50: 'Mr Figgis is getting fed up. Under 50 patience he will not talk business. Cheer him up first.',
+  tooAnnoyed: 'Mr Figgis is too annoyed to talk business. Cheer him up first.',
+  statusAnnoyed: (p: number) => `Patience ${p}: too annoyed to talk business`,
+  sitsDown: (sales: string, room: string) => `${sales} sits down with Mr Figgis in ${room}.`,
   pitchWhy: (sales: string) => `Mr Figgis has sat down with ${sales} to decide whether Figgis Hardware signs for another year. He wants a straight answer and a fair price.`,
+  rough: {
+    andy: 'Andy opens with a joke. Mr Figgis does not laugh.',
+    dwight: 'Dwight raises his voice. Mr Figgis winces.'
+  } as Record<string, string>,
+  lostHim: (sales: string) => `${sales} has lost him. Mr Figgis has heard enough for now.`,
+  takesOver: (sales: string, from: string) => `${sales} takes over from ${from}.`,
+  pitch: {
+    jim: [
+      ['jim', 'Mr Figgis, same price as last year, and we deliver on Fridays. That is it.'],
+      ['figgis', 'No speech? No jokes?'],
+      ['jim', 'No jokes. Just paper.'],
+      ['figgis', 'Good. That is what I came for.']
+    ],
+    phyllis: [
+      ['phyllis', 'Mr Figgis, I know your shop. You need paper on time, at a fair price.'],
+      ['figgis', 'Go on.'],
+      ['phyllis', 'Same price as last year, and I will look after your orders myself.'],
+      ['figgis', 'That is a straight answer. Thank you.']
+    ],
+    stanley: [
+      ['stanley', 'Same price. Same paper. Sign here.'],
+      ['figgis', 'That is it?'],
+      ['stanley', 'That is it.'],
+      ['figgis', 'Finally, someone who gets it.']
+    ],
+    andy: [
+      ['andy', 'Mr Figgis! Why did the paper go to school? To get a little more ruled!'],
+      ['figgis', 'I did not come here for jokes.'],
+      ['andy', 'Ha. Right. Totally. So, about the price...'],
+      ['figgis', 'Get to the point, young man.']
+    ],
+    dwight: [
+      ['dwight', 'MR FIGGIS. OUR PAPER IS THE STRONGEST PAPER IN PENNSYLVANIA.'],
+      ['figgis', 'Please stop shouting.'],
+      ['dwight', 'I AM NOT SHOUTING. I AM SELLING.'],
+      ['figgis', 'You are doing both.']
+    ]
+  } as Record<string, [string, string][]>,
   signed: 'Mr Figgis signed for another year.',
+  signedRough: 'Mr Figgis signed for another year, mostly to make it stop.',
   signedFact: 'Figgis Hardware has signed for another year.',
   fedUp: 'Mr Figgis has had enough and walks out.',
   late: 'Mr Figgis has another appointment and leaves without signing.',
   goneFact: 'Figgis Hardware, the biggest customer, walked away without signing.',
+  escort: (sales: string, room: string) => `${sales} takes Mr Figgis to ${room}.`,
+  fetching: 'going to fetch Mr Figgis',
+  dogAnything: 'Mr Figgis kneels down to pat the dog. For a moment he almost smiles.',
+  warnDisaster: 'A disaster near Mr Figgis costs a lot of patience.',
+  warnDisco: 'Loud music annoys Mr Figgis.',
+  topicComing: 'Mr Figgis from Figgis Hardware is coming at half past ten to decide whether to sign again.',
+  topicWaiting: 'Mr Figgis is waiting in reception and does not look happy.',
+  topicSigned: 'Figgis Hardware signed for another year.',
+  topicGone: 'Mr Figgis walked out without signing.',
+  recapAccounts: 'Yesterday Angela and Oscar made up, and the accounts went in on time.',
+  recapLate: 'Yesterday the accounts went in late, and Mr Figgis has heard about it.',
   changeWon: 'Figgis Hardware signed for another year',
-  changeLost: 'Figgis Hardware walked away'
+  changeLost: 'Figgis Hardware walked away',
+  suggest: {
+    announce: ['Mr Figgis, please come to the conference room.'],
+    whisper: ['I should look after Mr Figgis myself.', 'I have paperwork to finish in my office.']
+  }
 };
 
 // ── Thursday: The Leak ───────────────────────────────────────────────────────

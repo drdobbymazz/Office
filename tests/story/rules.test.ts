@@ -18,7 +18,7 @@ describe('costs and budgets', () => {
     expect(powerCost('lockIn')).toBe(3);
     expect(powerCost('fire')).toBe(4);
     expect(allCosts().truth).toBe(2);
-    expect(BUDGETS).toEqual([8, 8, 9, 7, 10]);
+    expect(BUDGETS).toEqual([8, 8, 6, 7, 10]);
   });
 });
 
