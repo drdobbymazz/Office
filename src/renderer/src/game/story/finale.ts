@@ -80,8 +80,9 @@ export class FinaleScene {
     });
   }
 
+  /** The vice president rings with the verdict, a moment after the ending's sting. */
   private call(text: string): void {
-    this.at(0, () => {
+    this.at(1.2, () => {
       this.sim.sfx('phoneRing');
       this.sim.narrate(FINALE.vp(text), { icon: 'phone', room: 'boss', beat: true });
     });
@@ -101,61 +102,58 @@ export class FinaleScene {
   private saved(): number {
     const room: RoomId = 'meeting';
     this.call(FINALE.saved.vp);
-    this.say(3.2, 'michael', FINALE.saved.michael, 'shout', 'happy');
-    this.gather(4, room, FINALE.saved.doing, () => this.staff());
-    this.at(7.5, () => {
+    this.say(4.4, 'michael', FINALE.saved.michael, 'shout', 'happy');
+    this.gather(5.2, room, FINALE.saved.doing, () => this.staff());
+    this.at(8.7, () => {
       const c = roomCentrePx(room);
-      this.sim.sfx('endingSaved');
       this.sim.addEffect({ id: 'finale-balloons', kind: 'balloons', room, count: 8 });
       this.sim.addEffect({ id: 'finale-confetti', kind: 'rain', room, what: 'confetti', rate: 0.7 });
       this.sim.fx({ kind: 'burst', what: 'confetti', x: c.x, y: c.y, count: 24 });
     });
-    this.at(8.5, () => {
+    this.at(9.7, () => {
       for (const id of this.staff()) if (this.sim.person(id)?.room === room && this.sim.rng() < 0.7) this.sim.react(id, 'cheer', 2);
     });
     const lines = [...FINALE.saved.lines];
     if (this.notes.leakFound && this.notes.leak) lines.splice(1, 0, { who: this.notes.leak, text: FINALE.saved.leak });
-    lines.forEach((l, i) => this.say(9.5 + i * 2.2, l.who as CharId, l.text, 'say', 'happy'));
-    return 9.5 + lines.length * 2.2 + 2.5;
+    lines.forEach((l, i) => this.say(10.5 + i * 2, l.who as CharId, l.text, 'say', 'happy'));
+    return 10.5 + lines.length * 2 + 2;
   }
 
   private scraped(): number {
     const room: RoomId = 'meeting';
     this.call(FINALE.scraped.vp);
-    this.say(3.2, 'michael', FINALE.scraped.michael, 'shout', 'happy');
-    this.gather(4, room, FINALE.scraped.doing, () => this.staff().filter((id) => id === 'michael' || this.sim.rng() < 0.45));
-    this.at(6.5, () => {
-      this.sim.sfx('endingScraped');
+    this.say(4.4, 'michael', FINALE.scraped.michael, 'shout', 'happy');
+    this.gather(5.2, room, FINALE.scraped.doing, () => this.staff().filter((id) => id === 'michael' || this.sim.rng() < 0.45));
+    this.at(7.7, () => {
       // Half the lights go off: the budget is cut.
       this.sim.addEffect({ id: 'finale-cuts', kind: 'dark', rooms: ['annex', 'accounts', 'kitchen'], level: 0.55, emergency: false });
       this.sim.addEffect({ id: 'finale-balloon', kind: 'balloons', room, count: 1 });
     });
-    FINALE.scraped.lines.forEach((l, i) => this.say(8.5 + i * 2.4, l.who as CharId, l.text, 'say', i === 0 ? 'neutral' : 'happy'));
-    return 8.5 + FINALE.scraped.lines.length * 2.4 + 2.5;
+    FINALE.scraped.lines.forEach((l, i) => this.say(9.7 + i * 2.4, l.who as CharId, l.text, 'say', i === 0 ? 'neutral' : 'happy'));
+    return 9.7 + FINALE.scraped.lines.length * 2.4 + 2;
   }
 
   private closed(): number {
     this.call(FINALE.closed.vp);
-    this.say(3.2, 'michael', FINALE.closed.michael, 'say', 'sad');
+    this.say(4.4, 'michael', FINALE.closed.michael, 'say', 'sad');
     // Everyone else packs a box and walks out of the front door, one after another.
     const leaving = (Object.keys(CAST) as CastId[]).filter((id) => id !== 'michael');
-    leaving.forEach((id, i) => this.at(5 + i * 0.45, () => {
+    leaving.forEach((id, i) => this.at(6.2 + i * 0.45, () => {
       const p = this.sim.person(id);
       if (!p?.present || !p.available) return;
       this.sim.setProp(id, 'box');
       this.sim.goTo(id, { anchor: 'exit.street' }, { doing: FINALE.closed.doing, stay: 0, stayDoing: FINALE.closed.doing });
     }));
-    this.at(5.5, () => this.sim.sfx('endingClosed'));
     // The lights go out room by room.
     const rooms: RoomId[] = ['annex', 'accounts', 'kitchen', 'meeting', 'bullpen'];
-    rooms.forEach((room, i) => this.at(7 + i * 1.6, () => {
+    rooms.forEach((room, i) => this.at(8.2 + i * 1.6, () => {
       this.sim.addEffect({ id: `finale-dark-${room}`, kind: 'dark', rooms: [room], level: 0.8, emergency: false });
     }));
-    this.say(13.5, 'michael', FINALE.closed.last, 'think', 'sad');
-    this.at(14.5, () => {
+    this.say(14.7, 'michael', FINALE.closed.last, 'think', 'sad');
+    this.at(15.7, () => {
       if (this.sim.person('michael')?.available) this.sim.goTo('michael', { anchor: 'exit.street' }, { doing: FINALE.closed.doing, stay: 0, stayDoing: FINALE.closed.doing });
     });
-    this.at(16.5, () => this.sim.addEffect({ id: 'finale-dark-boss', kind: 'dark', rooms: ['boss'], level: 0.85, emergency: false }));
-    return 18;
+    this.at(17.7, () => this.sim.addEffect({ id: 'finale-dark-boss', kind: 'dark', rooms: ['boss'], level: 0.85, emergency: false }));
+    return 19;
   }
 }

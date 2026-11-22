@@ -485,8 +485,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     // The week's last scene plays on the floor first; the ending card waits for it (or for Skip).
     finaleScene = buildFinale(ending);
     set({ mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, finishing: false, finale: !!finaleScene, storySaved: Story.peek(browserStore) });
-    // With a scene, its own climax plays the ending sound.
-    if (!finaleScene) audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
+    // The ending's sting and music start as the ending begins (the scene's phone call follows a moment later).
+    audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
     audio.setMusicMood({ menu: true, ending });
     pushUi();
   }
