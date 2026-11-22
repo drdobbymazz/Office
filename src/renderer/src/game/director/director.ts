@@ -19,7 +19,7 @@ import type { CharId, Plan, RoomId, ShiftKind, TargetRoomId } from '@/game/core/
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
 import { room as roomDef } from '@/game/core/world';
 import { Guests } from './guests';
-import { invitesPeople, mentionsFood, roomNamedIn, speaksToEveryone, summonChance, summonLine, withoutRooms } from './summon';
+import { convictionLever, invitesPeople, keepsAway, mentionsFood, roomNamedIn, speaksToEveryone, stayedLine, summonChance, summonLine, withoutRooms } from './summon';
 
 export interface DirectorOptions {
   sim: DirectorSimApi;
@@ -260,8 +260,13 @@ export class Director {
    */
   private summon(text: string): CharId[] {
     const room = roomNamedIn(text);
-    if (!room || !invitesPeople(text)) return [];
+    if (!room) return [];
     const roomName = roomDef(room).name;
+    if (!invitesPeople(text)) {
+      // "Nobody go to the annex" names a room without inviting anyone: say so, never stay silent.
+      if (keepsAway(text)) this.api.narrate('Nobody moves.', { icon: 'announce', room });
+      return [];
+    }
     if (this.api.isHazard(room)) {
       this.api.narrate(`Nobody wants to go anywhere near ${roomName} right now.`, { icon: 'announce' });
       return [];
@@ -274,21 +279,55 @@ export class Director {
     const pool = everyone ? [...present.filter((p) => p.isCast), ...named.filter((p) => !p.isCast)] : named;
     const namedIds = new Set(named.map((p) => p.id));
     const went: CharId[] = [];
-    for (const p of pool) {
-      if (!p.present || this.api.isSeized(p.id) || this.api.isAirborne(p.id)) continue;
-      if (p.statuses.some((st) => st.kind === 'asleep' || st.kind === 'frozen')) continue;
-      if (!p.available && !p.sceneId) continue;
-      if (p.conviction || this.opts.pinned?.(p.id)) continue;
-      const chance = summonChance(p.id, { food, named: namedIds.has(p.id) });
-      if (this.api.rng() >= chance) continue;
+    /** Heard it, and chose to stay (held by the story, or sure of an idea of their own). */
+    const stayed: string[] = [];
+    /** Sure of an idea that says they only go where someone else goes. */
+    const followers: { p: SimPerson; leader: string }[] = [];
+    const send = (p: SimPerson): void => {
       this.api.goTo(p.id, { room }, {
         doing: `heading to ${roomName}`,
         stay: SUMMON_STAY,
         stayDoing: food ? `waiting for the food in ${roomName}` : `waiting in ${roomName} as asked`
       });
       went.push(p.id);
+    };
+    for (const p of pool) {
+      if (!p.present || this.api.isSeized(p.id) || this.api.isAirborne(p.id)) continue;
+      if (p.statuses.some((st) => st.kind === 'asleep' || st.kind === 'frozen')) continue;
+      if (!p.available && !p.sceneId) continue;
+      if (this.opts.pinned?.(p.id)) {
+        stayed.push(p.name);
+        continue;
+      }
+      if (p.conviction) {
+        // An idea that says what would move them is a way in: food, their name, or a friend going.
+        const lever = convictionLever(p.conviction.text);
+        if ((lever?.kind === 'food' && food) || (lever?.kind === 'named' && namedIds.has(p.id))) send(p);
+        else if (lever?.kind === 'follow') followers.push({ p, leader: lever.who });
+        else stayed.push(p.name);
+        continue;
+      }
+      const chance = summonChance(p.id, { food, named: namedIds.has(p.id) });
+      if (this.api.rng() >= chance) continue;
+      send(p);
     }
-    this.api.narrate(summonLine(went.map((id) => this.api.person(id)?.name ?? id), roomName, !everyone), { icon: 'announce', room });
+    for (const f of followers) {
+      const leader = present.find((o) => o.name.toLowerCase() === f.leader);
+      if (leader && (went.includes(leader.id) || leader.room === room)) send(f.p);
+      else stayed.push(f.p.name);
+    }
+    // Someone who only goes where a friend goes follows them even when only the friend was called.
+    for (const p of present) {
+      if (!p.isCast || pool.includes(p) || went.includes(p.id) || !p.conviction) continue;
+      if (this.api.isSeized(p.id) || this.api.isAirborne(p.id) || (!p.available && !p.sceneId)) continue;
+      const lever = convictionLever(p.conviction.text);
+      if (lever?.kind !== 'follow') continue;
+      const leader = present.find((o) => o.name.toLowerCase() === lever.who);
+      if (leader && went.includes(leader.id)) send(p);
+    }
+    // Who went, then who heard it and stayed (never "Nobody moves." when the reason can be named).
+    if (went.length || !stayed.length) this.api.narrate(summonLine(went.map((id) => this.api.person(id)?.name ?? id), roomName, !everyone), { icon: 'announce', room });
+    if (stayed.length) this.api.narrate(stayedLine(stayed), { icon: 'announce', room });
     return went;
   }
 
