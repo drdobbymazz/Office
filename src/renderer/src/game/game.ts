@@ -135,7 +135,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
     settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: Story.peek(browserStore),
-    beat: null, ceremony: null, finishing: false
+    beat: null, ceremony: null, finishing: false, finale: false
   }));
   const set = store.setState;
   const get = store.getState;
@@ -792,6 +792,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       if (phase !== 'report' && phase !== 'playing' && phase !== 'briefing') return;
       story.retry();
       storyDayStart();
+    },
+    skipFinale() {
+      if (get().phase === 'ending' && get().finale) set({ finale: false });
     },
     finishDay() {
       if (mode !== 'story' || !story || !day || get().phase !== 'playing' || finishing) return;

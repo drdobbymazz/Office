@@ -329,6 +329,8 @@ export interface UiState {
   ceremony: CeremonyUi | null;
   /** The rest of the day is being run quickly to five o'clock (after finishDay). */
   finishing: boolean;
+  /** Story mode, phase 'ending': the week's last scene is playing on the floor; the ending card waits until it is over. */
+  finale: boolean;
 }
 
 export interface TargetingUi {
@@ -374,6 +376,8 @@ export interface GameApi {
   retryDay(): void;
   /** Story mode, when StoryUi.canFinish: run the rest of the day quickly to five o'clock and the report. */
   finishDay(): void;
+  /** Story mode, during the finale: stop the last scene and show the ending card now. */
+  skipFinale(): void;
   /** Story mode, when allowed (StoryUi.accuse): name someone. */
   accuse(who: CharId): void;
   /** Back to the title screen (from the ending, or to switch mode). */

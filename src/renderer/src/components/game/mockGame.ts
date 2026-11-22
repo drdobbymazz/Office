@@ -202,7 +202,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     ],
     toasts: [], report: null, settings: baseSettings, holding: null, targeting: null,
     inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null,
-    beat: null, ceremony: null, finishing: false
+    beat: null, ceremony: null, finishing: false, finale: false
   }));
 
   function personUi(m: Mover): PersonUi {
@@ -549,6 +549,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       const results = run.results.slice();
       results[run.chapter - 1] = null;
       toBriefing(run.chapter, results);
+    },
+    skipFinale() {
+      store.setState({ finale: false });
     },
     finishDay() {
       // The mock has no day to run quickly: its report comes from the harness URL instead.
