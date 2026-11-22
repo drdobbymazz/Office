@@ -760,12 +760,14 @@ export class Director {
     const [kind, why] = (fresh.length ? fresh : topics)[Math.floor(rng() * (fresh.length || topics.length))];
     this.lastTopic = kind;
 
-    return {
+    const ask: SceneAsk = {
       people, room: a.room, trigger: 'ambient', priority: 1, why,
       minLines: 2, maxLines: people.length > 2 ? 4 : 3,
       // Neighbours call across the desks; anyone further away walks over.
       gather: dist > 110
     };
+    // Story mode: a chat about one of the story's facts is a chat about the story.
+    return kind === 'fact' && storyTopics.length ? this.tagTopic(ask, why) : ask;
   }
 
   /** The story has them keeping a secret (a hidden note): what they are sure of is not to be said out loud. */
