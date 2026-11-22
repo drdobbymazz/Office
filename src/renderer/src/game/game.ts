@@ -654,6 +654,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     if (reason) toast(reason, 'bad');
   }
 
+  /** When the player was last told that pick-ups wait for the clock (story, paused). */
+  let pausedNoteAt = -Infinity;
   const input = new FloorInput(floor, {
     tapPerson: (who) => {
       audio.sfx('select');
@@ -665,7 +667,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       // In the story, carrying people about while the clock is stopped would make every deadline free:
       // say so, and let the drag pan instead.
       if (mode === 'story' && (get().paused || finishing)) {
-        if (get().paused) toast('Paused: tap the clock to carry on, then pick them up.', 'info', 'pause');
+        // One press can ask twice (on the long press and on the first move): say it once.
+        if (get().paused && performance.now() - pausedNoteAt > 2500) {
+          pausedNoteAt = performance.now();
+          toast('Paused: tap the clock to carry on, then pick them up.', 'info', 'pause');
+        }
         return false;
       }
       const ok = sim.pickUp(who);

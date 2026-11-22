@@ -173,7 +173,7 @@ function Explain({ story, costs, free, chaos, morale, stock, up, delta, paused, 
 
 // ── mission row ──
 
-function RowBtn({ icon, label, title, primary, onClick }: { icon: string; label: string; title: string; primary?: boolean; onClick: () => void }) {
+function RowBtn({ icon, label, title, primary, onClick }: { icon?: string; label: string; title: string; primary?: boolean; onClick: () => void }) {
   const game = useGame();
   const { pressed, handlers } = usePress();
   return (
@@ -186,7 +186,7 @@ function RowBtn({ icon, label, title, primary, onClick }: { icon: string; label:
         transform: pressed ? 'translateY(2px)' : 'none', marginBottom: 2,
         fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '14px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap'
       }}>
-      <GIcon name={icon} px={16} />{label}
+      {icon && <GIcon name={icon} px={16} />}{label}
     </button>
   );
 }
@@ -223,11 +223,11 @@ export function MissionChip({ left, onOpen }: { left: string; onOpen: () => void
         }}>
         <IconTile icon={finishing ? 'ff' : tileIcon(g)} size={20} bg={finishing ? 'var(--cth-lemon)' : tileBg(g.state)} />
         <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 14, lineHeight: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+          <span style={{ fontSize: settled && lost ? 13 : 14, lineHeight: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
           {g.state === 'open' && g.progress > 0 && !finishing && <Bar value={g.progress} color="var(--cth-peach)" h={6} segments={10} />}
         </span>
       </button>
-      {settled && lost && <RowBtn icon="refresh" label="Try again" title="Try the day again now" onClick={() => game.retryDay()} />}
+      {settled && lost && <RowBtn label="Try again" title="Try the day again now" onClick={() => game.retryDay()} />}
       {settled && <RowBtn icon="ff" label={lost ? 'Finish' : 'Finish the day'} title="Finish the day: run quickly to five o'clock and the report" primary onClick={() => game.finishDay()} />}
     </div>
   );

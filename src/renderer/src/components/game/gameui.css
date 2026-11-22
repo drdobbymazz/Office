@@ -180,7 +180,7 @@ select.gu-field {
 
 /* A touch target taller than it looks: the pad belongs to the control, so a finger that lands
    just under a slim HUD row still hits it (the row stays slim so the office fits below it). */
-.gu-pad { position: relative; }
+.gu-pad, .gu-pad-down { position: relative; }
 .gu-pad::after { content: ''; position: absolute; left: 0; right: 0; top: -5px; bottom: -7px; }
 .gu-pad-down::after { content: ''; position: absolute; left: 0; right: 0; top: -2px; bottom: -12px; }
 
