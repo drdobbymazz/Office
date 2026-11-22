@@ -16,10 +16,8 @@ import { summonChance } from '@/game/director/summon';
 import type { ChapterCtx, ChapterDef, ChapterRun, ChaosStartInfo, PlayerAction, SceneDoneInfo, ScriptLine, WeekNotes } from './types';
 import { CLIENT, LEAK, MEMO, ROW, VERDICT } from './text';
 // Monday to Wednesday.
-import type { ActionId } from '@/game/app/gameApi';
 import { CHAOS_IDS } from '@/game/core/types';
 import { roomNamedIn } from '@/game/director/summon';
-import type { ScriptLine } from './types';
 
 const DAY = (h: number, m = 0): number => h * 60 + m;
 
