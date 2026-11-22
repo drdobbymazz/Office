@@ -371,6 +371,51 @@ async function analysisMode() {
   window.__ready = true;
 }
 
+// ─────────────────────────────────────────────────────────────── lab
+// window.__lab: render and measure from a script (Playwright) in the real browser.
+const lab = {
+  /** One sfx voice straight into an OfflineAudioContext (no bus, reverb or dynamics). */
+  async rawSfx(id: SfxId, o: { at?: number; seconds?: number; pitch?: number } = {}) {
+    const def = SFX[id];
+    const sr = 44100, at = o.at ?? 0.052;
+    const ctx = new OfflineAudioContext(2, Math.ceil((o.seconds ?? def.dur + 0.8) * sr), sr);
+    const out = ctx.createGain();
+    out.gain.value = def.gain;
+    out.connect(ctx.destination);
+    let last = at;
+    def.build({ ctx, dest: out, track(_s, stopAt) { last = Math.max(last, stopAt); } }, o.pitch ?? 1, at);
+    const b = await ctx.startRendering();
+    return { ...round(analyze([b.getChannelData(0), b.getChannelData(1)], sr)), lastStop: +(last - at).toFixed(3) };
+  },
+  /** Sfx through the whole engine (bus, reverb, compressor, limiter, soft clip): [id, at seconds][]. */
+  async engineSfx(list: [SfxId, number][], seconds = 4, mood?: Partial<MusicMood>) {
+    const sr = 44100;
+    const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
+    const { Engine } = await import('./engine');
+    const e = new Engine(ctx, false);
+    if (mood) { const p = e.ensureMusic(); p.setMood({ ...DEFAULT_MOOD, ...mood }); p.start(0); p.scheduleUntil(seconds - 1); p.stop(seconds - 1, 0.8); }
+    for (const [id, at] of list) e.sfx(id, {}, at);
+    const t0 = performance.now();
+    const b = await ctx.startRendering();
+    const ms = performance.now() - t0;
+    const chs = [b.getChannelData(0), b.getChannelData(1)];
+    let over = 0;
+    for (const c of chs) for (const v of c) if (Math.abs(v) > 0.75) over++;
+    return { ...round(analyze(chs, sr)), renderMs: Math.round(ms), overKnee: over };
+  },
+  /** Music through the engine: [atSeconds, mood][] steps. Returns 1 s window RMS and render time. */
+  async music(steps: [number, Partial<MusicMood>][], seconds: number) {
+    const t0 = performance.now();
+    const b = await renderMusicScript(steps, seconds);
+    const ms = performance.now() - t0;
+    const x = mixdown([b.getChannelData(0), b.getChannelData(1)]);
+    const fr = rmsFrames(x, b.sampleRate, 1, 1);
+    return { ...round(analyze([b.getChannelData(0), b.getChannelData(1)], b.sampleRate)), renderMs: Math.round(ms), windowsRmsDb: Array.from(fr, (v) => +f1(20 * Math.log10(v + 1e-12))) };
+  },
+  ids: SFX_IDS
+};
+(window as unknown as { __lab: typeof lab }).__lab = lab;
+
 if (q.get('analyze')) analysisMode().catch((e) => { console.error(e); app.appendChild(el('pre', { class: 'bad' }, String(e?.stack ?? e))); window.__ready = true; });
 else interactive();
 

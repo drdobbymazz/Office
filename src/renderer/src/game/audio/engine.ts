@@ -20,7 +20,9 @@ import { type Out, clamp, gain, makeImpulse, softClipCurve } from './synth';
 export type BusId = 'music' | 'sfx' | 'voice';
 
 /** Internal trims under the user's volumes, so music sits well under everything. */
-const BUS_TRIM: Record<BusId, number> = { music: 0.42, sfx: 0.9, voice: 0.85 };
+export const BUS_TRIM: Record<BusId, number> = { music: 0.42, sfx: 0.9, voice: 0.85 };
+/** Level of the shared reverb's return into the master. */
+export const REVERB_RETURN = 0.55;
 export const DEFAULT_VOLUMES: AudioVolumes = { master: 0.9, music: 0.6, sfx: 0.9, voice: 0.85 };
 
 export const MAX_SFX = 24;
@@ -69,7 +71,7 @@ export class Engine {
 
     const reverb = c.createConvolver();
     reverb.buffer = makeImpulse(c);
-    const ret = gain(c, 0.55);
+    const ret = gain(c, REVERB_RETURN);
     reverb.connect(ret).connect(this.master);
 
     const mk = (id: BusId) => {
