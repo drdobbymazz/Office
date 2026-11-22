@@ -49,7 +49,7 @@ export const MEMO = {
   topicCancelled: 'Michael has cancelled every meeting today.',
   before: 'Corporate rings between 14:00 and 15:00',
   two: 'It is 14:00. The vice president rings as soon as Michael and 9 others are in the conference room.',
-  late: 'It is 14:45. At 15:00 the vice president gives up and hangs up.',
+  late: (n: number, michael: boolean) => `It is 14:45. ${n} of 10 in the room${michael ? '' : ', Michael not yet'}. At 15:00 the vice president gives up.`,
   slipBack: 'Michael slips back to his office.',
   freed: 'Michael stops hiding and comes out of his office.',
   ring: 'The phone rings in the conference room. Michael puts the vice president on speaker.',
@@ -227,6 +227,9 @@ export const CLIENT = {
   fedUp50: 'Mr Figgis is getting fed up. Under 50 patience he will not talk business. Cheer him up first.',
   tooAnnoyed: 'Mr Figgis is too annoyed to talk business. Cheer him up first.',
   statusAnnoyed: (p: number) => `Patience ${p}: too annoyed to talk business`,
+  statusPatience: (p: number) => `Patience ${p} (talks business from 50)`,
+  statusPitch: (sales: string, s: number, of: number) => `${sales} pitching: ${s}s of ${of}`,
+  meetingFact: (sales: string, room: string) => `Mr Figgis is in a meeting with ${sales} in ${room}, deciding whether to sign again.`,
   sitsDown: (sales: string, room: string) => `${sales} sits down with Mr Figgis in ${room}.`,
   pitchWhy: (sales: string) => `Mr Figgis has sat down with ${sales} to decide whether Figgis Hardware signs for another year. He wants a straight answer and a fair price.`,
   rough: {

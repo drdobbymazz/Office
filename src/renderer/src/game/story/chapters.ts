@@ -49,6 +49,7 @@ const BIN_AT = DAY(10, 20);
 /** Sim seconds Creed spends going through the bin before he finds the memo. */
 const SEARCH_FOR = 25;
 const BIN_FX = 'story.memo.bin';
+const DIM_FX = 'story.memo.dim';
 
 type BinState = 'waiting' | 'going' | 'searching' | 'stopped' | 'found';
 
@@ -76,8 +77,9 @@ class MemoRun implements ChapterRun {
     s.convince('michael', MEMO.conviction);
     s.setHiddenNote('michael', MEMO.hidden);
     s.setFact('story.memo', MEMO.fact);
-    // The memo itself, in his hand all day.
+    // The memo itself, in his hand all day, and his office dim while he hides in it.
     s.setProp('michael', 'papers');
+    s.addEffect({ id: DIM_FX, kind: 'dark', rooms: ['boss'], level: 0.35, emergency: false });
   }
 
   private holds(): boolean {
@@ -111,7 +113,8 @@ class MemoRun implements ChapterRun {
     }
     if (s.clock >= DAY(14, 45) && !this.said1445) {
       this.said1445 = true;
-      s.narrate(MEMO.late, { beat: true, icon: 'clock', room: 'meeting' });
+      const r = this.room();
+      s.narrate(MEMO.late(Math.min(OTHERS_NEEDED, r.others) + (r.michael ? 1 : 0), r.michael), { beat: true, icon: 'clock', room: 'meeting' });
     }
     if (s.clock >= DAY(14) && s.time >= this.checkAt) {
       this.checkAt = s.time + CALL_EVERY;
@@ -139,6 +142,7 @@ class MemoRun implements ChapterRun {
         this.freed = true;
         this.unhide = true;
         s.setFact('story.memo', null);
+        s.removeEffect(DIM_FX);
         s.narrate(MEMO.freed, { beat: true, icon: 'whisper', room: m.room });
       }
       // He leaves his desk as soon as he is free to (the whisper's own conversation comes first).
@@ -276,6 +280,12 @@ class MemoRun implements ChapterRun {
     s.setFact('story.closure', MEMO.closure);
     s.setFact('story.memo', null);
     s.setFact('story.rumour', null);
+    // The news is out anyway: nobody is hiding it, or from it, any more.
+    s.convince('michael', null);
+    s.setHiddenNote('michael', null);
+    s.setProp('michael', null);
+    s.removeEffect(DIM_FX);
+    for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
     s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting', beat: true });
     for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'nervous', 0.6, 20);
     this.c.lose([MEMO.missed]);
@@ -284,6 +294,7 @@ class MemoRun implements ChapterRun {
   atFive(): void {
     if (this.c.main() === 'open') this.missed();
     this.c.sim.removeEffect(BIN_FX);
+    this.c.sim.removeEffect(DIM_FX);
   }
 
   private callHappens(others: number): void {
@@ -299,6 +310,7 @@ class MemoRun implements ChapterRun {
     s.convince('michael', null);
     s.setHiddenNote('michael', null);
     s.setProp('michael', null);
+    s.removeEffect(DIM_FX);
     // Whoever was hiding from the news has heard it now.
     for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
     const u = this.c.used;
@@ -362,6 +374,7 @@ class MemoRun implements ChapterRun {
     this.freed = true;
     s.convince('michael', null);
     s.setFact('story.memo', null);
+    s.removeEffect(DIM_FX);
     s.narrate(MEMO.lockedOut, { room: 'meeting', beat: true });
     s.goTo('michael', { room: 'meeting' }, { doing: 'staying in the conference room', stay: 120, stayDoing: 'staying in the conference room' });
   }
@@ -712,6 +725,7 @@ const MEDDLE_FIRST = 40;
 const MEDDLE_EVERY = 80;
 const DOG_RE = /\b(dogs?|pupp(y|ies)|pup|hound|retriever|labrador|spaniel|terrier|poodle|beagle|collie|dachshund|pug|corgi|bulldog|sheepdog|greyhound|dalmatian)\b/i;
 const CLIENT_RE = /\b(figgis|client|customer)\b/i;
+const BALLOONS_FX = 'story.client.balloons';
 
 export function registerFiggis(): void {
   registerVisitor({
@@ -749,6 +763,8 @@ class ClientRun implements ChapterRun {
     registerFiggis();
     this.c.sim.setFact('story.client', CLIENT.fact);
     if (this.c.notes.accounts === false) this.patience = PATIENCE_LATE;
+    // Michael's idea of a welcome: balloons by the front door.
+    this.c.sim.addEffect({ id: BALLOONS_FX, kind: 'balloons', room: 'bullpen', count: 5 });
   }
 
   private figgis(): SimPerson | undefined {
@@ -870,7 +886,9 @@ class ClientRun implements ChapterRun {
     this.scriptDone = false;
     const id = ++this.pitchId;
     this.rough = !!PITCHERS[partner.id]?.drain;
-    s.narrate(CLIENT.sitsDown(partner.name, room === 'boss' ? "Michael's office" : 'the conference room'), { beat: true, icon: 'coin', room });
+    const roomName = room === 'boss' ? "Michael's office" : 'the conference room';
+    s.narrate(CLIENT.sitsDown(partner.name, roomName), { beat: true, icon: 'coin', room });
+    s.setFact('story.client', CLIENT.meetingFact(partner.name, roomName));
     if (this.rough && CLIENT.rough[partner.id]) s.narrate(CLIENT.rough[partner.id], { icon: 'coin', room });
     const script = CLIENT.pitch[partner.id] ?? CLIENT.pitch.jim;
     const lines: ScriptLine[] = script.map(([who, text]) => who === 'figgis'
@@ -880,6 +898,7 @@ class ClientRun implements ChapterRun {
   }
 
   private endPitch(): void {
+    if (this.pitchWith && this.c.main() === 'open') this.c.sim.setFact('story.client', CLIENT.waitingFact);
     this.pitchT = 0;
     this.pitchWith = null;
     this.scriptDone = false;
@@ -899,6 +918,7 @@ class ClientRun implements ChapterRun {
   private sign(): void {
     const s = this.c.sim;
     const rough = this.rough;
+    this.endPitch();
     s.sfx('coin');
     const f = s.person(FIGGIS);
     if (f) s.fx({ kind: 'burst', what: 'cash', x: f.x, y: f.y - 18, count: 14 });
@@ -910,7 +930,6 @@ class ClientRun implements ChapterRun {
     s.remember('all', CLIENT.signedFact, 2);
     for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'happy', 0.6, 15);
     this.c.notes.figgis = true;
-    this.endPitch();
     this.c.setExtra('michael', 'won');
     this.c.win([text]);
     this.c.after(6, () => this.leave());
@@ -938,13 +957,15 @@ class ClientRun implements ChapterRun {
     s.goTo(FIGGIS, { anchor: 'exit.street' }, { style: 'walk', doing: 'leaving', stay: 0, then: () => s.removeVisitor(FIGGIS) });
   }
 
-  /** He has left the building: a dog can no longer find him. */
+  /** He has left the building: a dog can no longer find him, and the balloons come down. */
   private figgisGone(): void {
     this.gone = true;
     this.c.setExtra('dog', 'lost');
+    this.c.sim.removeEffect(BALLOONS_FX);
   }
 
   atFive(): void {
+    this.c.sim.removeEffect(BALLOONS_FX);
     if (this.c.main() === 'open') {
       this.c.notes.figgis = false;
       this.c.lose([CLIENT.late]);
@@ -986,9 +1007,12 @@ class ClientRun implements ChapterRun {
     if (st === 'lost') return { progress: 0, status: 'Walked out' };
     if (!this.spawned) return { progress: this.patience / 100, status: CLIENT.before };
     const p = Math.round(this.patience);
-    if (this.pitchWith) return { progress: this.patience / 100, status: `${displayName(this.pitchWith)} pitching: ${Math.floor(this.pitchT)}s` };
+    if (this.pitchWith) {
+      const secs = (PITCHERS[this.pitchWith] ?? PITCHERS.jim).secs;
+      return { progress: this.patience / 100, status: CLIENT.statusPitch(displayName(this.pitchWith), Math.min(secs, Math.floor(this.pitchT)), secs) };
+    }
     if (this.patience < PITCH_MIN) return { progress: this.patience / 100, status: CLIENT.statusAnnoyed(p) };
-    return { progress: this.patience / 100, status: `Patience ${p}` };
+    return { progress: this.patience / 100, status: CLIENT.statusPatience(p) };
   }
 
   /** Read by tests. */

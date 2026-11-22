@@ -50,7 +50,7 @@ describe('Wednesday: The Client', () => {
     expect(card.wants).toBe(CLIENT.wants);
     expect(card.fears).toBe(CLIENT.fears);
     expect(card.quirk).toBe(CLIENT.quirk);
-    expect(g.day.goalUi().status).toMatch(/^Patience \d+$/);
+    expect(g.day.goalUi().status).toMatch(/^Patience \d+ \(talks business from 50\)$/);
     expect(patience(g)).toBeLessThan(70);
   });
 
