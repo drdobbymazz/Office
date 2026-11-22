@@ -12,7 +12,8 @@
 // The sim keeps the office moving by itself in between. The director only
 // ever asks the sim to do things through its public surface.
 
-import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger } from '@/game/brain/api';
+import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo } from '@/game/brain/api';
+import type { ScriptLine } from '@/game/story/types';
 import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
 import type { CharId, Plan, RoomId, ShiftKind, TargetRoomId } from '@/game/core/types';
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
@@ -34,6 +35,20 @@ export interface DirectorOptions {
   onBusy?: (state: { thinking: boolean; queued: number; source: 'model' | 'instinct' | null }) => void;
   /** People something else (a story chapter) is holding where they are: announcements do not move them. */
   pinned?: (who: CharId) => boolean;
+  /** Story mode: what the office is talking about right now (plain sentences). Small talk may pick from these. */
+  storyTopics?: () => string[];
+  /** Story mode: today's chapter may replace a scene's change in feeling (return the delta to apply). */
+  vetoShift?: (who: CharId, about: CharId, delta: number) => number;
+}
+
+/** Options for a hand-written story scene (see ChapterCtx.script). */
+export interface ScriptOptions {
+  room?: RoomId;
+  /** 'model': once the lines are spoken, let the model carry the scene on. */
+  then?: 'model' | 'none';
+  /** One plain sentence on what the scene is about, for the model's carry-on. */
+  why?: string;
+  done?: () => void;
 }
 
 interface Pending {
@@ -111,6 +126,8 @@ export class Director {
   /** What the Anything power put on the floor: guests, creatures, things (director/guests.ts). */
   private guests: Guests;
   private disposed = false;
+  /** A hand-written story scene being played, line by line. While it plays no other scene starts. */
+  private script: { lines: ScriptLine[]; said: string[]; people: CharId[]; opts: ScriptOptions; nextAt: number } | null = null;
 
   constructor(opts: DirectorOptions) {
     this.opts = opts;
@@ -127,6 +144,7 @@ export class Director {
 
   dispose(): void {
     this.disposed = true;
+    this.script = null;
     this.stopScene(false);
     this.queue.length = 0;
     this.guests.clear();
@@ -134,6 +152,7 @@ export class Director {
 
   /** A fresh day: drop anything left over from yesterday. */
   reset(): void {
+    this.script = null;
     this.stopScene(false);
     this.queue.length = 0;
     this.guests.clear();
@@ -339,7 +358,8 @@ export class Director {
       this.driveConvictions(now);
     }
 
-    if (this.running) this.advanceScene(now);
+    if (this.script) this.advanceScript(now);
+    else if (this.running) this.advanceScene(now);
     else this.startNext(now);
 
     // While someone is waiting for the model, the office should not fall silent.
@@ -697,6 +717,62 @@ export class Director {
     if (now - Math.max(r.startedAt, r.waitedSince) > 75) this.stopScene(true);
   }
 
+  // ── hand-written story scenes ──────────────────────────────────────────────
+
+  /**
+   * Play a story's hand-written lines now, in order: whatever is being said gives way, and no
+   * other scene starts until the last line is spoken. Voice lines (someone on the phone) show as
+   * captions. With `then: 'model'`, the model carries the scene on afterwards.
+   */
+  playScript(lines: ScriptLine[], opts: ScriptOptions = {}): void {
+    if (this.disposed || !lines.length) {
+      opts.done?.();
+      return;
+    }
+    this.stopScene(false);
+    this.script = { lines: [...lines], said: [], people: [], opts, nextAt: this.api.time };
+  }
+
+  private advanceScript(now: number): void {
+    const sc = this.script;
+    if (!sc || now < sc.nextAt) return;
+    const line = sc.lines.shift();
+    if (!line) {
+      this.script = null;
+      if (sc.opts.then === 'model') {
+        const people = sc.people.filter((id) => this.api.person(id)?.present).slice(0, 4);
+        if (people.length) {
+          this.enqueue({
+            people, trigger: 'event', priority: 9, minLines: 2, maxLines: 3, staleAfter: 30, gather: false,
+            why: `${sc.opts.why ? sc.opts.why + ' ' : ''}Already said: ${sc.said.slice(-4).join(' ')}`.trim()
+          }, false);
+        }
+      }
+      try {
+        sc.opts.done?.();
+      } catch (err) {
+        console.error('[director] script done failed', err);
+      }
+      return;
+    }
+    if (line.voice) {
+      this.api.narrate(`${line.voice.name}: "${line.text}"`, { icon: line.voice.icon ?? 'phone', room: line.voice.room ?? sc.opts.room, beat: true });
+      sc.said.push(`${line.voice.name}: "${line.text}"`);
+      sc.nextAt = now + Math.max(2.5, line.text.length / 14) + 0.6;
+      return;
+    }
+    const p = line.who ? this.api.person(line.who) : undefined;
+    if (!line.who || !p || !p.present) {
+      sc.nextAt = now;
+      return;
+    }
+    const speech = this.api.say(line.who, line.text, { kind: line.kind, emotion: line.emotion, to: line.to ?? null });
+    this.lastSpoke.set(line.who, now);
+    if (!sc.people.includes(line.who)) sc.people.push(line.who);
+    sc.said.push(`${p.name}: "${line.text}"`);
+    sc.nextAt = now + speech.durationMs / 1000 + 0.6;
+  }
+
   private finishScene(r: Running): void {
     const res = r.result;
     r.handle.close();
@@ -708,7 +784,10 @@ export class Director {
       if (res.summary) this.api.remember([...r.people, ...onlookers].filter((id) => isCastId(id)), res.summary);
       for (const s of res.shifts) {
         if (s.who === s.about || !isCastId(s.who) || !isCastId(s.about)) continue;
-        this.api.shiftBond(s.who, s.about, SHIFT_DELTA[s.change] ?? 0, res.summary);
+        const base = SHIFT_DELTA[s.change] ?? 0;
+        // Story mode: today's chapter may adjust (or ignore) the change while it counts progress itself.
+        const delta = this.opts.vetoShift ? this.opts.vetoShift(s.who, s.about, base) : base;
+        if (delta) this.api.shiftBond(s.who, s.about, delta, res.summary);
       }
       // One plan per conversation, and one follow-up at most: a plan to go straight
       // back to the person you were just talking to is only allowed once, or the
@@ -863,7 +942,8 @@ export class Director {
   // ── the end of the day ─────────────────────────────────────────────────────
 
   /** Ask for the day's write-up. Always resolves (the brain falls back to a plain summary). */
-  async writeReport(stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number }): Promise<ReportResult> {
+  async writeReport(stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number }, story?: StoryReportInfo): Promise<ReportResult> {
+    this.script = null;
     this.stopScene(false);
     this.queue.length = 0;
     const req = {
@@ -871,7 +951,8 @@ export class Director {
       day: this.api.day,
       log: this.sim.dayLog().slice(-40),
       stats,
-      people: this.api.people().filter((p) => p.isCast).map((p) => ({ id: p.id, name: p.name, mood: p.emotion }))
+      people: this.api.people().filter((p) => p.isCast).map((p) => ({ id: p.id, name: p.name, mood: p.emotion })),
+      ...(story ? { story } : {})
     };
     this.sideN += 1;
     this.report();

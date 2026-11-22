@@ -19,13 +19,13 @@ import type {
 import { Bus } from '@/game/core/bus';
 import type { GameBus } from '@/game/core/bus';
 import { CAST_LIST, SETTING, VISITORS, displayName, voiceOf } from '@/game/core/cast';
-import { ROOMS, WORLD_W, roomRectPx } from '@/game/core/world';
+import { ROOMS, WORLD_W, roomCentrePx, roomRectPx } from '@/game/core/world';
 import type { CreateActorView, CreateFxView, PortraitUrl, RenderFrame } from '@/game/view/api';
 import { GameFloor } from '@/scene/office/floor/GameFloor';
 import { FloorInput } from '@/scene/office/floor/input';
 import { Director } from '@/game/director/director';
 import type { Sim, SimOptions } from '@/game/sim';
-import { Story, StoryDay, browserStore, type PlayerAction } from '@/game/story';
+import { EXTRA_INFLUENCE, Story, StoryDay, browserStore, type PlayerAction } from '@/game/story';
 import { Objectives } from './objectives';
 import { loadSettings, saveSettings } from './settings';
 import { loadJson, removeKey, saveJson } from './storage';
@@ -51,6 +51,8 @@ export interface Game extends GameApi {
 const SAVE_KEY = 'world.v2';
 /** Story days always run at the length they were balanced for. */
 const STORY_DAY_MINUTES = 10;
+/** How fast the rest of a story day runs after "Finish the day" (sim seconds per real second). */
+const FINISH_SPEED = 16;
 const FEED_MAX = 300;
 const UI_TICK = 0.2;
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -101,6 +103,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   /** Today's story day (its goals, budget and logic), while one is set up. */
   let day: StoryDay | null = null;
   const today = (): StoryDay | null => day;
+  /** finishDay: the rest of the day runs at FINISH_SPEED with no new scenes, voices or banners. */
+  let finishing = false;
+  /** A story day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
+  let holdDayStart = false;
 
   const instinct = parts.createBrain({ ...settings.brain, provider: 'instinct' }, { bank: parts.bank, world });
   let brain: Brain = parts.createBrain(settings.brain, { bank: parts.bank, world });
@@ -128,7 +134,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     phase: 'title', paused: false, speed: 1, day: sim.day, weekday: sim.weekday, clock: sim.clock, dayProgress: sim.dayProgress,
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
-    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: Story.peek(browserStore)
+    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: Story.peek(browserStore),
+    beat: null, ceremony: null, finishing: false
   }));
   const set = store.setState;
   const get = store.getState;
@@ -145,7 +152,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         brainBusy = { thinking: b.thinking, queued: b.queued };
       },
       // Someone today's chapter is holding where they are does not answer announcements.
-      pinned: (who) => day?.pinned(who) ?? false
+      pinned: (who) => day?.pinned(who) ?? false,
+      // What the office is talking about in the story right now (small talk can pick it up).
+      storyTopics: () => (mode === 'story' && day ? day.topics() : []),
+      // Today's chapter may adjust a scene's change in feeling (e.g. while it counts progress itself).
+      vetoShift: (who, about, delta) => (mode === 'story' && day ? day.vetoShift(who, about, delta) : delta)
     });
   }
 
@@ -205,8 +216,14 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     bus.on('feed', (item) => {
       feedBuffer.push(item);
       if (item.kind === 'say') linesToday += 1;
+      // Story narration worth seeing on the floor, not only in the Log.
+      if (item.beat && !finishing) {
+        const words = item.text.split(/\s+/).length;
+        set({ beat: { id: item.id, text: item.text, icon: item.icon, room: item.room, holdFor: Math.max(3.5, Math.min(9, 2 + words * 0.32)) } });
+      }
     }),
     bus.on('speech', (sp: Speech) => {
+      if (finishing) return;
       const p = sim.person(sp.who);
       audio.speak(voiceOf(sp.who), sp.text, {
         cps: sp.cps, emotion: p?.emotion, style: sp.kind, pan: pan(p?.x)
@@ -217,7 +234,12 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       }
     }),
     bus.on('fx', (c) => floor.cue(c)),
-    bus.on('sfx', (e) => audio.sfx(e.id, { ...e.opts, pan: e.opts?.pan ?? pan(e.x) })),
+    bus.on('sfx', (e) => {
+      // A story day's office is built behind its chapter card: its morning jingle plays on "Start the day" instead.
+      if (e.id === 'dayStart' && holdDayStart) return;
+      if (finishing && e.id !== 'dayEnd') return;
+      audio.sfx(e.id, { ...e.opts, pan: e.opts?.pan ?? pan(e.x) });
+    }),
     bus.on('loop', (e) => audio.loop(e.id, e.on)),
     bus.on('shake', (e) => {
       floor.camera.shake(e.power, e.ms);
@@ -243,7 +265,6 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       stockStart = sim.meters().stock;
       linesToday = 0;
       chaosPeak = 0;
-      audio.sfx('dayStart');
     }),
     bus.on('dayEnd', () => void endDay())
   ];
@@ -351,12 +372,21 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       story.finishDay(storyDay, sim.serialize());
       set({ storySaved: Story.peek(browserStore) });
     }
-    set({ phase: 'report', report: base, caption: null });
+    finishing = false;
+    set({ phase: 'report', report: base, caption: null, beat: null, finishing: false });
     pushStory();
-    audio.sfx('dayEnd');
+    const storyResult = mode === 'story' && story ? story.result : null;
+    audio.sfx(storyResult ? (storyResult.won ? 'dayWon' : 'dayLost') : 'dayEnd');
     audio.setMusicMood({ menu: true });
     saveWorld();
-    const res = await director.writeReport(stats);
+    const storyInfo = storyResult && story ? {
+      title: `${story.def.weekday}: ${story.def.title}`,
+      goal: story.def.goal.title,
+      won: storyResult.won,
+      lines: [...storyResult.text],
+      changes: storyResult.changes.map((c) => `${c.delta > 0 ? '+' : ''}${c.delta} ${c.text}`)
+    } : undefined;
+    const res = await director.writeReport(stats, storyInfo);
     if (get().report?.day !== day) return;
     set({
       report: {
@@ -388,13 +418,35 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     set({ story: ui, mode });
   }
 
-  function goalNotice(g: { title: string; state: 'won' | 'lost'; main: boolean }): void {
-    if (g.state === 'won') {
-      toast(`Goal done: ${g.title}`, 'good', 'check');
+  let ceremonySeq = 0;
+
+  function goalNotice(g: { id: string; title: string; state: 'won' | 'lost'; main: boolean }): void {
+    if (finishing) return;
+    const def = day?.def;
+    const won = g.state === 'won';
+    ceremonySeq += 1;
+    if (g.main && def) {
+      const stamp = def.goal.stamp ?? ['GOAL DONE', 'GOAL FAILED'];
+      set({ ceremony: { id: `c${ceremonySeq}`, kind: won ? 'goalWon' : 'goalLost', title: won ? stamp[0] : stamp[1], detail: g.title, icon: def.goal.icon, room: def.goal.room } });
+      audio.sfx(won ? 'goalWin' : 'goalFail');
+      if (won) {
+        if (def.goal.room) {
+          const c = roomCentrePx(def.goal.room);
+          floor.cue({ kind: 'burst', what: 'stars', x: c.x, y: c.y, count: 16 });
+          floor.cue({ kind: 'burst', what: 'confetti', x: c.x, y: c.y - 8, count: 12 });
+        }
+        buzz([20, 40, 20, 40, 60]);
+      } else buzz([60, 40, 60]);
+      return;
+    }
+    const detail = won ? `+${EXTRA_INFLUENCE} influence` : undefined;
+    set({ ceremony: { id: `c${ceremonySeq}`, kind: won ? 'extraWon' : 'extraLost', title: g.title, detail } });
+    if (won) {
+      toast(`Goal done: ${g.title}. +${EXTRA_INFLUENCE} influence`, 'good', 'check');
       audio.sfx('objective');
     } else {
       toast(`Goal failed: ${g.title}`, 'bad', 'x');
-      audio.sfx('powerDown');
+      audio.sfx('deny');
     }
   }
 
@@ -404,13 +456,18 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     day?.dispose();
     day = null;
     feedBuffer = [];
-    set({ feed: [] });
+    finishing = false;
+    set({ feed: [], beat: null, ceremony: null, finishing: false });
+    holdDayStart = true;
     const next = buildSim({ save: story.daySave(), dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: story.simSeed() });
     if (next.day !== story.chapter) next.beginDay(story.chapter);
     story.recordStart(next.serialize());
     mode = 'story';
     swapWorld(next);
-    day = story.beginDay(sim, { onGoal: goalNotice });
+    day = story.beginDay(sim, {
+      onGoal: goalNotice,
+      script: (lines, o) => director.playScript(lines, o)
+    });
     set({ mode: 'story', phase: 'briefing', paused: false, report: null, storySaved: Story.peek(browserStore) });
     audio.setMusicMood({ menu: true });
     pushUi();
@@ -420,8 +477,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     day?.dispose();
     day = null;
     mode = 'story';
-    set({ mode: 'story', phase: 'ending', paused: false, report: null, storySaved: Story.peek(browserStore) });
-    audio.setMusicMood({ menu: true });
+    finishing = false;
+    set({ mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, finishing: false, storySaved: Story.peek(browserStore) });
+    const ending = story?.endingId() ?? 'scraped';
+    audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
+    audio.setMusicMood({ menu: true, ending });
     pushUi();
   }
 
@@ -498,7 +558,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       disco: sim.activeChaos().some((c) => c.id === 'disco'),
       blackout: sim.activeChaos().some((c) => c.id === 'blackout'),
       frozen: sim.activeChaos().some((c) => c.id === 'timeFreeze'),
-      menu: get().phase !== 'playing'
+      menu: get().phase !== 'playing',
+      stakes: mode === 'story' && day && get().phase === 'playing' ? day.stakes() : 0,
+      ending: get().phase === 'ending' ? story?.endingId() ?? null : null
     });
   }
 
@@ -513,13 +575,18 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const waiting = s.phase === 'title' && sim.dayProgress > 0.06;
     // Behind a chapter card the office is held at its 08:50 start; behind the ending, nothing moves.
     const held = s.phase === 'briefing' || s.phase === 'ending';
-    const active = !s.paused && s.phase !== 'report' && !held && !waiting;
-    const simDt = active ? real * s.speed : 0;
+    const active = (!s.paused || finishing) && s.phase !== 'report' && !held && !waiting;
+    const simDt = active ? real * (finishing ? FINISH_SPEED : s.speed) : 0;
     if (simDt > 0) {
-      sim.update(simDt);
-      if (s.phase === 'playing') {
-        director.update(simDt);
-        if (mode === 'story') day?.update(simDt);
+      // Large steps are split so people still walk and arrive properly.
+      const steps = Math.max(1, Math.ceil(simDt / 0.25));
+      for (let i = 0; i < steps; i++) {
+        const dt = simDt / steps;
+        sim.update(dt);
+        if (s.phase === 'playing') {
+          if (!finishing) director.update(dt);
+          if (mode === 'story') day?.update(dt);
+        }
       }
     }
     input.update(real);
@@ -712,6 +779,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       void audio.unlock().then(() => audio.startMusic());
       if (get().phase !== 'briefing' || mode !== 'story' || !day) return;
       set({ phase: 'playing', paused: false });
+      holdDayStart = false;
+      audio.sfx('dayStart');
       director.reset();
       audio.setMusicMood({ menu: false });
       void keepAwake();
@@ -724,12 +793,24 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       story.retry();
       storyDayStart();
     },
+    finishDay() {
+      if (mode !== 'story' || !story || !day || get().phase !== 'playing' || finishing) return;
+      if (!day.settled) return;
+      finishing = true;
+      director.reset();
+      select(null);
+      beginTargeting(null);
+      set({ finishing: true, paused: false, caption: null, beat: null, ceremony: null });
+      audio.sfx('whoosh');
+    },
     accuse(who) {
       if (mode !== 'story' || !day || get().phase !== 'playing') return;
       day.accuse(who);
       pushUi();
     },
     toTitle() {
+      finishing = false;
+      set({ finishing: false, beat: null, ceremony: null });
       if (mode === 'story') enterSandbox();
       else saveWorld();
       set({ phase: 'title', paused: false, report: null, storySaved: Story.peek(browserStore) });

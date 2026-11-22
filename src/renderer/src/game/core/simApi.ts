@@ -240,7 +240,8 @@ export interface SimApi {
 
   // ── story ──
   /** A plain line in the feed. */
-  narrate(text: string, opts?: { icon?: string; room?: RoomId; kind?: FeedKind }): void;
+  /** A line for the Log; `beat: true` also shows it on the floor as a story caption. */
+  narrate(text: string, opts?: { icon?: string; room?: RoomId; kind?: FeedKind; beat?: boolean }): void;
   /** Add a memory to people: a list of ids, everyone in a room, or 'all'. (added) weight 0.5 trivial .. 3 unforgettable, default 1. */
   remember(who: CharId[] | RoomId | 'all', text: string, weight?: number): void;
   /** Change how `who` feels about `about` by delta (-100..100 scale). */

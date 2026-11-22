@@ -838,10 +838,10 @@ export class SimCore implements DirectorSimApi {
 
   // ── SimApi: story ──────────────────────────────────────────────────────────
 
-  narrate(text: string, opts: { icon?: string; room?: RoomId; kind?: FeedKind } = {}): void {
+  narrate(text: string, opts: { icon?: string; room?: RoomId; kind?: FeedKind; beat?: boolean } = {}): void {
     const t = String(text ?? '').trim();
     if (!t) return;
-    this.emitFeed(opts.kind ?? 'event', t, { icon: opts.icon, room: opts.room });
+    this.emitFeed(opts.kind ?? 'event', t, { icon: opts.icon, room: opts.room, ...(opts.beat ? { beat: true } : {}) });
     this.logEvent(t);
   }
 

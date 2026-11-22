@@ -90,9 +90,49 @@ export interface StoryUi {
     /** "THE BRANCH STAYS OPEN" */
     title: string;
     text: string[];
+    /** Short personal lines drawn from the week ("Kevin, carried across the office 11 times..."). May be empty. */
+    epilogue: string[];
   } | null;
   /** The whole week at a glance. */
   week: { chapter: number; title: string; weekday: string; result: 'won' | 'lost' | null }[];
+  /** One plain sentence for the chapter card on what happened before ("Yesterday Angela and Oscar made up..."). Null on Monday. */
+  recap: string | null;
+  /**
+   * The recipe-style tips, shown only once the player has failed or retried this day (the card's
+   * `hints` are clues; these say exactly how). Empty until then.
+   */
+  help: string[];
+  /** Side effects to warn about before an action is confirmed ("Using a power fails Quiet hands"). */
+  warns: Partial<Record<ActionId, string>>;
+  /** Story-aware suggestions for the whisper and loudspeaker boxes (shown first). May be empty. */
+  suggest: { whisper: string[]; announce: string[] };
+  /** Today's main goal is settled and nothing left today changes the result: the player may finish the day now. */
+  canFinish: boolean;
+}
+
+/** A line of story narration to show on the floor as a caption (newest wins). */
+export interface BeatUi {
+  /** Changes with every beat. */
+  id: string;
+  text: string;
+  icon?: string;
+  room?: RoomId;
+  /** Real seconds it should stay up (the UI may cut it short when the next beat arrives). */
+  holdFor: number;
+}
+
+/** A big moment, shown as a stamp banner (with its own sound, played by the game). */
+export interface CeremonyUi {
+  /** Changes with every ceremony. */
+  id: string;
+  kind: 'goalWon' | 'goalLost' | 'extraWon' | 'extraLost';
+  /** Two or three shouty words: "CALL MADE", "LEAK FOUND", "SIGNED", "GOAL DONE". */
+  title: string;
+  /** One plain line under it ("+2 influence"). */
+  detail?: string;
+  icon?: string;
+  /** Where on the floor it happened, when known. */
+  room?: RoomId;
 }
 
 /** Live summary of one person, for chips, pickers and the roster. */
@@ -239,6 +279,8 @@ export interface GameSettings {
   quality: 'auto' | 'low' | 'high';
   /** The first-run hints have been seen. */
   tutorialDone: boolean;
+  /** The story's first-day coach has been seen. */
+  storyCoachDone: boolean;
 }
 
 export interface UiState {
@@ -281,6 +323,12 @@ export interface UiState {
   story: StoryUi | null;
   /** A story in progress that can be continued from the title screen, or null. */
   storySaved: { chapter: number; chapters: number; title: string; weekday: string; standing: number } | null;
+  /** The newest story narration worth showing on the floor (story mode), or null. */
+  beat: BeatUi | null;
+  /** The newest big moment to stamp on screen, or null. Replaced by the next one. */
+  ceremony: CeremonyUi | null;
+  /** The rest of the day is being run quickly to five o'clock (after finishDay). */
+  finishing: boolean;
 }
 
 export interface TargetingUi {
@@ -322,8 +370,10 @@ export interface GameApi {
   startSandbox(): void;
   /** From the chapter card: start the day. Call from a tap (unlocks audio). */
   beginChapter(): void;
-  /** From the report (story mode): play the same day again from its start. */
+  /** Story mode: play the same day again from its start (from the report, the chapter card, or during the day). */
   retryDay(): void;
+  /** Story mode, when StoryUi.canFinish: run the rest of the day quickly to five o'clock and the report. */
+  finishDay(): void;
   /** Story mode, when allowed (StoryUi.accuse): name someone. */
   accuse(who: CharId): void;
   /** Back to the title screen (from the ending, or to switch mode). */

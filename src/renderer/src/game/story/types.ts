@@ -1,8 +1,8 @@
 // Shapes shared by the story engine: what a chapter is, what it may do to the
 // day, and what survives between days.
 
-import type { StandingChangeUi } from '@/game/app/gameApi';
-import type { ChaosId, ChaosTarget, CharId, CastId, PlanKind, RoomId } from '@/game/core/types';
+import type { ActionId, StandingChangeUi } from '@/game/app/gameApi';
+import type { ChaosId, ChaosTarget, CharId, CastId, EmotionId, PlanKind, RoomId } from '@/game/core/types';
 import type { SceneTrigger } from '@/game/brain/api';
 import type { Sim } from '@/game/sim';
 import type { Rng } from '@/game/sim/rng';
@@ -14,6 +14,23 @@ export interface GoalDef {
   title: string;
   detail: string;
   icon: string;
+  /** The stamp banner when it is settled, two or three shouty words: [won, lost] ("CALL MADE", "NO CALL"). */
+  stamp?: [string, string];
+  /** Where it happens, for the banner's sparkle on the floor. */
+  room?: RoomId;
+}
+
+/** One line of a scripted scene (a story beat written by hand, so it never waits on the model). */
+export interface ScriptLine {
+  /** Who says it. Must be on the floor, unless `voice` is set. */
+  who?: CharId;
+  /** A voice with no body on the floor (the vice president on the speakerphone): shown as a caption. */
+  voice?: { name: string; icon?: string; room?: RoomId };
+  text: string;
+  kind?: 'say' | 'shout' | 'whisper' | 'think';
+  emotion?: EmotionId;
+  /** Who it is said to. */
+  to?: CharId;
 }
 
 /** What happened during the week that later days (and the ending) remember. Saved with the story. */
@@ -56,6 +73,12 @@ export interface ChapterCtx {
   readonly used: { powers: ChaosId[]; whisper: number; announce: number; cue: number; anything: number };
   /** Run something after this many sim seconds (dropped if the day is over). */
   after(seconds: number, fn: () => void): void;
+  /**
+   * Play hand-written lines as a scene now, in order (each speaker must be on the floor; voice lines
+   * show as captions). `then: 'model'` lets the model carry the scene on afterwards. `done` runs once
+   * the last line has been spoken (or at once if nobody can speak). Lines with nobody to say them are skipped.
+   */
+  script(lines: ScriptLine[], opts?: { room?: RoomId; then?: 'model' | 'none'; why?: string; done?: () => void }): void;
 }
 
 export interface ChaosStartInfo {
@@ -90,6 +113,19 @@ export interface ChapterRun {
   accuseUi?(): { triesLeft: number; accused: CharId[]; label: string } | null;
   /** Held where they are by the story: announcements do not move them. */
   pinned?(who: CharId): boolean;
+  /** What the office is talking about right now (plain sentences); small talk picks from these. */
+  topics?(): string[];
+  /** Side effects to warn about before the player confirms an action ("Using a power fails Quiet hands"). */
+  warns?(): Partial<Record<ActionId, string>>;
+  /** 0..1: how much is at stake right now (deadlines, the tour), for the music. */
+  stakes?(): number;
+  /**
+   * A change in how `who` feels about `about` that a scene is about to make. Return a replacement delta
+   * (e.g. 0 to ignore it while the chapter is counting progress), or undefined to leave it alone.
+   */
+  vetoShift?(who: CharId, about: CharId, delta: number): number | undefined;
+  /** Nothing left today can change the main goal's result (the player may finish the day early). Defaults to main goal settled. */
+  settled?(): boolean;
 }
 
 export interface ExtraDef extends GoalDef {
@@ -108,6 +144,14 @@ export interface ChapterDef {
   locked: Partial<Record<ChaosId, string>>;
   /** The plain cause on the report for the main goal: [won, lost]. */
   change: [string, string];
+  /** Recipe tips shown only after a failed try or a retry (the card's `hints` are clues). */
+  help?: string[];
+  /** One sentence for the card on what happened before (from the week's notes), or null. */
+  recap?(notes: WeekNotes): string | null;
+  /** Story-aware suggestions for the whisper and loudspeaker boxes. */
+  suggest?: { whisper?: string[]; announce?: string[] };
+  /** Today's prices where they differ from the usual (rules.ts COSTS). */
+  costs?: Partial<Record<ActionId, number>>;
   create(ctx: ChapterCtx): ChapterRun;
 }
 

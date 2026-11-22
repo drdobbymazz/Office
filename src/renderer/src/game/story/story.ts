@@ -61,6 +61,8 @@ export interface StoryState {
   notesAtStart: WeekNotes;
   notes: WeekNotes;
   results: (ChapterResult | null)[];
+  /** How many times each chapter has been started again (retried) or lost; help shows once it is 1 or more. */
+  tries: number[];
 }
 
 interface StoryWorld {
@@ -106,7 +108,11 @@ function cleanState(raw: unknown): StoryState | null {
     standingAtStart: Math.max(0, Math.min(100, num(r.standingAtStart, num(r.standing, STANDING_START)))),
     notesAtStart: notes(r.notesAtStart) ?? clone(live),
     notes: live,
-    results
+    results,
+    tries: Array.from({ length: CHAPTERS }, (_, i) => {
+      const t = Array.isArray(r.tries) ? Number(r.tries[i]) : 0;
+      return Number.isFinite(t) && t > 0 ? Math.floor(t) : 0;
+    })
   };
 }
 
@@ -129,7 +135,8 @@ export class Story {
     const notes: WeekNotes = { leak: pickLeak(s) };
     const story = new Story(store, {
       version: 1, seed: s, chapter: 1, stage: 'day', standing: STANDING_START, standingAtStart: STANDING_START,
-      notesAtStart: clone(notes), notes, results: Array.from({ length: CHAPTERS }, () => null)
+      notesAtStart: clone(notes), notes, results: Array.from({ length: CHAPTERS }, () => null),
+      tries: Array.from({ length: CHAPTERS }, () => 0)
     });
     story.save();
     return story;
@@ -227,13 +234,21 @@ export class Story {
     this.state.results[this.state.chapter - 1] = result;
     this.state.standing = after;
     this.state.stage = 'done';
+    if (!result.won) this.bumpTries();
     if (endSave) this.world.end = clone(endSave);
     this.save();
     return result;
   }
 
+  private bumpTries(): void {
+    const i = this.state.chapter - 1;
+    this.state.tries[i] = (this.state.tries[i] ?? 0) + 1;
+  }
+
   /** Play the current day again from its start. Returns the save it starts from. */
   retry(): SaveData | null {
+    // A day already counted as lost has had its try; a retry from the middle of a day counts as one.
+    if (!(this.state.stage === 'done' && this.result && !this.result.won)) this.bumpTries();
     this.state.standing = this.state.standingAtStart;
     this.state.notes = clone(this.state.notesAtStart);
     this.state.results[this.state.chapter - 1] = null;
@@ -265,13 +280,13 @@ export class Story {
     return endingFor(this.state.standing);
   }
 
-  ending(): { id: EndingId; title: string; text: string[] } {
+  ending(): { id: EndingId; title: string; text: string[]; epilogue: string[] } {
     const id = this.endingId();
     const n = this.state.notes;
     const t = endingText(id, {
       call: n.call, accounts: n.accounts, figgis: n.figgis, leakName: displayName(n.leak), leakFound: n.leakFound, inspection: n.inspection
     });
-    return { id, ...t };
+    return { id, title: t.title, text: t.text, epilogue: [] };
   }
 
   /** Everything the screens need. `day` is the live day (null on the ending screen). */
@@ -298,7 +313,7 @@ export class Story {
       side,
       standing: this.state.standing,
       influence: day ? { left: day.influence.left, max: day.influence.max } : { left: budget, max: budget },
-      costs: allCosts(),
+      costs: { ...allCosts(), ...(def.costs ?? {}) },
       locked: { ...def.locked },
       accuse: day ? day.accuseUi() : null,
       result: result && this.state.stage !== 'day'
@@ -308,7 +323,20 @@ export class Story {
       week: CHAPTER_DEFS.map((d, i) => {
         const r = this.state.results[i];
         return { chapter: d.chapter, title: d.title, weekday: d.weekday, result: r ? (r.won ? 'won' : 'lost') : null };
-      })
+      }),
+      recap: this.safe(() => def.recap?.(this.state.notes) ?? null, null),
+      help: (this.state.tries[def.chapter - 1] ?? 0) > 0 ? [...(def.help ?? [])] : [],
+      warns: day ? day.warnsUi() : {},
+      suggest: { whisper: [...(def.suggest?.whisper ?? [])], announce: [...(def.suggest?.announce ?? [])] },
+      canFinish: !!day && this.state.stage === 'day' && day.settled
     };
+  }
+
+  private safe<T>(fn: () => T, fallback: T): T {
+    try {
+      return fn();
+    } catch {
+      return fallback;
+    }
   }
 }

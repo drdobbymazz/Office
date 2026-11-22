@@ -386,8 +386,13 @@ export function buildStory(o: BuildOpts): StoryUi {
     locked: ch.locked ?? {},
     accuse: ch.accuse && !done ? { triesLeft, accused, label: 'Accuse of leaking' } : null,
     result: outcome ? { won: !!o.won, text: outcome.text, changes: outcome.changes, standingBefore: before, standingAfter: after } : null,
-    ending: o.stage === 'ending' ? { id: endingId, title: MOCK_ENDINGS[endingId].title, text: MOCK_ENDINGS[endingId].text } : null,
-    week
+    ending: o.stage === 'ending' ? { id: endingId, title: MOCK_ENDINGS[endingId].title, text: MOCK_ENDINGS[endingId].text, epilogue: [] } : null,
+    week,
+    recap: n > 1 ? 'Yesterday Angela and Oscar made up, and the accounts went in on time.' : null,
+    help: [],
+    warns: {},
+    suggest: { whisper: [], announce: [] },
+    canFinish: !!outcome || goal.state !== 'open'
   };
 }
 

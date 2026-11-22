@@ -9,11 +9,18 @@ import { createRng } from '@/game/sim/rng';
 import { weekFacts } from './chapters';
 import { EXTRA_INFLUENCE, budgetFor, costOf, standingChanges, type DayTally } from './rules';
 import { NOT_ENOUGH } from './text';
-import type { ChapterCtx, ChapterDef, ChapterRun, GoalState, PlayerAction, WeekNotes } from './types';
+import type { ChapterCtx, ChapterDef, ChapterRun, GoalState, PlayerAction, ScriptLine, WeekNotes } from './types';
+
+type ScriptOpts = Parameters<ChapterCtx['script']>[1];
 
 export interface StoryDayHooks {
-  /** A goal was settled (main or extra), for a toast and a sound. */
+  /** A goal was settled (main or extra), for a toast, a banner and a sound. */
   onGoal?(g: { id: string; title: string; state: 'won' | 'lost'; main: boolean }): void;
+  /**
+   * Play a scripted scene through the director (so it does not talk over a model scene). Without
+   * this hook the day plays the lines itself, one after another.
+   */
+  script?(lines: ScriptLine[], opts: NonNullable<ScriptOpts>): void;
 }
 
 const FIVE = 17 * 60;
@@ -55,6 +62,11 @@ export class StoryDay {
       used: this.used,
       after: (seconds, fn) => {
         self.timers.push({ at: sim.time + Math.max(0, seconds), fn });
+      },
+      script: (lines, o = {}) => {
+        if (self.disposed) return;
+        if (self.opts.hooks?.script) self.opts.hooks.script(lines, o);
+        else self.playScript(lines, o);
       }
     };
     this.run = def.create(ctx);
@@ -151,17 +163,98 @@ export class StoryDay {
     this.opts.hooks?.onGoal?.({ id, title: def?.title ?? id, state, main: false });
   }
 
+  /** The default way to play a scripted scene: each line in turn, timed by how long it takes to say. */
+  private playScript(lines: ScriptLine[], o: NonNullable<ScriptOpts>): void {
+    const queue = [...lines];
+    const later = (seconds: number, fn: () => void): void => {
+      this.timers.push({ at: this.sim.time + Math.max(0, seconds), fn });
+    };
+    const next = (): void => {
+      if (this.disposed) return;
+      const line = queue.shift();
+      if (!line) {
+        o.done?.();
+        return;
+      }
+      if (line.voice) {
+        this.sim.narrate(`${line.voice.name}: "${line.text}"`, { icon: line.voice.icon ?? 'phone', room: line.voice.room ?? o.room, beat: true });
+        later(Math.max(2.5, line.text.length / 14) + 0.6, next);
+        return;
+      }
+      const p = line.who ? this.sim.person(line.who) : undefined;
+      if (!line.who || !p || !p.present) {
+        next();
+        return;
+      }
+      const sp = this.sim.say(line.who, line.text, { kind: line.kind, emotion: line.emotion, to: line.to ?? null });
+      later(sp.durationMs / 1000 + 0.6, next);
+    };
+    next();
+  }
+
+  // ── what the rest of the game asks the chapter ─────────────────────────────
+
+  /** What the office is talking about now, for small talk. */
+  topics(): string[] {
+    try {
+      return (this.run.topics?.() ?? []).filter((t) => typeof t === 'string' && t.trim().length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 0..1: how much is at stake right now, for the music. */
+  stakes(): number {
+    if (this.resolvedAt5) return 0;
+    try {
+      return clamp01(this.run.stakes?.() ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  /** A scene's change in feeling, after the chapter has had its say (see ChapterRun.vetoShift). */
+  vetoShift(who: CharId, about: CharId, delta: number): number {
+    if (this.disposed || this.resolvedAt5) return delta;
+    try {
+      const v = this.run.vetoShift?.(who, about, delta);
+      return typeof v === 'number' && Number.isFinite(v) ? v : delta;
+    } catch {
+      return delta;
+    }
+  }
+
+  /** Nothing left today can change the main goal's result. */
+  get settled(): boolean {
+    if (this.resolvedAt5) return true;
+    try {
+      return this.run.settled ? this.run.settled() : this.mainState !== 'open';
+    } catch {
+      return this.mainState !== 'open';
+    }
+  }
+
+  warnsUi(): Partial<Record<ActionId, string>> {
+    if (this.resolvedAt5) return {};
+    try {
+      return { ...(this.run.warns?.() ?? {}) };
+    } catch {
+      return {};
+    }
+  }
+
   // ── influence ──────────────────────────────────────────────────────────────
 
   costOf(action: ActionId): number {
-    return costOf(action);
+    const own = this.def.costs?.[action];
+    return typeof own === 'number' ? own : costOf(action);
   }
 
   /** Why an action cannot be done right now (locked, or not enough influence), or null. */
   refusal(action: ActionId): string | null {
     const locked = (this.def.locked as Partial<Record<string, string>>)[action];
     if (locked) return locked;
-    const cost = costOf(action);
+    const cost = this.costOf(action);
     if (cost > this.influence.left) return NOT_ENOUGH(cost, this.influence.left);
     return null;
   }
@@ -169,13 +262,13 @@ export class StoryDay {
   /** Pay for an action. False (and nothing spent) if it is refused. */
   spend(action: ActionId): boolean {
     if (this.refusal(action)) return false;
-    this.influence.left -= costOf(action);
+    this.influence.left -= this.costOf(action);
     return true;
   }
 
   /** Give back what an action cost (it did not happen after all). */
   refund(action: ActionId): void {
-    this.influence.left += costOf(action);
+    this.influence.left += this.costOf(action);
   }
 
   /**
@@ -185,7 +278,7 @@ export class StoryDay {
   attempt(action: ActionId, act: () => string | null): string | null {
     const no = this.refusal(action);
     if (no) return no;
-    this.influence.left -= costOf(action);
+    this.influence.left -= this.costOf(action);
     let reason: string | null;
     try {
       reason = act();

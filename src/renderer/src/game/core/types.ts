@@ -194,6 +194,8 @@ export interface FeedItem {
   room?: RoomId;
   /** Icon id from the UI icon set (e.g. the chaos id). */
   icon?: string;
+  /** Story narration worth showing on the floor as a caption, not only in the Log. */
+  beat?: boolean;
 }
 
 /** A plan a person has formed (usually chosen by the model) and will act on. */

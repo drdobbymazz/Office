@@ -271,6 +271,21 @@ export interface ReportRequest {
   log: string[];
   stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number };
   people: { id: CharId; name: string; mood: EmotionId }[];
+  /** Story mode: what today was about and how it went, so the write-up can lead with it. */
+  story?: StoryReportInfo;
+}
+
+/** Story mode's day in a few plain lines, for the report. */
+export interface StoryReportInfo {
+  /** "Monday: The Memo" */
+  title: string;
+  /** Today's job: "All hands for the call" */
+  goal: string;
+  won: boolean;
+  /** What happened, plain sentences (the same as the report's story block). */
+  lines: string[];
+  /** Each change to Branch Standing with its cause: "+15 The call with Corporate went ahead". */
+  changes: string[];
 }
 
 export interface ReportResult {

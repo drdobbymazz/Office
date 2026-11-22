@@ -16,7 +16,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   sandbox: false,
   haptics: true,
   quality: 'auto',
-  tutorialDone: false
+  tutorialDone: false,
+  storyCoachDone: false
 };
 
 export function loadSettings(): GameSettings {

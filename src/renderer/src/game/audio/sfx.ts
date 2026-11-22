@@ -670,6 +670,106 @@ export const SFX: Record<SfxId, SfxDef> = {
       tone(o, { type: softWave(o.ctx, 'triangle'), f: N(KEY.F4 - 12) * P, t: tl, a: 0.05, d: 1.6, peak: 0.16 });
       tone(o, { f: N(KEY.C5) * P, t: tl, a: 0.08, d: 1.4, peak: 0.06 });
     }
+  },
+
+  // ── story mode (first drafts: simple, so every id has a sound) ──────
+  goalWin: {
+    gain: 0.55, wet: 0.2, dur: 1.4, vary: 0, max: 1,
+    build(o, P, t) {
+      [KEY.C5, KEY.F5, KEY.A5, KEY.C6, KEY.F6].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.07, 0.24, 0.5));
+    }
+  },
+  goalFail: {
+    gain: 0.5, wet: 0.15, dur: 1.2, vary: 0, max: 1,
+    build(o, P, t) {
+      mallet(o, N(KEY.A5) * P, t, 0.22, 0.35);
+      mallet(o, N(KEY.F5 - 1) * P, t + 0.18, 0.22, 0.6);
+    }
+  },
+  dayWon: {
+    gain: 0.5, wet: 0.3, dur: 2.2, vary: 0, max: 1,
+    build(o, P, t) {
+      [KEY.F5, KEY.A5, KEY.C6, KEY.F6].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.12, 0.22, i === 3 ? 1.4 : 0.5));
+    }
+  },
+  dayLost: {
+    gain: 0.5, wet: 0.3, dur: 2.4, vary: 0, max: 1,
+    build(o, P, t) {
+      [KEY.C6, KEY.A5, KEY.F5, KEY.C5].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.2, 0.2, i === 3 ? 1.5 : 0.5));
+    }
+  },
+  stamp: {
+    gain: 0.55, wet: 0.08, dur: 0.4, vary: 0.03, max: 2,
+    build(o, P, t) {
+      tone(o, { type: 'triangle', f: 110 * P, f2: 60 * P, glide: 0.12, t, a: 0.002, d: 0.18, peak: 0.5 });
+      burst(o, { t, a: 0.002, d: 0.08, peak: 0.25, type: 'lowpass', f: 1800, q: 0.7 });
+    }
+  },
+  tick: {
+    gain: 0.35, wet: 0.02, dur: 0.06, vary: 0.04, max: 6,
+    build(o, P, t) {
+      tone(o, { f: N(KEY.C6) * 2 * P, t, a: 0.001, d: 0.025, peak: 0.12 });
+    }
+  },
+  wipe: {
+    gain: 0.35, wet: 0.1, dur: 0.35, vary: 0.03, max: 2,
+    build(o, P, t) {
+      burst(o, { kind: 'pink', t, a: 0.06, d: 0.2, peak: 0.12, type: 'bandpass', f: 600 * P, f2: 3200 * P, q: 0.9 });
+    }
+  },
+  endingSaved: {
+    gain: 0.55, wet: 0.35, dur: 3.2, vary: 0, max: 1,
+    build(o, P, t) {
+      [KEY.C5, KEY.F5, KEY.A5, KEY.C6, KEY.F6, KEY.A6].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.1, 0.22, i === 5 ? 2.0 : 0.6));
+    }
+  },
+  endingScraped: {
+    gain: 0.5, wet: 0.35, dur: 3.0, vary: 0, max: 1,
+    build(o, P, t) {
+      [KEY.F5, KEY.A5, KEY.G5, KEY.F5].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.22, 0.2, i === 3 ? 1.8 : 0.6));
+    }
+  },
+  endingClosed: {
+    gain: 0.5, wet: 0.4, dur: 3.6, vary: 0, max: 1,
+    build(o, P, t) {
+      [KEY.A5, KEY.F5, KEY.C5, KEY.F4].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.32, 0.2, i === 3 ? 2.4 : 0.7));
+    }
+  },
+  phoneRing: {
+    gain: 0.45, wet: 0.08, dur: 1.4, vary: 0, max: 1,
+    build(o, P, t) {
+      for (let i = 0; i < 2; i++) {
+        const t0 = t + i * 0.55;
+        for (let k = 0; k < 8; k++) {
+          tone(o, { f: (k % 2 ? 480 : 440) * P, t: t0 + k * 0.05, a: 0.002, d: 0.045, peak: 0.12 });
+        }
+      }
+    }
+  },
+  fax: {
+    gain: 0.35, wet: 0.05, dur: 1.0, vary: 0.02, max: 1,
+    build(o, P, t) {
+      tone(o, { type: 'square', f: 1100 * P, t, a: 0.005, d: 0.25, peak: 0.05 });
+      tone(o, { type: 'square', f: 1650 * P, t: t + 0.3, a: 0.005, d: 0.25, peak: 0.05 });
+      burst(o, { t: t + 0.6, a: 0.01, d: 0.3, peak: 0.06, type: 'bandpass', f: 2400, q: 2 });
+    }
+  },
+  gavel: {
+    gain: 0.55, wet: 0.12, dur: 0.6, vary: 0.02, max: 2,
+    build(o, P, t) {
+      for (let i = 0; i < 2; i++) {
+        tone(o, { type: 'triangle', f: 220 * P, f2: 120 * P, glide: 0.05, t: t + i * 0.16, a: 0.001, d: 0.09, peak: 0.4 });
+        burst(o, { t: t + i * 0.16, a: 0.001, d: 0.04, peak: 0.2, type: 'bandpass', f: 1400, q: 1.5 });
+      }
+    }
+  },
+  clink: {
+    gain: 0.45, wet: 0.25, dur: 1.2, vary: 0.02, max: 2,
+    build(o, P, t) {
+      tone(o, { f: 2637 * P, t, a: 0.001, d: 0.9, peak: 0.08 });
+      tone(o, { f: 3951 * P, t: t + 0.002, a: 0.001, d: 0.6, peak: 0.05 });
+      tone(o, { f: 2637 * P, t: t + 0.12, a: 0.001, d: 0.7, peak: 0.05 });
+    }
   }
 };
 

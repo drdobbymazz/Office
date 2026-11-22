@@ -183,7 +183,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     brain: { ...DEFAULT_BRAIN_SETTINGS },
     volumes: { master: 0.8, music: 0.5, sfx: 0.8, voice: 0.7 },
     muted: false, dayMinutes: 10, autoCamera: true, captions: true, sandbox: false, haptics: true,
-    quality: 'auto', tutorialDone: true
+    quality: 'auto', tutorialDone: true, storyCoachDone: true
   };
   const feed: FeedItem[] = [];
   const store = create<UiState>()(() => ({
@@ -201,7 +201,8 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       { id: 'o3', title: 'Steady hands', detail: 'Keep morale above 50 until 5pm.', progress: 1, done: true, icon: 'stock' }
     ],
     toasts: [], report: null, settings: baseSettings, holding: null, targeting: null,
-    inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null
+    inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null,
+    beat: null, ceremony: null, finishing: false
   }));
 
   function personUi(m: Mover): PersonUi {
@@ -548,6 +549,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       const results = run.results.slice();
       results[run.chapter - 1] = null;
       toBriefing(run.chapter, results);
+    },
+    finishDay() {
+      // The mock has no day to run quickly: its report comes from the harness URL instead.
     },
     accuse(who) {
       const st = store.getState().story;

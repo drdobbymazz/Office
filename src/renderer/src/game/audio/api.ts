@@ -16,7 +16,11 @@ export const SFX_IDS = [
   'freeze', 'unfreeze', 'shrink', 'grow', 'swap', 'heart', 'coin', 'cash', 'party', 'sparkle',
   'ghostWail', 'ufoBeam', 'puppyBark', 'raccoonChitter', 'pigeons', 'squeak', 'slurp', 'gasp',
   // day flow
-  'dayStart', 'dayEnd'
+  'dayStart', 'dayEnd',
+  // story mode: goals, the day's result, the week's ending, and story props
+  'goalWin', 'goalFail', 'dayWon', 'dayLost', 'stamp', 'tick', 'wipe',
+  'endingSaved', 'endingScraped', 'endingClosed',
+  'phoneRing', 'fax', 'gavel', 'clink'
 ] as const;
 export type SfxId = (typeof SFX_IDS)[number];
 
@@ -56,6 +60,10 @@ export interface MusicMood {
   frozen: boolean;
   /** Title screen or report screen. */
   menu: boolean;
+  /** Story mode, 0..1: how much is at stake right now (a deadline close, the inspector's tour). Raises tension. */
+  stakes?: number;
+  /** Story mode: the week's ending is on screen. */
+  ending?: 'saved' | 'scraped' | 'closed' | null;
 }
 
 export interface AudioVolumes {
