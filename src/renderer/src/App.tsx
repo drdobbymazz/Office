@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '@/game/game';
 import { GameUI } from '@/components/game/GameUI';
+import { LoadingCard } from '@/components/game/Loading';
 import { createActorView, portraitUrl } from '@/scene/office/actor';
 import { createFxView } from '@/scene/office/fx';
 import { createSim } from '@/game/sim';
@@ -65,6 +66,7 @@ export function App() {
     <div className="md-game" style={{ background: hex(colors.ink[900]) }}>
       <div ref={hostRef} className="md-floor" />
       {game && <GameUI game={game} suggestions={SUGGESTIONS} tips={TIPS} />}
+      {!game && !error && <LoadingCard />}
       {error && (
         <pre className="md-crash">
           The office could not start.{'\n\n'}

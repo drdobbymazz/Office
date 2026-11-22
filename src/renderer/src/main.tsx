@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { hasElectronBridge, installWebCth } from './platform/cthWeb';
+import gameLogo from '@/assets/logo/game-logo.png?url';
 import brandLogo from '@brand/logo.png?url';
 import '@fontsource/press-start-2p';
 import '@fontsource/pixelify-sans/400.css';
@@ -21,11 +22,13 @@ document.head.appendChild(favicon);
 
 const splashMark = document.querySelector('#cth-splash .mk');
 if (splashMark) {
+  // The game's pixel logo, as on the loading card and the title (it carries the name, so the text title goes).
   const img = document.createElement('img');
-  img.src = brandLogo;
-  img.alt = 'Munder Difflin';
-  img.style.cssText = 'height:56px;width:auto;display:block';
+  img.src = gameLogo;
+  img.alt = 'Munder Difflin, Inc. The living office';
+  img.style.cssText = 'width:264px;height:168px;display:block;image-rendering:pixelated;box-shadow:4px 4px 0 rgba(26,19,32,0.25)';
   splashMark.replaceWith(img);
+  document.querySelector('#cth-splash .title')?.remove();
 }
 
 const root = document.getElementById('root');
