@@ -10,6 +10,9 @@ import { Bar, Btn, Head, IconTile, Pips, StandingBar, usePress } from './kit';
 import { useGame, useNow, useUi } from './ctx';
 import { readableOnCream } from './words';
 import { tileBg, tileIcon } from './Story';
+import { useLeaving } from './transitions';
+
+const toastKey = (t: { id: string }) => t.id;
 
 const chipPanel: CSSProperties = {
   background: 'var(--cth-cream-100)',
@@ -142,7 +145,7 @@ function catAccent(c: string): string {
 export function EventsAndToasts({ left, right }: { left: string; right: number }) {
   const game = useGame();
   const active = useUi((s) => s.activeChaos);
-  const toasts = useUi((s) => s.toasts);
+  const toasts = useLeaving(useUi((s) => s.toasts), toastKey);
   return (
     <div style={{
       position: 'absolute', top: 8, left, right: right + 8,
@@ -154,8 +157,8 @@ export function EventsAndToasts({ left, right }: { left: string; right: number }
           {active.length > 3 && <span style={{ ...chipPanel, padding: '6px 8px', fontSize: 14 }}>+{active.length - 3}</span>}
         </div>
       )}
-      {toasts.map((t) => (
-        <button key={t.id} type="button" className="gu-hit gu-drop"
+      {toasts.map(({ item: t, out }) => (
+        <button key={t.id} type="button" className={out ? 'gu-hit sc-leave' : 'gu-hit gu-drop'}
           onClick={() => { game.uiSound('close'); game.dismissToast(t.id); }}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, maxWidth: 'min(360px, 100%)', padding: '8px 12px 8px 14px',

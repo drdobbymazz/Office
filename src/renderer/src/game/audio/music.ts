@@ -6,14 +6,28 @@
 // II chord), electric piano comping, plucked bass, brushed kit, and a mallet
 // melody built from reusable 2-bar motifs (A B A' B'/rest) so it sounds
 // composed rather than random. Chaos adds layers, tempo and darker chords.
+//
+// Story mode adds two inputs. Stakes (0..1) eases in a tension layer over the
+// office tune (a muted pulse, a ticking wood block, brass swells), darker
+// chords, straighter and a little faster time; it rises over about three bars
+// and falls back over about six. Each of the week's endings has its own
+// composed theme (saved bright, scraped bittersweet, closed slow and sparse),
+// which takes over from everything else while the ending is on screen.
 
 import type { MusicMood } from './api';
 
-export type Group = 'office' | 'disco' | 'drone' | 'frozen';
-export const GROUPS: readonly Group[] = ['office', 'disco', 'drone', 'frozen'];
+export type Group = 'office' | 'disco' | 'drone' | 'frozen' | 'tension' | 'ending';
+export const GROUPS: readonly Group[] = ['office', 'disco', 'drone', 'frozen', 'tension', 'ending'];
 export type Inst =
   | 'keys' | 'bass' | 'brush' | 'tick' | 'hat' | 'ohat' | 'kick' | 'rim' | 'clap'
-  | 'lead' | 'pluck' | 'stab' | 'pad' | 'drone' | 'bell';
+  | 'lead' | 'pluck' | 'stab' | 'pad' | 'drone' | 'bell'
+  | 'brass' | 'swell' | 'glock' | 'pulse' | 'wood';
+export type EndingId = 'saved' | 'scraped' | 'closed';
+export const ENDING_IDS: readonly EndingId[] = ['saved', 'scraped', 'closed'];
+
+/** How fast the stakes layer follows the story: most it moves per bar, up and down. */
+export const STAKES_UP = 0.34;
+export const STAKES_DOWN = 0.17;
 
 export interface NoteEv {
   /** Start, in beats from the bar start (swing already applied). */
@@ -40,6 +54,10 @@ export interface Style {
   evening: number;
   menu: boolean;
   swing: number;
+  /** 0..1 story stakes (already eased by the Composer) driving the tension layer. */
+  stakes: number;
+  /** The week's ending on screen: its theme replaces everything else. */
+  ending: EndingId | null;
 }
 
 export interface Chord { root: number; tones: number[]; name: string }
@@ -66,23 +84,106 @@ export const stepToBeat = (step: number, swing = 0): number => step / 4 + (step 
 export const DEFAULT_MOOD: MusicMood = { chaos: 0, hour: 10, disco: false, blackout: false, frozen: false, menu: false };
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const num01 = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : 0);
 const smooth = (a: number, b: number, x: number) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const ZERO: Mix = { office: 0, disco: 0, drone: 0, frozen: 0 };
+const ZERO: Mix = { office: 0, disco: 0, drone: 0, frozen: 0, tension: 0, ending: 0 };
 
-export function styleForMood(m: MusicMood): Style {
-  const chaos = clamp01(m.chaos ?? 0);
+const isEnding = (e: unknown): e is EndingId => e === 'saved' || e === 'scraped' || e === 'closed';
+
+/**
+ * The style for a mood. `stakes` is the eased stakes level (the Composer passes its own);
+ * left out, the mood's raw stakes is used.
+ */
+export function styleForMood(m: MusicMood, stakes?: number): Style {
+  if (isEnding(m.ending)) {
+    // the ending's theme replaces everything (menu, chaos, blackout from the finale scene, ...)
+    const d = ENDINGS[m.ending];
+    return { bpm: d.bpm, mix: { ...ZERO, ending: 1 }, energy: d.energy, tension: 0, evening: 0, menu: false, swing: d.swing, stakes: 0, ending: m.ending };
+  }
+  const chaos = num01(m.chaos);
   const hour = Number.isFinite(m.hour) ? m.hour : 10;
-  const evening = clamp01((hour - 15.5) / 3);
   const mix: Mix = { ...ZERO };
+  const office = !m.frozen && !m.blackout && !m.disco && !m.menu;
+  // stakes only colours the working day's office music
+  const st = office ? num01(stakes ?? m.stakes) : 0;
+  // a tense afternoon does not wind down for the evening as much
+  const evening = clamp01((hour - 15.5) / 3) * (1 - 0.6 * st);
   let bpm: number;
   if (m.frozen) { mix.frozen = 1; bpm = 80; }
   else if (m.blackout) { mix.drone = 1; bpm = 72; }
   else if (m.disco) { mix.disco = 1; bpm = 120; }
   else if (m.menu) { mix.office = 1; bpm = 88; }
-  else { mix.office = 1; bpm = Math.round(96 + 20 * Math.pow(chaos, 1.3) - 4 * evening); }
+  else { mix.office = 1; mix.tension = st; bpm = Math.round(96 + 20 * Math.pow(chaos, 1.3) - 4 * evening + 10 * st); }
   const energy = m.menu ? 0.05 : m.disco ? Math.max(0.5, chaos) : chaos * (1 - 0.6 * evening);
-  return { bpm, mix, energy, tension: m.menu ? 0 : smooth(0.4, 0.85, chaos), evening: m.menu ? 0 : evening, menu: !!m.menu, swing: m.disco ? 0 : 0.16 * (1 - chaos * 0.6) };
+  const tension = m.menu ? 0 : Math.max(smooth(0.4, 0.85, chaos), 0.9 * st);
+  const swing = m.disco ? 0 : 0.16 * (1 - chaos * 0.6) * (1 - 0.7 * st);
+  return { bpm, mix, energy, tension, evening: m.menu ? 0 : evening, menu: !!m.menu, swing, stakes: st, ending: null };
 }
+
+// ── the endings' themes ───────────────────────────────────────────────────
+/** One melody note: start and length in 16ths within its bar, midi. */
+type MelNote = readonly [step: number, len: number, midi: number];
+
+interface EndingDef {
+  bpm: number;
+  swing: number;
+  /** Drives the office-style layer choices (0 sparse .. 1 busy). */
+  energy: number;
+  /** Eight bars, one chord each. Played after a one-bar intro on the first chord, then looped. */
+  chords: readonly string[];
+  /** The tune, bar by bar (same length as chords). */
+  melody: readonly (readonly MelNote[])[];
+}
+
+export const ENDINGS: Record<EndingId, EndingDef> = {
+  // The branch stays open: bright and bouncy, lydian lift on the II chord, mallets doubled by a glockenspiel,
+  // a brushed kit and soft brass.
+  saved: {
+    bpm: 112, swing: 0.1, energy: 0.6,
+    chords: ['Fmaj9', 'Gadd9', 'Am7', 'Bbmaj7', 'Gm7', 'C7sus', 'Fmaj7', 'C9'],
+    melody: [
+      [[0, 4, 81], [4, 4, 84], [8, 8, 89]],
+      [[0, 6, 91], [6, 2, 93], [8, 8, 86]],
+      [[0, 4, 88], [4, 2, 86], [6, 2, 84], [8, 8, 81]],
+      [[0, 4, 82], [4, 4, 86], [8, 4, 89], [12, 4, 93]],
+      [[0, 8, 91], [8, 4, 89], [12, 4, 86]],
+      [[0, 6, 89], [6, 2, 91], [8, 8, 84]],
+      [[0, 6, 93], [6, 2, 91], [8, 8, 89]],
+      [[0, 4, 88], [4, 4, 86], [8, 4, 84], [12, 4, 82]]
+    ]
+  },
+  // Survives with cuts: warm but wistful; the B flat to B flat minor turn is the sigh.
+  scraped: {
+    bpm: 80, swing: 0.12, energy: 0.2,
+    chords: ['Fmaj7', 'Am7', 'Bbmaj7', 'Bbm6', 'Fmaj7', 'Dm7', 'Gm7', 'C7sus'],
+    melody: [
+      [[0, 6, 81], [6, 2, 79], [8, 8, 76]],
+      [[0, 4, 72], [4, 4, 76], [8, 8, 79]],
+      [[0, 6, 86], [6, 2, 84], [8, 8, 81]],
+      [[0, 6, 85], [6, 2, 84], [8, 8, 82]],
+      [[0, 6, 81], [6, 2, 79], [8, 8, 77]],
+      [[0, 4, 81], [4, 4, 84], [8, 8, 86]],
+      [[0, 6, 86], [6, 2, 84], [8, 8, 82]],
+      [[0, 8, 79], [8, 8, 82]]
+    ]
+  },
+  // The branch closes: slow and sparse, D minor, a lone mallet over a soft pad, a far bell now and then;
+  // the last bar lifts to F major for a moment before it all starts again.
+  closed: {
+    bpm: 63, swing: 0, energy: 0,
+    chords: ['Dm9', 'Bbmaj7', 'Gm9', 'A7sus', 'Dm9', 'Bbmaj7', 'Bbm6', 'Fmaj7'],
+    melody: [
+      [[0, 8, 81], [8, 8, 77]],
+      [[4, 12, 86]],
+      [[0, 8, 82], [8, 8, 81]],
+      [[0, 8, 76], [8, 8, 74]],
+      [[0, 8, 77], [8, 8, 74]],
+      [[8, 8, 77]],
+      [[0, 8, 73], [8, 8, 77]],
+      [[0, 16, 81]]
+    ]
+  }
+};
 
 // ── harmony ─────────────────────────────────────────────────────────────
 const PC: Record<string, number> = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11 };
@@ -213,6 +314,14 @@ export class Composer {
   private phraseCount = 0;
   private wasDisco = false;
   private family = '';
+  /** Stakes as the music plays it: eases toward the mood's stakes, one step per bar. */
+  stakes = 0;
+  /** Hysteresis for the harmony: tense chords from stakes 0.55, back to normal at 0.3. */
+  private tenseHold = false;
+  private endingId: EndingId | null = null;
+  /** Bars into the current ending (0 is the intro bar). */
+  private endingBar = 0;
+  private wasEnding = false;
 
   constructor(private rng: () => number = Math.random) {}
 
@@ -225,13 +334,22 @@ export class Composer {
     this.mix = { ...ZERO };
     this.bar = 0;
     this.phrase = null;
+    this.stakes = 0;
+    this.endingId = null;
+  }
+
+  /** True when the next bar would start a different ending than the one playing (the player cuts in at once). */
+  endingChanged(): boolean {
+    const e = isEnding(this.mood.ending) ? this.mood.ending : null;
+    return e !== null && e !== this.endingId;
   }
 
   private pick<T>(arr: readonly T[]): T { return arr[Math.floor(this.rng() * arr.length) % arr.length]; }
 
-  private familyOf(s: Style): 'disco' | 'frantic' | 'normal' {
+  private familyOf(s: Style): 'disco' | 'frantic' | 'tense' | 'normal' {
     if (s.mix.disco > 0) return 'disco';
     if (s.energy > 0.82 && !s.menu) return 'frantic';
+    if (this.tenseHold && s.mix.office > 0 && !s.menu) return 'tense';
     return 'normal';
   }
 
@@ -240,7 +358,7 @@ export class Composer {
     // re-pick the progression at its end, or at once when the mood family changes
     const fam = this.familyOf(s);
     if (!this.prog || this.progPos >= this.prog.bars.length || fam !== this.family) {
-      const pool = fam === 'disco' ? PROGS.disco : fam === 'frantic' ? PROGS.frantic : this.rng() < s.tension ? PROGS.tense : PROGS.calm;
+      const pool = fam === 'disco' ? PROGS.disco : fam === 'frantic' ? PROGS.frantic : fam === 'tense' || this.rng() < s.tension ? PROGS.tense : PROGS.calm;
       let p = this.pick(pool);
       if (pool.length > 1 && p.name === this.lastProg) p = pool[(pool.indexOf(p) + 1) % pool.length];
       this.prog = p;
@@ -260,28 +378,159 @@ export class Composer {
   }
 
   nextBar(): BarPlan {
-    const s = styleForMood(this.mood);
+    // stakes eases toward the story's value: about three bars up, six bars down, never a jump
+    const target = isEnding(this.mood.ending) ? 0 : num01(this.mood.stakes);
+    this.stakes = target > this.stakes ? Math.min(target, this.stakes + STAKES_UP) : Math.max(target, this.stakes - STAKES_DOWN);
+    if (this.stakes >= 0.55) this.tenseHold = true;
+    else if (this.stakes <= 0.3) this.tenseHold = false;
+    const s = styleForMood(this.mood, this.stakes);
     const mixFrom = this.mix;
     const mixTo = s.mix;
     this.mix = { ...mixTo };
     const disco = mixTo.disco > 0;
+    const ending = s.ending;
+    if (ending !== this.endingId) { this.endingId = ending; this.endingBar = 0; }
     if (mixTo.frozen > 0) { /* tempo held while frozen */ }
-    else if (disco || this.wasDisco || this.bar === 0) this.bpm = s.bpm; // the dancers need exactly 120, at once
+    // the dancers need exactly 120 at once, and an ending's theme starts at its own tempo
+    else if (disco || this.wasDisco || ending || this.wasEnding || this.bar === 0) this.bpm = s.bpm;
     else this.bpm += Math.max(-4, Math.min(4, s.bpm - this.bpm));
     this.wasDisco = disco;
+    this.wasEnding = !!ending;
 
-    const chords = this.nextChords(s);
-    const next = this.peekRoot();
     const ev: NoteEv[] = [];
-    const active = (g: Group) => mixFrom[g] > 0.001 || mixTo[g] > 0.001;
-    if (active('office')) this.office(ev, s, chords, next);
-    if (active('disco')) this.disco(ev, s, chords);
-    if (active('drone')) this.drone(ev, chords);
-    if (active('frozen')) this.frozen(ev, chords);
+    let chords: Chord[];
+    if (ending) {
+      // the theme alone: the other groups only fade out their tails
+      chords = this.endingChords(ending);
+      this.family = 'ending';
+      this.held = chords;
+      this.endingEvents(ev, s, ending, chords);
+      this.endingBar++;
+    } else {
+      chords = this.nextChords(s);
+      const next = this.peekRoot();
+      const active = (g: Group) => mixFrom[g] > 0.001 || mixTo[g] > 0.001;
+      if (active('office')) this.office(ev, s, chords, next);
+      if (active('disco')) this.disco(ev, s, chords);
+      if (active('drone')) this.drone(ev, chords);
+      if (active('frozen')) this.frozen(ev, chords);
+      if (active('tension')) this.tension(ev, s, chords, next);
+    }
     ev.sort((a, b) => a.beat - b.beat);
     const plan: BarPlan = { index: this.bar, bpm: this.bpm, barDur: barDur(this.bpm), mixFrom, mixTo, chords, events: ev, style: s };
     this.bar++;
     return plan;
+  }
+
+  // ── story: the stakes layer ───────────────────────────────────────────────
+  /**
+   * A muted pulse on the chord root in eighths, a wood block ticking like a clock, and
+   * (from stakes 0.35) a brass swell into every other bar line. The group's level is the
+   * eased stakes itself, so it fades in and out smoothly; the parts also thicken with it.
+   */
+  private tension(ev: NoteEv[], s: Style, chords: Chord[], next: number | null): void {
+    const g: Group = 'tension';
+    const st = Math.max(s.stakes, 0.15); // still a little shape while it fades out
+    const B = (step: number) => stepToBeat(step, s.swing);
+    for (let step = 0; step < 16; step += 2) {
+      const root = this.chordAt(chords, step).root;
+      ev.push({ beat: B(step), dur: 0.35, inst: 'pulse', midi: root + 12, vel: (step % 8 === 0 ? 0.62 : step % 4 === 0 ? 0.5 : 0.4) * (0.7 + 0.3 * st), group: g });
+    }
+    // when the office is already frantic, the layer thins out (clearer, and cheaper on phones)
+    const busy = s.energy > 0.6;
+    if (st > 0.7 && !busy) {
+      // urgency: sixteenth pickups into the next bar, walking to its root
+      const to = next ?? chords[0].root;
+      ev.push({ beat: B(13), dur: 0.2, inst: 'pulse', midi: to + 10, vel: 0.36, group: g });
+      ev.push({ beat: B(15), dur: 0.2, inst: 'pulse', midi: to + 11, vel: 0.42, group: g });
+    }
+    // the clock: tick (1), tock (0), tick, tock on the beats; soft tocks between once it is tight
+    const by = st > 0.6 && !busy ? 2 : 4;
+    for (let step = 0; step < 16; step += by) {
+      const beat = step / 4;
+      const onBeat = step % 4 === 0;
+      const tick = onBeat && beat % 2 === 0;
+      ev.push({ beat, dur: 0.1, inst: 'wood', midi: tick ? 1 : 0, vel: onBeat ? (tick ? 0.5 : 0.42) : 0.26, group: g });
+    }
+    if (st >= 0.35 && this.bar % 2 === 1 && s.energy <= 0.8) {
+      const c = chords[chords.length - 1];
+      const fifth = c.tones.includes(7) ? 7 : c.tones.includes(6) ? 6 : 7;
+      for (const m of [c.root + 12, c.root + 12 + fifth, c.root + 24]) ev.push({ beat: 2, dur: 2, inst: 'swell', midi: m, vel: 0.3 + 0.35 * st, group: g });
+    }
+  }
+
+  // ── story: the endings ────────────────────────────────────────────────────
+  /** Bar 0 is an intro on the theme's first chord (under the ending's sting), then the eight bars loop. */
+  private endingChords(id: EndingId): Chord[] {
+    const d = ENDINGS[id];
+    const i = this.endingBar === 0 ? 0 : (this.endingBar - 1) % d.chords.length;
+    return [parseChord(d.chords[i])];
+  }
+
+  private endingEvents(ev: NoteEv[], s: Style, id: EndingId, chords: Chord[]): void {
+    const g: Group = 'ending';
+    const d = ENDINGS[id];
+    const ch = chords[0];
+    const intro = this.endingBar === 0;
+    const bi = intro ? -1 : (this.endingBar - 1) % d.chords.length;
+    const B = (step: number) => stepToBeat(step, s.swing);
+    const v = voiceChord(ch, this.voicing);
+    this.voicing = v;
+    const fifth = ch.root + (ch.tones.includes(7) ? 7 : ch.tones[2] ?? 7);
+    const melody = intro ? [] : d.melody[bi];
+    const lead = (vel: number) => {
+      for (const [step, len, midi] of melody) ev.push({ beat: B(step), dur: (len / 4) * 0.92, inst: 'lead', midi, vel, group: g });
+    };
+
+    if (id === 'saved') {
+      if (intro) {
+        // a brass swell on the tonic rising out of the sting, and the bass
+        v.forEach((m) => ev.push({ beat: 0, dur: 4, inst: 'swell', midi: m, vel: 0.5, group: g }));
+        ev.push({ beat: 0, dur: 3.5, inst: 'bass', midi: ch.root, vel: 0.55, group: g });
+        return;
+      }
+      lead(0.52);
+      for (const [step, len, midi] of melody) ev.push({ beat: B(step), dur: (len / 4) * 0.8, inst: 'glock', midi, vel: 0.3, group: g });
+      // bouncy keys
+      const pat: Pat = [[0, 2], [3, 2], [6, 3], [10, 2], [12, 3]];
+      pat.forEach(([st, len], i) => (i ? v.slice(0, 3) : v).forEach((m, k) => ev.push({ beat: B(st) + k * 0.012, dur: len / 4, inst: 'keys', midi: m, vel: i ? 0.33 : 0.4, group: g })));
+      // bass: root, fifth, root, octave, then a step into the next bar
+      const nextRoot = parseChord(d.chords[(bi + 1) % d.chords.length]).root;
+      ([[0, ch.root], [6, fifth], [8, ch.root], [10, ch.root + 12], [14, nextRoot - 1]] as const).forEach(([st, m], i) =>
+        ev.push({ beat: B(st), dur: i === 0 ? 1.2 : 0.5, inst: 'bass', midi: m, vel: i === 0 ? 0.54 : 0.44, group: g }));
+      // brushed kit: kick on 1 and 3, brush on 2 and 4, soft hats in eighths, a little fill every fourth bar
+      for (const st of [0, 8]) ev.push({ beat: B(st), dur: 0.3, inst: 'kick', midi: 0, vel: 0.36, group: g });
+      for (const b of [1, 3]) ev.push({ beat: b, dur: 0.5, inst: 'brush', midi: 0, vel: 0.55, group: g });
+      for (let st = 0; st < 16; st += 2) ev.push({ beat: B(st), dur: 0.1, inst: 'hat', midi: 0, vel: st % 4 ? 0.18 : 0.26, group: g });
+      if (bi % 4 === 3) for (const st of [13, 14, 15]) ev.push({ beat: B(st), dur: 0.1, inst: 'tick', midi: 0, vel: 0.3, group: g });
+      // soft brass on the theme's first bar and its turnaround
+      if (bi === 0 || bi === 4) v.slice(0, 3).forEach((m) => ev.push({ beat: 0, dur: 2, inst: 'brass', midi: m, vel: 0.42, group: g }));
+      if (bi === 7) v.slice(0, 3).forEach((m) => ev.push({ beat: 2, dur: 2, inst: 'swell', midi: m, vel: 0.45, group: g }));
+      return;
+    }
+
+    if (id === 'scraped') {
+      v.forEach((m) => ev.push({ beat: 0, dur: 4, inst: 'pad', midi: m, vel: 0.26, group: g }));
+      ev.push({ beat: 0, dur: 2.6, inst: 'bass', midi: ch.root, vel: 0.55, group: g });
+      if (intro) return;
+      lead(0.5);
+      ([[0, 7], [10, 5]] as const).forEach(([st, len], i) => v.forEach((m, k) => ev.push({ beat: B(st) + k * 0.015, dur: len / 4, inst: 'keys', midi: m, vel: i ? 0.3 : 0.36, group: g })));
+      ev.push({ beat: B(10), dur: 1, inst: 'bass', midi: this.rng() < 0.5 ? fifth : ch.root + 12, vel: 0.42, group: g });
+      for (const b of [1, 3]) ev.push({ beat: b, dur: 0.5, inst: 'brush', midi: 0, vel: 0.32, group: g });
+      // the minor iv, and the turnaround, sigh in soft brass
+      if (bi === 3 || bi === 7) v.slice(0, 3).forEach((m) => ev.push({ beat: 0, dur: 3, inst: 'brass', midi: m, vel: 0.36, group: g }));
+      return;
+    }
+
+    // closed: a pad and a long low bass note per bar, the lone tune, and a far bell every other bar
+    v.forEach((m) => ev.push({ beat: 0, dur: 4, inst: 'pad', midi: m, vel: 0.32, group: g }));
+    ev.push({ beat: 0, dur: 3.8, inst: 'bass', midi: ch.root, vel: 0.46, group: g });
+    if (intro) return;
+    lead(0.46);
+    if (bi % 2 === 1) {
+      const top = ch.root + 36 + ch.tones[Math.min(2, ch.tones.length - 1)];
+      ev.push({ beat: 2.5, dur: 2, inst: 'bell', midi: top > 88 ? top - 12 : top, vel: 0.3, group: g });
+    }
   }
 
   private chordAt(chords: Chord[], step: number): Chord {
@@ -360,7 +609,8 @@ export class Composer {
       }
     }
 
-    this.melody(ev, s, chords, g, s.menu ? 0.4 : (0.35 + 0.45 * e) * (1 - 0.7 * s.evening));
+    // under high stakes the tune steps back a little for the pulse and the clock
+    this.melody(ev, s, chords, g, s.menu ? 0.4 : (0.35 + 0.45 * e) * (1 - 0.7 * s.evening) * (1 - 0.4 * s.stakes));
   }
 
   private melody(ev: NoteEv[], s: Style, chords: Chord[], g: Group, prob: number): void {

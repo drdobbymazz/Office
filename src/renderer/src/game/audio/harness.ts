@@ -135,6 +135,27 @@ function interactive() {
     b.onclick = () => { mood[k] = !mood[k]; b.classList.toggle('on', mood[k]); audio.setMusicMood({ [k]: mood[k] }); };
     mrow.appendChild(b);
   }
+  {
+    const l = el('label', {}, 'stakes');
+    const r = el('input', { type: 'range', min: '0', max: '1', step: '0.01', value: '0' });
+    const v = el('span', {}, '0');
+    r.oninput = () => { v.textContent = r.value; audio.setMusicMood({ stakes: Number(r.value) }); };
+    l.append(r, v);
+    mrow.appendChild(l);
+  }
+  const endBtns: HTMLButtonElement[] = [];
+  for (const k of ['saved', 'scraped', 'closed'] as const) {
+    const b = el('button', {}, `ending: ${k}`);
+    b.onclick = () => {
+      const on = !b.classList.contains('on');
+      for (const x of endBtns) x.classList.remove('on');
+      b.classList.toggle('on', on);
+      audio.setMusicMood({ ending: on ? k : null });
+      if (on) audio.sfx(k === 'saved' ? 'endingSaved' : k === 'closed' ? 'endingClosed' : 'endingScraped');
+    };
+    endBtns.push(b);
+    mrow.appendChild(b);
+  }
   app.appendChild(mrow);
   window.__h = { audio };
   (window as unknown as { __cast: typeof CAST }).__cast = CAST;
@@ -322,7 +343,9 @@ async function analysisMode() {
     const res: Record<string, unknown> = {};
     const moods: [string, Partial<MusicMood>][] = [
       ['calm', { chaos: 0 }], ['chaos .5', { chaos: 0.5 }], ['chaos 1', { chaos: 1 }], ['disco', { disco: true }],
-      ['blackout', { blackout: true }], ['frozen', { frozen: true }], ['menu', { menu: true }], ['evening', { hour: 18 }]
+      ['blackout', { blackout: true }], ['frozen', { frozen: true }], ['menu', { menu: true }], ['evening', { hour: 18 }],
+      ['stakes .5', { stakes: 0.5 }], ['stakes 1', { stakes: 1 }],
+      ['ending saved', { menu: true, ending: 'saved' }], ['ending scraped', { menu: true, ending: 'scraped' }], ['ending closed', { menu: true, ending: 'closed' }]
     ];
     for (const [label, mood] of moods) {
       const b = await renderMusic(mood, 8);
@@ -344,6 +367,16 @@ async function analysisMode() {
     }
     // a scripted ride: calm -> chaos ramp -> disco -> calm, measured in 2 s windows
     const script: [number, Partial<MusicMood>][] = [[0, { chaos: 0 }], [10, { chaos: 0.5 }], [20, { chaos: 1 }], [30, { chaos: 0, disco: true }], [40, { disco: false }]];
+    // a story deadline: stakes rises at 10 s and is gone at 30 s (it should ease both ways, without steps)
+    const ride = await renderMusicScript([[0, { stakes: 0 }], [10, { stakes: 1 }], [30, { stakes: 0 }]], 50);
+    wavs['music-stakes'] = ride;
+    {
+      const rx = mixdown([ride.getChannelData(0), ride.getChannelData(1)]);
+      const rf = rmsFrames(rx, ride.sampleRate, 2, 2);
+      const rm = analyze([ride.getChannelData(0), ride.getChannelData(1)], ride.sampleRate);
+      res.stakesRide = { windowsRmsDb: Array.from(rf, (v) => +f1(20 * Math.log10(v + 1e-12))), clipped: rm.clipped, peakDb: +f1(rm.peakDb) };
+      card(grid, 'music: stakes 0>1 (10 s)>0 (30 s)', ride, rm, `2 s windows rms:\n${Array.from(rf, (v) => Math.round(20 * Math.log10(v + 1e-12))).join(' ')}`, 99);
+    }
     const b = await renderMusicScript(script, 50);
     wavs['music-script'] = b;
     const x = mixdown([b.getChannelData(0), b.getChannelData(1)]);
@@ -370,6 +403,51 @@ async function analysisMode() {
   };
   window.__ready = true;
 }
+
+// ─────────────────────────────────────────────────────────────── lab
+// window.__lab: render and measure from a script (Playwright) in the real browser.
+const lab = {
+  /** One sfx voice straight into an OfflineAudioContext (no bus, reverb or dynamics). */
+  async rawSfx(id: SfxId, o: { at?: number; seconds?: number; pitch?: number } = {}) {
+    const def = SFX[id];
+    const sr = 44100, at = o.at ?? 0.052;
+    const ctx = new OfflineAudioContext(2, Math.ceil((o.seconds ?? def.dur + 0.8) * sr), sr);
+    const out = ctx.createGain();
+    out.gain.value = def.gain;
+    out.connect(ctx.destination);
+    let last = at;
+    def.build({ ctx, dest: out, track(_s, stopAt) { last = Math.max(last, stopAt); } }, o.pitch ?? 1, at);
+    const b = await ctx.startRendering();
+    return { ...round(analyze([b.getChannelData(0), b.getChannelData(1)], sr)), lastStop: +(last - at).toFixed(3) };
+  },
+  /** Sfx through the whole engine (bus, reverb, compressor, limiter, soft clip): [id, at seconds][]. */
+  async engineSfx(list: [SfxId, number][], seconds = 4, mood?: Partial<MusicMood>) {
+    const sr = 44100;
+    const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
+    const { Engine } = await import('./engine');
+    const e = new Engine(ctx, false);
+    if (mood) { const p = e.ensureMusic(); p.setMood({ ...DEFAULT_MOOD, ...mood }); p.start(0); p.scheduleUntil(seconds - 1); p.stop(seconds - 1, 0.8); }
+    for (const [id, at] of list) e.sfx(id, {}, at);
+    const t0 = performance.now();
+    const b = await ctx.startRendering();
+    const ms = performance.now() - t0;
+    const chs = [b.getChannelData(0), b.getChannelData(1)];
+    let over = 0;
+    for (const c of chs) for (const v of c) if (Math.abs(v) > 0.75) over++;
+    return { ...round(analyze(chs, sr)), renderMs: Math.round(ms), overKnee: over };
+  },
+  /** Music through the engine: [atSeconds, mood][] steps. Returns 1 s window RMS and render time. */
+  async music(steps: [number, Partial<MusicMood>][], seconds: number) {
+    const t0 = performance.now();
+    const b = await renderMusicScript(steps, seconds);
+    const ms = performance.now() - t0;
+    const x = mixdown([b.getChannelData(0), b.getChannelData(1)]);
+    const fr = rmsFrames(x, b.sampleRate, 1, 1);
+    return { ...round(analyze([b.getChannelData(0), b.getChannelData(1)], b.sampleRate)), renderMs: Math.round(ms), windowsRmsDb: Array.from(fr, (v) => +f1(20 * Math.log10(v + 1e-12))) };
+  },
+  ids: SFX_IDS
+};
+(window as unknown as { __lab: typeof lab }).__lab = lab;
 
 if (q.get('analyze')) analysisMode().catch((e) => { console.error(e); app.appendChild(el('pre', { class: 'bad' }, String(e?.stack ?? e))); window.__ready = true; });
 else interactive();

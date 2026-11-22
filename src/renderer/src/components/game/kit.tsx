@@ -9,6 +9,7 @@ import { PixelPanel } from '@/components/PixelPanel';
 import { PORTRAIT_H, PORTRAIT_W } from '@/scene/office/portraitArt';
 import { GIcon, type GIconName } from './icons';
 import { useGame } from './ctx';
+import { CLOSED_BELOW, SAVED_AT } from './storyNumbers';
 
 // ── press handling ──
 
@@ -415,9 +416,9 @@ export function CostPips({ n, short, chip, style }: { n: number; short?: boolean
   );
 }
 
-/** Thresholds for the end of the week: 65 or more keeps the branch open, under 40 closes it. */
-export const STANDING_SAFE = 65;
-export const STANDING_RISK = 40;
+/** Thresholds for the end of the week, from the story rules (storyNumbers.ts): the marks on the bar. */
+export const STANDING_SAFE = SAVED_AT;
+export const STANDING_RISK = CLOSED_BELOW;
 export function standingColor(v: number): string {
   return v >= STANDING_SAFE ? 'var(--cth-mint)' : v >= STANDING_RISK ? 'var(--cth-lemon)' : 'var(--cth-coral)';
 }
