@@ -3,7 +3,7 @@
 import type { ChaosId, EmotionId, LineAct } from '@/game/core/types';
 
 export type FixSkill = 'fire' | 'flood' | 'power' | 'wifi' | 'machine' | 'door' | 'pest';
-import type { BarkKind, CustomKind, CustomLook, CustomPower, CustomReaction, CustomVibe, GuestLookWords } from './api';
+import type { BarkKind, CustomKind, CustomLook, CustomPower, CustomReaction, CustomVibe, GuestLookWords, StoryTheme } from './api';
 
 /** Spot which event a sentence is about ("Fire breaks out in the Break Room."). Order matters: specific first. */
 export const CHAOS_KEYWORDS: readonly [ChaosId, RegExp][] = [
@@ -46,6 +46,64 @@ export const CHAOS_KEYWORDS: readonly [ChaosId, RegExp][] = [
 export function detectChaos(text: string): ChaosId | null {
   for (const [id, re] of CHAOS_KEYWORDS) if (re.test(text)) return id;
   return null;
+}
+
+// ── The week's story (story mode) ───────────────────────────────────────────
+
+/**
+ * Sort a plain sentence (a chapter's topic, a fact, a scene's reason) into one of the story themes.
+ * The chapters write their own sentences, so this goes by the words a sentence about each theme
+ * is bound to use. First match wins; a rule with a third pattern is skipped when that also matches
+ * ("whether this branch stays open" is a question about the verdict, not the verdict).
+ */
+const STORY_RULES: readonly [StoryTheme, RegExp, RegExp?][] = [
+  ['waiting', /\bdecides? tonight\b|\bdecide (it )?tonight\b|\bcorporate decides\b|\bwaiting (for|to hear|on) (corporate|the verdict|the call|the decision|news)\b|\bbeen and gone\b|\bwill (decide|ring|call|phone) (tonight|at five|later)\b|\b(tour|inspection) is over\b/i],
+  ['verdict', /\bbranch (stays|is staying|will stay) open\b|\bkeep(s|ing)? (the|this) branch open\b|\bis closing (the|this) branch\b|\b(we are|we're) (staying open|closing)\b|\bthe verdict\b|\bdecision is in\b|\b(has|have) decided\b|\bfarewell\b|\bgoodbye speech\b/i, /\bwhether\b|\bif\b/i],
+  ['inspection', /\binspect(or|ors|ion|ing)\b|\bthe tour\b|\bclipboard\b/i],
+  ['leak', /\bleak(s|ed|ing|er)?\b|\bemail(s|ed|ing)?\b[^.]*\bcorporate\b|\bcorporate\b[^.]*\bemail(s|ed|ing)?\b|\bfax\b|\bmole\b/i],
+  ['client', /\bfiggis\b|\bclient\b|\bcustomer\b|\bsign(s|ed|ing)? for another year\b|\bthe contract\b/i],
+  ['hiding', /\b(has not|hasn't|not) come out\b|\bshut (himself|herself) (in|away)\b|\bhiding in (his|her) office\b|\bmichael is hiding\b|\bnot taking visitors\b|\bnobody has seen (michael|the boss)\b|\b(door|blinds)\b[^.]*\b(closed|shut|down)\b|\b(closed|shut) (his |the )?(door|blinds)\b/i],
+  ['closure', /\bclos(e|es|ed|ing|ure)\b|\bon the list\b|\bvice president\b|\bshut(ting)? (us|the branch|the office|it) down\b|\blay-?offs?\b|\blast (day|week)\b|\bwhat happens to (us|them|everyone)\b/i],
+  ['feud', /\bnot speaking\b|\b(a|the|their) row\b|\bmade up\b|\bmake (up|peace)\b|\bfeud\b|\bfalling[- ]out\b|\bthe accounts\b|\bthe figures\b/i]
+];
+
+export function storyThemeOf(text: string): StoryTheme | null {
+  const t = String(text ?? '');
+  if (!t.trim()) return null;
+  for (const [theme, re, unless] of STORY_RULES) {
+    if (re.test(t) && !(unless && unless.test(t))) return theme;
+  }
+  return null;
+}
+
+/** What people talked about, for the one-sentence summary that becomes their memory. */
+export const STORY_NOUN: Record<StoryTheme, string> = {
+  hiding: 'the boss shut away in his office',
+  closure: 'the branch closing',
+  feud: 'the row in the office',
+  client: 'the big client',
+  leak: 'who has been telling tales to Corporate',
+  inspection: 'the inspection',
+  waiting: 'waiting for Corporate to decide',
+  verdict: "Corporate's decision"
+};
+
+/** How a story theme tends to make people feel (their own mood wins when it fits). */
+const STORY_FEEL: Record<StoryTheme, readonly EmotionId[]> = {
+  hiding: ['confused', 'suspicious', 'amused'],
+  closure: ['nervous', 'sad', 'scared', 'determined'],
+  feud: ['amused', 'suspicious', 'confused'],
+  client: ['nervous', 'determined', 'excited'],
+  leak: ['suspicious', 'angry', 'nervous'],
+  inspection: ['nervous', 'determined', 'scared'],
+  waiting: ['nervous', 'sad', 'bored'],
+  verdict: ['sad', 'proud', 'nervous']
+};
+
+export function storyFeel(theme: StoryTheme, mood: EmotionId, rng: () => number): EmotionId {
+  const list = STORY_FEEL[theme];
+  if (list.includes(mood)) return mood;
+  return list[Math.floor(rng() * list.length)] ?? 'neutral';
 }
 
 export const CHAOS_NOUN: Record<ChaosId, string> = {

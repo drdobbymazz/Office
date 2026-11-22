@@ -26,7 +26,8 @@ const firstSentence = (s: string): string => {
 const sentence = (s: string): string => {
   const t = s.trim();
   if (!t) return '';
-  return /[.!?]$/.test(t) ? t : `${t}.`;
+  // A sentence that ends in a quotation ('Says things like "Carry on."') is already finished.
+  return /[.!?]["']?$/.test(t) ? t : `${t}.`;
 };
 
 /**
@@ -153,6 +154,8 @@ export class PromptBook {
           '"awards":[{"title":"a funny award name","who":"first name","why":"one sentence"}],' +
           '"takeaways":[{"who":"first name","text":"what this person takes away from the day, one short sentence"}]}',
         '- Only report things that are in the log. Name people. Say what changed.',
+        "- If the request starts with TODAY'S STORY, the headline and the first paragraph are about it: " +
+          'what the job was, who did what, and how it ended. Take the facts from it.',
         '- Give 2 or 3 awards, and one takeaway for each person listed.'
       ].join('\n')
     };
@@ -176,7 +179,10 @@ export class PromptBook {
   private personLines(p: PersonBrief, names: NameMap, extra?: string): string {
     const name = names.name(p.id);
     const parts: string[] = [`- ${name}${extra ? `, ${extra}` : ''}.`];
-    if (!this.index.person(p.id) && p.name) parts.push(p.about ? `(${p.name}, a visitor: ${sentence(p.about)})` : `(${p.name}, a visitor.)`);
+    // A visitor: who they are and how they talk (the ones known from the start are also in the cast list,
+    // but only this note carries their voice).
+    const visitor = !this.index.person(p.id) || p.id.includes(':');
+    if (visitor && p.name) parts.push(p.about ? `(${p.name}, a visitor: ${sentence(p.about)})` : `(${p.name}, a visitor.)`);
     if (p.mindOf) {
       const mind = this.index.nameOf(p.mindOf);
       parts.push(
@@ -187,9 +193,13 @@ export class PromptBook {
     parts.push(`Mood: ${p.mood}.`);
     if (p.conviction) {
       const idea = sentence(p.conviction.text.replace(/^./, (c) => c.toUpperCase()));
+      // Someone keeping a secret acts on their belief but never explains it: saying it would give the secret away.
       parts.push(
-        `Since ${p.conviction.since} ${name} has been sure of this, as if it were ${name}'s own idea: "${idea}" ` +
-          `It drives what ${name} says and does all day, and ${name} brings it up whenever possible.`
+        p.hidden
+          ? `Since ${p.conviction.since} ${name} has been privately sure of this: "${idea}" ` +
+              `It decides what ${name} does, but ${name} keeps it private and never says it out loud or explains why.`
+          : `Since ${p.conviction.since} ${name} has been sure of this, as if it were ${name}'s own idea: "${idea}" ` +
+              `It drives what ${name} says and does all day, and ${name} brings it up whenever possible.`
       );
     }
     if (p.state.length) parts.push(sentence(p.state.join(', ')).replace(/^./, (c) => c.toUpperCase()));
@@ -261,10 +271,18 @@ export class PromptBook {
   reportUser(req: ReportRequest, names: NameMap): string {
     const s = req.stats;
     const scale = (v: number): string => String(Math.round(v <= 1 && v >= 0 ? v * 100 : v));
+    const round = (v: number): string => String(Math.round(v * 10) / 10);
     const out: string[] = [];
+    // Story mode: what the day was for and how it went comes first, so the write-up leads with it.
+    const st = req.story;
+    if (st) {
+      out.push(`TODAY'S STORY: ${sentence(st.title)} The job: ${sentence(st.goal)} ${st.won ? 'It was done.' : 'It was not done.'}`);
+      if (st.lines.length) out.push(`What happened: ${st.lines.map(sentence).join(' ')}`);
+      if (st.changes.length) out.push(`Branch Standing (how likely Corporate is to keep the branch open): ${st.changes.map((c) => c.trim()).join('; ')}.`);
+    }
     out.push(`Day ${req.day} is over.`);
     out.push(
-      `Incidents: ${s.incidents}. Stock: ${s.stockStart} at the start, ${s.stockEnd} at the end. ` +
+      `Incidents: ${s.incidents}. Stock: ${round(s.stockStart)} at the start, ${round(s.stockEnd)} at the end. ` +
         `Morale: ${scale(s.morale)} out of 100. Highest chaos: ${scale(s.chaosPeak)} out of 100.`
     );
     out.push('What happened, oldest first:');
