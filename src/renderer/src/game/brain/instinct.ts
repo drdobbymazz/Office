@@ -172,8 +172,10 @@ export function firstPerson(text: string): string {
     .replace(/\byou\b/gi, 'me');
 }
 
-function firstThought(why: string): string {
-  const quoted = /["“']([^"”']{4,})["”']/.exec(why);
+export function firstThought(why: string): string {
+  // Double quotes first. A single quote counts only when it is not inside a word, so the apostrophe
+  // in "Michael's own idea" is not taken for the start of the thought.
+  const quoted = /["“]([^"”]{4,})["”]/.exec(why) ?? /(?:^|[\s(:])['‘]([^'’]{4,}?)['’](?=$|[\s.,;:!?)])/.exec(why);
   if (quoted) return quoted[1].trim();
   const colon = why.indexOf(':');
   return (colon >= 0 ? why.slice(colon + 1) : why).trim();

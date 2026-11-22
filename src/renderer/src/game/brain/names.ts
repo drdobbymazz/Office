@@ -5,10 +5,14 @@ export function normName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-/** "The Inspector" -> "Inspector", "Diane Kowalski" -> "Diane". */
+const TITLES = /^(mr|mrs|ms|miss|mx|dr|sir|dame|lady|lord|professor|prof)\.?$/i;
+
+/** "The Inspector" -> "Inspector", "Diane Kowalski" -> "Diane", "Mr Figgis" -> "Mr Figgis" (a title keeps its name). */
 export function firstName(name: string): string {
   const n = name.trim().replace(/^the\s+/i, '');
-  return n.split(/\s+/)[0] || name.trim();
+  const words = n.split(/\s+/).filter(Boolean);
+  if (words.length >= 2 && TITLES.test(words[0])) return `${words[0]} ${words[1]}`;
+  return words[0] || name.trim();
 }
 
 /**

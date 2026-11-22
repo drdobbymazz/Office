@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CHAOS_IDS, EMOTIONS, LINE_ACTS, PLAN_KINDS, SHIFT_KINDS } from '@/game/core/types';
 import { BARK_KINDS, CUSTOM_LOOKS, CUSTOM_REACTIONS, CUSTOM_VIBES } from '@/game/brain/api';
 import type { SceneTrigger } from '@/game/brain/api';
-import { InstinctBrain, firstPerson, toneOf } from '@/game/brain/instinct';
+import { InstinctBrain, firstPerson, firstThought, toneOf } from '@/game/brain/instinct';
+import { NameMap, firstName } from '@/game/brain/names';
 import { createReflexes } from '@/game/brain/index';
 import { BANK, WORLD, mindsReq, person, sceneReq, seeded } from './fixtures';
 
@@ -198,9 +199,27 @@ describe('typed events without a model', () => {
     expect(b.interpretNow({ id: 'f', text: 'a giant rubber duck statue appears', rooms }).power).toBe('none');
   });
 
+  it('finds the whispered thought even when the reason has a possessive in it', () => {
+    const why = `Michael has just had a sudden thought that feels like Michael's own idea: "If I stay in my office, nothing bad can happen". Michael believes it and acts on it.`;
+    expect(firstThought(why)).toBe('If I stay in my office, nothing bad can happen');
+    expect(firstThought("A thought appears: 'Basil stole the mug'.")).toBe('Basil stole the mug');
+    expect(firstThought("Dwight's idea: the kitchen is haunted")).toBe('the kitchen is haunted');
+  });
+
   it('says a whisper back in the first person', () => {
     expect(firstPerson('you will replace Michael as manager')).toBe('I will replace Michael as manager');
     expect(firstPerson('Jim has hidden your stapler')).toBe('Jim has hidden my stapler');
     expect(firstPerson("you're the best and they know it")).toBe("I'm the best and they know it");
+  });
+
+  it('keeps a title with its name, so Mr Figgis is never just "Mr"', () => {
+    expect(firstName('Mr Figgis')).toBe('Mr Figgis');
+    expect(firstName('Dr. Hart')).toBe('Dr. Hart');
+    expect(firstName('The Inspector')).toBe('Inspector');
+    expect(firstName('Diane Kowalski')).toBe('Diane');
+    const names = new NameMap([{ id: 'visitor:figgis', name: 'Mr Figgis' }, { id: 'dwight', name: 'Dwight Schrute' }]);
+    expect(names.name('visitor:figgis')).toBe('Mr Figgis');
+    expect(names.resolve('Figgis')).toBe('visitor:figgis');
+    expect(names.resolve('Mr Figgis')).toBe('visitor:figgis');
   });
 });
