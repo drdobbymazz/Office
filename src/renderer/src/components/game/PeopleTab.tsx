@@ -2,7 +2,7 @@
 // panel (portrait in their current emotion, thought, bars, feelings about the
 // others, memories, secret, and things you can do to them).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PersonDetail, PersonUi } from '@/game/app/gameApi';
 import type { CharId } from '@/game/core/types';
 import { formatClock, isCastId } from '@/game/core/types';
@@ -184,6 +184,12 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
   const game = useGame();
   const [d, setD] = useState<PersonDetail | null>(() => game.person(id));
   const [tool, setTool] = useState<'whisper' | 'cue' | null>(null);
+  const top = useRef<HTMLDivElement | null>(null);
+  // A card opened from far down the list starts at its top (portrait, and Thursday's Accuse button).
+  useLayoutEffect(() => {
+    const sc = top.current?.closest('[data-tab-scroll]') as HTMLElement | null;
+    if (sc) sc.scrollTop = 0;
+  }, [id]);
   useEffect(() => {
     setD(game.person(id));
     const t = window.setInterval(() => setD(game.person(id)), 500);
@@ -196,6 +202,7 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
   const visitor = !isCastId(d.id);
   return (
     <>
+      <div ref={top} style={{ height: 0, margin: '-4px 0' }} />
       <Section title={d.name.toUpperCase()} accent="sky"
         right={<Btn size="md" variant="secondary" icon="back" label="Back to everyone" sound="close" onClick={onBack} square style={{ margin: '-6px -8px -6px 0' }} />}>
         <div style={{ display: 'flex', gap: 10 }}>

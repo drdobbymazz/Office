@@ -25,7 +25,7 @@ function Line({ f, color, name, otherName }: { f: FeedItem; color: string; name:
       );
     case 'think':
       return (
-        <div style={{ display: 'flex', gap: 6, fontSize: 15, lineHeight: '19px', fontStyle: 'italic', color: 'var(--cth-ink-500)' }}>
+        <div style={{ display: 'flex', gap: 6, fontSize: 15, lineHeight: '19px', color: 'var(--cth-ink-500)' }}>
           {time}
           <span><span style={{ color }}>{name}</span> thinks: {f.text}</span>
         </div>

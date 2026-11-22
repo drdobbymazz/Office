@@ -332,14 +332,25 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
     setTypingPause(true);
     game.setPaused(true);
   }, [game]);
-  const releaseTyping = useCallback(() => {
+  const releaseNow = useCallback(() => {
     if (!pausedByUs.current) return;
     pausedByUs.current = false;
     setTypingPause(false);
     // Only carry on if nothing else paused the day meanwhile.
     if (game.store.getState().paused) game.setPaused(false);
   }, [game]);
-  useEffect(() => releaseTyping, [releaseTyping]);
+  // The box loses focus as the finger lands on Send: let go a moment later, after the tap has
+  // been delivered, so nothing moves under the finger and the line is sent before the day restarts.
+  const releaseTimer = useRef(0);
+  const releaseTyping = useCallback(() => {
+    window.clearTimeout(releaseTimer.current);
+    releaseTimer.current = window.setTimeout(releaseNow, 300);
+  }, [releaseNow]);
+  const refocus = useCallback(() => {
+    window.clearTimeout(releaseTimer.current);
+    holdForTyping();
+  }, [holdForTyping]);
+  useEffect(() => () => { window.clearTimeout(releaseTimer.current); releaseNow(); }, [releaseNow]);
   const send = useCallback(() => {
     const t = text.trim();
     if (!t || disabled || short) return;
@@ -355,26 +366,33 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-coach={coach}>
       {hint && <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{hint}</div>}
-      <textarea
-        ref={ref}
-        className="gu-field gu-hit"
-        rows={2}
-        maxLength={160}
-        autoFocus={autoFocus}
-        value={text}
-        placeholder={placeholder}
-        disabled={disabled}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={holdForTyping}
-        onBlur={releaseTyping}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-        style={{ minHeight: 64 }}
-      />
-      {typingPause && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: -2 }}>
-          <GIcon name="pause" px={16} />The day waits while you type.
-        </div>
-      )}
+      <div style={{ position: 'relative' }}>
+        <textarea
+          ref={ref}
+          className="gu-field gu-hit"
+          rows={2}
+          maxLength={160}
+          autoFocus={autoFocus}
+          value={text}
+          placeholder={placeholder}
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={refocus}
+          onBlur={releaseTyping}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          style={{ minHeight: 64 }}
+        />
+        {/* Laid over the box, so showing or hiding it never moves the buttons under a finger. */}
+        {typingPause && (
+          <span style={{
+            position: 'absolute', right: 6, bottom: 5, display: 'flex', alignItems: 'center', gap: 3, padding: '1px 4px 1px 2px',
+            background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', pointerEvents: 'none',
+            fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)'
+          }}>
+            <GIcon name="pause" px={16} />The day waits while you type
+          </span>
+        )}
+      </div>
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch' }}>
           {shown.map((s, i) => (
