@@ -40,29 +40,36 @@ day, that day starts again from the morning.
 ### Story: Closing Time
 
 Choose **Play the story** on the title screen (or **Sandbox** for free play). Corporate is closing one
-of its branches on Friday, and this one is on the list. Each weekday is a chapter with one main job,
-two extra goals and a few hints:
+of its branches on Friday, and this one is on the list. Each weekday is a chapter with one main job and
+two extra goals. The chapter card opens with what happened before, then the day's goal and its clues.
+If you lose or retry a day, the card also shows "Stuck? Ways that work".
 
-| Day | Chapter | The job |
-|---|---|---|
-| Monday | The Memo | Get Michael (hiding in his office) and at least 9 others into the conference room for Corporate's call between 14:00 and 15:00. |
-| Tuesday | Not Speaking | Get Angela and Oscar to like each other again before the accounts are due. Someone keeps stirring. |
-| Wednesday | The Client | Keep Mr Figgis's patience up and get him into a meeting with a salesperson. His card says what he likes. |
-| Thursday | The Leak | Work out who has been emailing Corporate and accuse them. Two tries. |
-| Friday | The Verdict | Pass the inspector's tour: people at their desks, no disasters, Michael in his office. |
+| Day | Chapter | The job | What is in the way |
+|---|---|---|---|
+| Monday | The Memo | Get Michael and at least 9 others into the conference room between 14:00 and 15:00 for Corporate's call. | Michael really hides in his office and ignores the loudspeaker; at 10:20 Creed goes through his bin. |
+| Tuesday | Not Speaking | Three good talks between Angela and Oscar (or both back to liking each other) before five. | Dwight keeps warning Angela about Oscar, and after lunch Kevin starts worrying Oscar. |
+| Wednesday | The Client | Get Mr Figgis and a salesperson together in a meeting room before his patience runs out. | Michael keeps barging in to pitch, and not every salesperson suits him: read his card. |
+| Thursday | The Leak | Work out who is faxing Corporate and accuse them (two tries). | Everyone on an errand uses the same fax machine; only the leak's pages make it beep. |
+| Friday | The Verdict | Pass the inspector's tour. | Michael wants to give a farewell speech, and the week's loose ends turn up on the tour. |
 
 Two numbers run the week:
 
-- **Influence** is today's budget. Powers cost 2 to 4, whispers, announcements and "tell them to" cost 1,
-  Anything costs 3. Picking people up and poking are free. An extra goal gives 2 back.
-- **Branch Standing** (starts at 40) is how likely Corporate is to keep the branch open. A won day adds 15,
-  a lost one takes 10, each extra goal adds 5, each incident takes 2, and morale counts a little. The report
-  lists every change and why. After Friday: 65 or more and the branch stays open, 40 to 64 it survives with
-  cuts, under 40 it closes.
+- **Influence** is today's budget (6 to 10). Powers cost 2 to 4; whispers, announcements and "tell them to"
+  cost 1; Anything costs 3. Picking people up and poking are free. An extra goal gives 2 back.
+- **Branch Standing** starts at 40. A won day adds 8 and a lost one takes 8, each extra goal adds 2,
+  incidents take 1 each (at most 3 a day), and morale moves it by 1. The report lists every change and why.
+  After Friday: 75 or more **and** a passed inspection keeps the branch open, under 45 closes it, and
+  anything else survives with cuts.
 
-Any day can be played again from its start ("Try the day again" on the report). The story saves itself
-separately from the sandbox. Announcements that name a room now send people there, and people you drop
-stay put for a while: both help in the story and work in the sandbox too.
+Days remember each other: a late set of accounts makes Mr Figgis start out annoyed, the Figgis order makes
+Thursday's fax quieter, and an uncaught leak tries one last page during Friday's tour. The week ends with a
+scene on the floor before the ending card.
+
+While you play: story moments show as a caption at the bottom of the floor; a stamp marks each goal won or
+lost; once the day's job is settled, **Finish the day** runs the rest quickly to the report, and after a loss
+**Try the day again** starts the same morning over. Tap the clock to pause; the day also pauses while you type.
+The story saves itself separately from the sandbox. Announcements that name a room send people there, and
+people you drop stay put for a while: both work in the sandbox too.
 
 ### Touch controls
 
