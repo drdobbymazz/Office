@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const angela: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael has shut himself in his office. Frankly, it's the most professional thing he's done.",
+      "A manager who hides is not a manager. He's a coward with a nameplate.",
+      "Something is wrong. Michael hasn't asked anyone for a hug all morning."
+    ],
+    closure: [
+      "If they close this branch, my cats and I will be fine. We have savings.",
+      "Closing us would be unfair. We have the cleanest accounts in the region. Mine, anyway.",
+      "I will not cry about a branch closing. Crying is for people without plans."
+    ],
+    feud: [
+      "I am not speaking to Oscar. Please tell him I said so.",
+      "Oscar made an error and refuses to admit it. I can wait. I'm very patient.",
+      "The row is Oscar's fault. I have it in writing. In three different pens."
+    ],
+    client: [
+      "Mr Figgis seems like a decent man. Keep Michael away from him.",
+      "A client with standards. Finally. Nobody embarrass us.",
+      "If Mr Figgis leaves, it's on whoever let Michael talk."
+    ],
+    leak: [
+      "Whoever is emailing Corporate is a snake. I'm keeping a list of suspects.",
+      "Leaking is disgraceful. Unless it's about Phyllis. Then it's information.",
+      "I know it's not me, and I have my suspicions about everyone else."
+    ],
+    inspection: [
+      "Finally, someone from Corporate who appreciates order. I've labelled everything twice.",
+      "The inspector will see a spotless accounting corner. I've made sure of it.",
+      "If anyone embarrasses this office in front of the inspector, I will remember it."
+    ],
+    waiting: [
+      "The inspector's gone. Now we wait. I'll be at my desk, judging quietly.",
+      "Corporate decides tonight. I've already told my cats to be brave.",
+      "Waiting is no excuse for slacking. Some of us still have work."
+    ],
+    verdict: [
+      "Whatever Corporate decides, my files are in perfect order. That's what matters.",
+      "If this is the end, I'm taking my cat calendar and leaving with dignity.",
+      "I won't pretend I'll miss everyone. I'll miss some people. Two."
+    ]
+  },
   barks: {
     scared: ["Get away from me!", "This is unsafe. And rude.", "I am not panicking. You are."],
     startled: ["Excuse me!", "How dare you.", "That was uncalled for."],

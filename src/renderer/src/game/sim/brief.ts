@@ -4,6 +4,7 @@
 import type { CharId, EmotionId, StatusEffect } from '@/game/core/types';
 import { formatClock, isCastId } from '@/game/core/types';
 import { CAST, VISITORS } from '@/game/core/cast';
+import { VISITOR_VOICES } from '@/game/core/content/voices/visitors';
 import type { PersonBrief } from '@/game/brain/api';
 import type { Person } from './people';
 import type { SimCore } from './core';
@@ -53,6 +54,15 @@ export function goalOf(core: SimCore, p: Person): string {
       case 'prank': return `wants to prank ${t}`;
       case 'comfort': return `wants to cheer ${t} up`;
       case 'snoop': return `wants to go through ${t}'s desk`;
+      case 'work': return `wants to get back to work${about ? ` (${p.plan.about!.trim()})` : ''}`;
+      case 'coffee': return 'wants a coffee';
+      case 'snack': return 'wants a snack';
+      case 'break': return 'wants a break somewhere quiet';
+      case 'nap': return 'wants a nap';
+      case 'hide': return 'wants to hide';
+      case 'wander': return p.plan.about ? `is wandering about, ${p.plan.about.trim()}` : 'wants to wander about';
+      case 'fix': return `wants to deal with ${p.plan.about?.trim() || 'the problem'}`;
+      case 'flee': return `wants to get away${p.plan.about?.trim() ? ` from ${p.plan.about.trim()}` : ''}`;
       default: return `wants to ${p.plan.kind}${about}`;
     }
   }
@@ -100,6 +110,9 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
   const visitor = !isCastId(who) ? VISITORS[who] : undefined;
   if (visitor?.summary) {
     const extra = [visitor.wants ? `Wants ${visitor.wants}.` : '', visitor.fears ? `Cannot stand ${visitor.fears}.` : '', visitor.quirk ? `${visitor.quirk.replace(/^./, (c) => c.toUpperCase())}.` : ''];
+    // How they talk, so the model gives a visitor who matters to the story a voice of their own.
+    const voice = VISITOR_VOICES[who];
+    if (voice) extra.push(`Talks: ${voice.speech}`, voice.examples.length ? `Says things like "${voice.examples[0]}"` : '');
     brief.about = [visitor.summary, ...extra].filter(Boolean).join(' ');
   }
   if (p?.hiddenNote) brief.hidden = p.hiddenNote;

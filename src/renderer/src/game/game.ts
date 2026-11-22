@@ -367,7 +367,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const stats = { incidents: sim.incidentsToday, stockStart, stockEnd: m.stock, morale: m.morale, chaosPeak: Math.round(chaosPeak) };
     flushFeed();
     const todays = get().feed.filter((f) => f.day === day && f.kind === 'say' && f.who && f.text.length > 18);
-    const quotes = pickSpread(todays, 3).map((f) => ({ who: f.who as CharId, name: displayName(f.who as CharId), avatar: avatar(f.who as CharId, f.emotion), text: f.text }));
+    const quotes = director.pickQuotes(todays, 3).map((f) => ({ who: f.who as CharId, name: displayName(f.who as CharId), avatar: avatar(f.who as CharId, f.emotion), text: f.text }));
     const base: DayReport = { day, headline: '', paragraphs: [], awards: [], quotes, stats: { ...stats, lines: linesToday }, writing: true };
     // Story mode: settle the day, move Branch Standing and save, before the report shows.
     if (mode === 'story' && story && storyDay) {

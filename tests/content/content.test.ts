@@ -1,10 +1,10 @@
 // Checks the hand-written text against the rules in game/core/content/types.ts.
 import { describe, expect, it } from 'vitest';
-import { BANK, CHAOS_TEXT, SUGGESTIONS, TIPS } from '@/game/core/content';
-import type { VoiceBank } from '@/game/core/content';
+import { BANK, CHAOS_TEXT, SUGGESTIONS, TIPS, VISITOR_VOICES, VOICES } from '@/game/core/content';
+import type { LooseVoiceBank, VoiceBank } from '@/game/core/content';
 import { CAST_IDS, CHAOS_IDS } from '@/game/core/types';
 import { CHAOS } from '@/game/core/chaos';
-import { BARK_KINDS, CUSTOM_VIBES } from '@/game/brain/api';
+import { BARK_KINDS, CUSTOM_VIBES, STORY_THEMES } from '@/game/brain/api';
 
 const EMOJI = /\p{Extended_Pictographic}/u;
 const DASHES = /[‒–—―]/;
@@ -24,19 +24,21 @@ const BANNED = [
 interface Entry { field: string; text: string; allowed: string[]; maxWords: number }
 
 /** Every spoken line for one person, with the placeholders each field allows. */
-function linesOf(v: VoiceBank): Entry[] {
+function linesOf(v: VoiceBank | LooseVoiceBank): Entry[] {
   const out: Entry[] = [];
-  for (const k of BARK_KINDS) for (const t of v.barks[k]) out.push({ field: `barks.${k}`, text: t, allowed: [], maxWords: 6 });
-  for (const k of CHAOS_IDS) for (const t of v.chaos[k]) out.push({ field: `chaos.${k}`, text: t, allowed: [], maxWords: 18 });
-  for (const t of v.idle) out.push({ field: 'idle', text: t, allowed: [], maxWords: 18 });
-  for (const t of v.openers) out.push({ field: 'openers', text: t, allowed: ['other'], maxWords: 18 });
+  // Story lines open a chat or answer one, so they name nobody in particular.
+  for (const k of STORY_THEMES) for (const t of v.story?.[k] ?? []) out.push({ field: `story.${k}`, text: t, allowed: [], maxWords: 18 });
+  for (const k of BARK_KINDS) for (const t of v.barks?.[k] ?? []) out.push({ field: `barks.${k}`, text: t, allowed: [], maxWords: 6 });
+  for (const k of CHAOS_IDS) for (const t of v.chaos?.[k] ?? []) out.push({ field: `chaos.${k}`, text: t, allowed: [], maxWords: 18 });
+  for (const t of v.idle ?? []) out.push({ field: 'idle', text: t, allowed: [], maxWords: 18 });
+  for (const t of v.openers ?? []) out.push({ field: 'openers', text: t, allowed: ['other'], maxWords: 18 });
   for (const tone of ['warm', 'cold', 'neutral'] as const) {
-    for (const t of v.replies[tone]) out.push({ field: `replies.${tone}`, text: t, allowed: ['other'], maxWords: 18 });
+    for (const t of v.replies?.[tone] ?? []) out.push({ field: `replies.${tone}`, text: t, allowed: ['other'], maxWords: 18 });
   }
   // {thought} is itself a short sentence, so the rest of the line is kept to 12 words.
-  for (const t of v.whispered) out.push({ field: 'whispered', text: t, allowed: ['thought', 'other'], maxWords: 13 });
-  for (const t of v.announced) out.push({ field: 'announced', text: t, allowed: [], maxWords: 18 });
-  for (const k of CUSTOM_VIBES) for (const t of v.custom[k]) out.push({ field: `custom.${k}`, text: t, allowed: ['thing'], maxWords: 18 });
+  for (const t of v.whispered ?? []) out.push({ field: 'whispered', text: t, allowed: ['thought', 'other'], maxWords: 13 });
+  for (const t of v.announced ?? []) out.push({ field: 'announced', text: t, allowed: [], maxWords: 18 });
+  for (const k of CUSTOM_VIBES) for (const t of v.custom?.[k] ?? []) out.push({ field: `custom.${k}`, text: t, allowed: ['thing'], maxWords: 18 });
   return out;
 }
 
@@ -72,6 +74,7 @@ describe('voice banks', () => {
         if (v.whispered.length < 4) short.push('whispered');
         if (v.announced.length < 4) short.push('announced');
         for (const k of CUSTOM_VIBES) if ((v.custom[k]?.length ?? 0) < 2) short.push(`custom.${k}`);
+        for (const k of STORY_THEMES) if ((v.story?.[k]?.length ?? 0) < 3) short.push(`story.${k}`);
         expect(short.join("\n")).toBe("");
       });
 
@@ -121,6 +124,28 @@ describe('voice banks', () => {
     }
     expect(shared.join("\n")).toBe("");
   });
+});
+
+describe('visitor voices', () => {
+  it('Mr Figgis and the inspector have voices, handed to the brain with the staff', () => {
+    expect(Object.keys(VISITOR_VOICES).sort()).toEqual(['visitor:figgis', 'visitor:inspector']);
+    for (const [id, v] of Object.entries(VISITOR_VOICES)) {
+      expect((VOICES as Record<string, unknown>)[id]).toBe(v.bank);
+      expect(v.speech.trim().length).toBeGreaterThan(10);
+      expect(v.examples.length).toBeGreaterThanOrEqual(2);
+    }
+    expect(Object.keys(BANK).sort()).toEqual([...CAST_IDS].sort());
+  });
+
+  for (const [id, v] of Object.entries(VISITOR_VOICES)) {
+    it(`${id} follows the writing rules`, () => {
+      const errs = [...linesOf(v.bank), ...v.examples.map((t) => ({ field: 'examples', text: t, allowed: [], maxWords: 18 }))]
+        .flatMap((e) => checkText(`${id}.${e.field}`, e.text, e.allowed, e.maxWords));
+      expect(errs.join("\n")).toBe("");
+      expect((v.bank.openers ?? []).filter((t) => !t.includes('{other}'))).toEqual([]);
+      expect((v.bank.whispered ?? []).filter((t) => !t.includes('{thought}'))).toEqual([]);
+    });
+  }
 });
 
 describe('chaos narration', () => {

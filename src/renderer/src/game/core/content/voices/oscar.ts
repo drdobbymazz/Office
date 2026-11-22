@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const oscar: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael has been in his office for three hours. Statistically, that's a cry for help.",
+      "Actually, a manager hiding is usually bad news. I've read about this.",
+      "Something's going on with Michael. I'd say it's about money. It's usually money."
+    ],
+    closure: [
+      "Actually, closing a branch costs more than people think. Not that Corporate thinks.",
+      "If they close us, I have savings and a book club. I'll be fine. Mostly.",
+      "The numbers don't justify a closure. I checked. Twice. Nobody asked me."
+    ],
+    feud: [
+      "I'm not speaking to Angela until she admits the figures were wrong. They were.",
+      "Actually, it isn't a row. It's a disagreement about facts. I have the facts.",
+      "Angela and I will make up when the numbers do. So, never."
+    ],
+    client: [
+      "Mr Figgis wants a fair price. Someone give him the real figures, not Michael's.",
+      "Actually, Figgis Hardware is a fifth of our business. So, no pressure.",
+      "If Michael pitches to Mr Figgis, I'll need to sit down."
+    ],
+    leak: [
+      "Someone's emailing Corporate. Actually, the timing of these emails is very interesting.",
+      "Whoever it is uses the fax. Who uses a fax? That narrows it down.",
+      "I'm not the leak. I tell my book club about this office. That's different."
+    ],
+    inspection: [
+      "The inspector will want to see the books. They're correct. Unlike some things here.",
+      "Actually, inspectors look for empty desks first. Everyone sit down.",
+      "I've never seen this office so quiet. It's almost like a real business."
+    ],
+    waiting: [
+      "The inspection's done. Now it's out of our hands. I hate that.",
+      "Actually, they'll ring at five. Corporate always rings at five.",
+      "Corporate decides tonight. I've run the numbers. They're not reassuring."
+    ],
+    verdict: [
+      "Whatever happens, this office was never boring. That's not nothing.",
+      "If this is the end, I want it noted that I was right about most things.",
+      "Open or closed, I'll tell my book club everything. They'll be riveted."
+    ]
+  },
   barks: {
     scared: ["This is not ideal.", "Statistically, I should run.", "Okay. Okay. Breathe."],
     startled: ["Oh! Good grief.", "That was unnecessary.", "Who does that?"],
