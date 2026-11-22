@@ -39,6 +39,10 @@ html, body, #root {
   font-size: var(--cth-text-body-md);
   line-height: var(--cth-lh-body-md);
   overflow: hidden;
+  /* Pixelify Sans's fi / fl ligatures draw as a letter that reads "A" ("first" reads "Arst",
+     "floor" reads "Aoor"). Off everywhere; every element inherits it. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "clig" 0;
 }
 
 body {
