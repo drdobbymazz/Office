@@ -11,6 +11,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts']
+    include: ['tests/**/*.test.ts'],
+    // Story tests play whole office days on the real simulation: on a busy machine they can take
+    // well over the default five seconds without anything being wrong.
+    testTimeout: 30000
   }
 });

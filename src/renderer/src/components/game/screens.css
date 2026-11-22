@@ -1,0 +1,156 @@
+/* Full-screen moments: the title, the chapter card, the goal stamp, the report, the ending and the
+   wipe between them. Same rules as gameui.css and DESIGN.md: hard edges, hard shadows, step
+   animations, the three pixel fonts and the tokens. Class names are prefixed sc- (screens). */
+
+/* ── Entrances (one time, never looping: DESIGN.md 12.2) ── */
+@keyframes sc-drop { 0% { transform: translateY(-12px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+@keyframes sc-rise { 0% { transform: translateY(8px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+@keyframes sc-hop {
+  0% { transform: translateY(6px); opacity: 0; }
+  50% { transform: translateY(-3px); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes sc-fade { 0% { opacity: 0; } 100% { opacity: 1; } }
+
+.sc-drop { animation: sc-drop 200ms steps(4) both; }
+.sc-rise { animation: sc-rise 160ms steps(4) both; }
+.sc-hop { animation: sc-hop 240ms steps(4) both; }
+.sc-fade { animation: sc-fade 160ms steps(4) both; }
+
+/* ── The wipe between screens: a sheet of office paper crosses the screen in 6 steps ── */
+@keyframes sc-wipe-cover { 0% { transform: translateX(-102%); } 100% { transform: translateX(0); } }
+@keyframes sc-wipe-reveal { 0% { transform: translateX(0); } 100% { transform: translateX(102%); } }
+.sc-wipe {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: auto;          /* nothing underneath takes a tap while the screen changes */
+  overflow: hidden;
+}
+.sc-wipe-sheet {
+  position: absolute;
+  inset: 0 -8px;
+  background-color: var(--cth-cream-100);
+  background-image: repeating-linear-gradient(45deg, rgba(232, 217, 160, 0.28) 0 1px, transparent 1px 6px);
+  box-shadow: inset 2px 0 0 var(--cth-ink-900), inset -2px 0 0 var(--cth-ink-900), 4px 0 0 rgba(26, 19, 32, 0.25), -4px 0 0 rgba(26, 19, 32, 0.25);
+}
+.sc-wipe.cover .sc-wipe-sheet { animation: sc-wipe-cover 120ms steps(3, end) both; }
+.sc-wipe.reveal .sc-wipe-sheet { animation: sc-wipe-reveal 120ms steps(3, end) both; }
+
+/* ── The day band: "TUESDAY · Day 2 of 5" across the floor as the day starts ──
+   It moves in 4 steps each way and holds still in between. */
+@keyframes sc-band-steps {
+  0% { transform: translateX(-100%); }
+  3% { transform: translateX(-75%); }
+  6% { transform: translateX(-50%); }
+  9% { transform: translateX(-25%); }
+  12% { transform: translateX(0); }
+  86% { transform: translateX(0); }
+  89.5% { transform: translateX(25%); }
+  93% { transform: translateX(50%); }
+  96.5% { transform: translateX(75%); }
+  100% { transform: translateX(100%); }
+}
+.sc-band { animation: sc-band-steps 1400ms step-end both; }
+
+/* ── The goal stamp: slams in over three steps, a 1 px shake, then two steps out ── */
+@keyframes sc-stamp-in {
+  0% { transform: scale(1.8); opacity: 0.5; }
+  33% { transform: scale(1.4); opacity: 1; }
+  66% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes sc-stamp-shake {
+  0% { transform: translate(1px, 0); }
+  50% { transform: translate(-1px, 1px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes sc-out { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 0; } }
+.sc-stamp {
+  animation:
+    sc-stamp-in 150ms step-end both,
+    sc-stamp-shake 100ms steps(2) 150ms,
+    sc-out 160ms steps(2) var(--sc-hold, 1500ms) forwards;
+}
+.sc-stamp-small {
+  animation:
+    sc-stamp-in 120ms step-end both,
+    sc-out 160ms steps(2) var(--sc-hold, 1200ms) forwards;
+}
+/* The report's WON / LOST tag lands the same way and stays. */
+.sc-slam { animation: sc-stamp-in 150ms step-end both, sc-stamp-shake 100ms steps(2) 150ms; }
+
+/* A week tile turning over to show the day's result. */
+@keyframes sc-flip { 0% { transform: scaleY(1); } 50% { transform: scaleY(0.25); } 100% { transform: scaleY(1); } }
+.sc-flip { animation: sc-flip 200ms steps(2) both; }
+
+/* ── Scroll areas: a dithered fade and a chevron say there is more below ── */
+.sc-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cth-ink-700) var(--cth-cream-200);
+}
+.sc-scroll::-webkit-scrollbar { width: 6px; }
+.sc-more {
+  position: absolute;
+  left: 0;
+  right: 8px;
+  bottom: 0;
+  height: 16px;
+  pointer-events: none;
+  /* Three rows of 2 px cream dither, thicker towards the edge: a pixel fade, not a gradient. */
+  background:
+    conic-gradient(var(--sc-fade-bg, var(--cth-cream-50)) 25%, transparent 0 50%, var(--sc-fade-bg, var(--cth-cream-50)) 0 75%, transparent 0) 0 0 / 4px 4px,
+    linear-gradient(transparent 0 8px, var(--sc-fade-bg, var(--cth-cream-50)) 8px);
+  background-repeat: repeat-x, no-repeat;
+  background-size: 4px 4px, 100% 100%;
+  background-position: 0 4px, 0 0;
+}
+@keyframes sc-nudge { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(3px); } }
+.sc-chev {
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  width: 28px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: none;
+  padding: 0;
+  background: var(--cth-cream-50);
+  box-shadow: inset 0 0 0 2px var(--cth-ink-900), 0 2px 0 var(--cth-ink-700);
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+.sc-chev > * { animation: sc-nudge 900ms steps(1) infinite; }
+
+/* ── Credits: the cast rolls up the page in whole-pixel steps ── */
+@keyframes sc-roll { 0% { transform: translateY(0); } 100% { transform: translateY(var(--sc-roll, -600px)); } }
+.sc-roll { animation: sc-roll var(--sc-roll-time, 16s) steps(var(--sc-roll-steps, 300)) 600ms both; }
+
+/* Page dots under a two-page card. */
+.sc-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  background: var(--cth-cream-200);
+  box-shadow: inset 0 0 0 2px var(--cth-ink-500);
+}
+.sc-dot.on { background: var(--cth-ink-900); box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-drop, .sc-rise, .sc-hop, .sc-fade, .sc-slam, .sc-flip, .sc-stamp, .sc-stamp-small { animation: none; }
+  .sc-band { animation: none; opacity: 0; }
+  .sc-chev > * { animation: none; }
+  .sc-roll { animation: none; }
+}
+
+/* Toasts and chips on their way out: the reverse of gu-drop, four steps, no taps meanwhile. */
+@keyframes sc-leave { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
+.sc-leave { animation: sc-leave 160ms steps(4) forwards; pointer-events: none !important; }
+@media (prefers-reduced-motion: reduce) { .sc-leave { animation: none; opacity: 0; } }

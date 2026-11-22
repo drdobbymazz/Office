@@ -5,7 +5,7 @@ import type { LoopId, MusicMood, SfxId, SpeakOptions } from './api';
 import type { VoiceDef } from '@/game/core/look';
 import { Engine } from './engine';
 import { SFX } from './sfx';
-import { DEFAULT_MOOD } from './music';
+import { DEFAULT_MOOD, styleForMood } from './music';
 import { prepareDrums } from './instruments';
 
 export const RENDER_SR = 44100;
@@ -40,7 +40,7 @@ export function renderSpeech(voice: VoiceDef, text: string, opts: SpeakOptions, 
 /** `bars` bars of music in one mood. Starts with the normal one-bar fade-in. */
 export function renderMusic(mood: Partial<MusicMood>, bars = 8): Promise<AudioBuffer> {
   const m: MusicMood = { ...DEFAULT_MOOD, ...mood };
-  const bpm = m.disco ? 120 : m.blackout ? 72 : m.frozen ? 80 : m.menu ? 88 : 96 + 20 * Math.pow(m.chaos, 1.3);
+  const bpm = styleForMood(m).bpm;
   const seconds = (bars * 240) / bpm + 1.5;
   return render(seconds, (e) => {
     const p = e.ensureMusic();
