@@ -383,14 +383,15 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           style={{ minHeight: 64 }}
         />
-        {/* Laid over the box, so showing or hiding it never moves the buttons under a finger. */}
+        {/* The day waits while the player types. Laid over the box's corner, so showing or hiding it never
+            moves the buttons under a finger; short, so it covers as little of the text as it can. */}
         {typingPause && (
           <span style={{
             position: 'absolute', right: 6, bottom: 5, display: 'flex', alignItems: 'center', gap: 3, padding: '1px 4px 1px 2px',
             background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', pointerEvents: 'none',
             fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)'
           }}>
-            <GIcon name="pause" px={16} />The day waits while you type
+            <GIcon name="pause" px={16} />Paused
           </span>
         )}
       </div>
