@@ -67,6 +67,7 @@ class MemoRun implements ChapterRun {
   private said1445 = false;
   private bin: BinState = 'waiting';
   private binSince = 0;
+  private binTries = 0;
   private creedLeaves = false;
   private kellyAt = 0;
 
@@ -213,7 +214,15 @@ class MemoRun implements ChapterRun {
     }
     if (p.sceneId) return;
     if (p.doing !== MEMO.bin.going && p.doing !== MEMO.bin.searching) {
-      this.stopBin();
+      // A chat or an errand carried him off: he goes back to the bin (a few times at most).
+      if (this.binTries < 3 && p.available) {
+        this.binTries += 1;
+        this.bin = 'going';
+        this.binSince = s.time;
+        s.goTo('creed', { tile: BIN }, { doing: MEMO.bin.going, stay: SEARCH_FOR + 40, stayDoing: MEMO.bin.searching });
+      } else if (this.binTries >= 3) {
+        this.stopBin();
+      }
       return;
     }
     if (this.bin === 'going' && (p.doing === MEMO.bin.searching || s.time - this.binSince > 60)) {
@@ -639,7 +648,11 @@ class RowRun implements ChapterRun {
     const s = this.c.sim;
     const { who, other } = e.target;
     const pair = (x?: CharId, y?: CharId): boolean => (x === 'angela' && y === 'oscar') || (x === 'oscar' && y === 'angela');
-    if (e.id === 'love' && who && other && pair(who, other)) s.shiftBond(who, other, 20);
+    // Cupid's Arrow between them: a big push (a feeling, and half a talk's worth of thawing).
+    if (e.id === 'love' && who && other && pair(who, other)) {
+      s.shiftBond(who, other, 20);
+      this.talks += 0.5;
+    }
     if (e.id === 'lockIn' && who && other) this.locks.push([who, other]);
     const a = s.person('angela');
     const o = s.person('oscar');
@@ -678,8 +691,8 @@ class RowRun implements ChapterRun {
   }
 
   topics(): string[] {
-    if (this.c.main() === 'won') return [ROW.topicMadeUp];
-    if (this.c.main() === 'lost') return [ROW.lateFact];
+    // Settled (made up, or the accounts went in late): the office goes back to its usual chatter.
+    if (this.c.main() !== 'open') return [];
     const out = [ROW.topicRow, ROW.topicDue];
     if (this.dwightHolds()) out.push(ROW.topicDwight);
     return out;
@@ -1089,8 +1102,8 @@ class ClientRun implements ChapterRun {
   }
 
   topics(): string[] {
-    if (this.c.main() === 'won') return [CLIENT.topicSigned];
-    if (this.c.main() === 'lost') return [CLIENT.topicGone];
+    // Settled (signed, or he walked out): the office goes back to its usual chatter.
+    if (this.c.main() !== 'open') return [];
     return [this.spawned ? CLIENT.topicWaiting : CLIENT.topicComing];
   }
 

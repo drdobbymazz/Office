@@ -104,6 +104,8 @@ describe('Wednesday: The Client', () => {
       const g = play(storyAt(3, seed));
       await g.toClock(10, 31);
       g.announce('Mr Figgis and Andy, please come to the conference room.');
+      // Not everyone listens the first time: call Andy again if he stayed put.
+      if (!/conference room/.test(g.sim.person('andy')!.doing)) g.announce('Andy, please come to the conference room.');
       await g.until(() => g.feed.includes(CLIENT.lostHim('Andy')), 200);
       expect(g.feed).toContain(CLIENT.rough.andy);
       expect(g.feed).toContain(CLIENT.lostHim('Andy'));
