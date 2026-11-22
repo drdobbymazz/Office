@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const jim: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael hasn't come out all morning. That's either very good or very bad.",
+      "I just walked past Michael's office. The blinds are down. He waved anyway.",
+      "Michael ate lunch at half past nine. Something is definitely going on."
+    ],
+    closure: [
+      "So the branch might close. I'm going to need a minute. Maybe a week.",
+      "If we close, Dwight loses his kingdom. I'll miss that more than I should.",
+      "Corporate closing us on a Friday. That is so Corporate."
+    ],
+    feud: [
+      "Angela and Oscar are not speaking. Kevin is the translator now. It's going great.",
+      "I've seen colder silences. Not many. Mostly Angela's.",
+      "Someone should lock those two in a room. Hypothetically. I would never."
+    ],
+    client: [
+      "Mr Figgis hates jokes. So, quick update, Michael wants to talk to him.",
+      "If Figgis signs, we live. If Michael pitches, we don't. Simple.",
+      "Biggest client of the year. Nobody let Dwight near him with a handshake."
+    ],
+    leak: [
+      "Someone's been emailing Corporate. My money's on whoever looks most relaxed.",
+      "A spy in the office. Dwight must be thrilled. He's been training for this.",
+      "Whoever the leak is, I'd love to read those emails. For research."
+    ],
+    inspection: [
+      "When the inspector comes round, everybody look like you work here. Which we do.",
+      "Stanley is typing. Actual typing. Corporate should send inspectors every day.",
+      "Dwight is standing so straight. I think he's trying to impress the clipboard."
+    ],
+    waiting: [
+      "The inspector has gone. Now we wait. I'm great at waiting. Ask Pam.",
+      "Corporate decides tonight. So, a normal afternoon. Totally normal.",
+      "Michael has checked the phone eleven times. I've been counting."
+    ],
+    verdict: [
+      "Whatever they decide, it's been a weird week. A good weird. Mostly.",
+      "If this is the end, I'm glad it was with these people. Don't tell Dwight.",
+      "Open or closed, I'm taking the good chair."
+    ]
+  },
   barks: {
     scared: ["Okay. Not great.", "This seems bad.", "Yeah, I'm leaving."],
     startled: ["Whoa. Okay.", "Huh. Didn't see that coming.", "Well, that happened."],

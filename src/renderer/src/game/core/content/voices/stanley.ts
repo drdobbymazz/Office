@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const stanley: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's hiding. Best morning I've had in years.",
+      "If Michael wants to stay in his office, let him. Let him stay forever.",
+      "Something's up with Michael. Not my problem. Crossword's my problem."
+    ],
+    closure: [
+      "If they close us, I retire early. I've had the calendar ready for years.",
+      "Closing the branch. Fine. Does that mean I can go home now?",
+      "I've survived four closures. I'll survive this one. Sitting down."
+    ],
+    feud: [
+      "Angela and Oscar aren't speaking. Finally, some quiet in that corner.",
+      "I don't care who started it. I care that it ends before five.",
+      "Accounting is fighting. Wake me when it's lunch."
+    ],
+    client: [
+      "Mr Figgis is my kind of man. Says nothing. Wants to leave.",
+      "I'll sell to Figgis. I'll do it quick. Then I'm doing my crossword.",
+      "Keep Michael away from the client. I'm not saying it twice."
+    ],
+    leak: [
+      "Someone's emailing Corporate. Good for them. More work than I'd do.",
+      "I don't care who the leak is. Unless they mentioned my crossword.",
+      "Everyone's looking at each other funny. I'm looking at my puzzle."
+    ],
+    inspection: [
+      "For the inspector, I'm going to look busy. It's exhausting.",
+      "If the inspector asks, I've been typing all day. Don't contradict me.",
+      "Corporate sends a man with a clipboard. I've outlasted ten of them."
+    ],
+    waiting: [
+      "The inspector's gone. Now we sit and wait. I'm good at sitting.",
+      "Corporate decides tonight. I decided years ago. Five o'clock.",
+      "Everyone's pacing. I'm not pacing. I'm doing seven across."
+    ],
+    verdict: [
+      "Open or closed, I'm leaving at five.",
+      "Whatever they decide, I'm taking my chair. It knows me.",
+      "It's been a week. I'd like it to be over now."
+    ]
+  },
   barks: {
     scared: ["Not today.", "I'm too old for this.", "Lord, no."],
     startled: ["Hm.", "What now?", "Really?"],

@@ -158,6 +158,8 @@ export interface SceneRequest {
   maxLines: number;
   /** 0..1 how frantic the office is. */
   chaos: number;
+  /** Story mode: the week's story theme this scene is about, so the written lines can match it. */
+  topic?: StoryTheme;
 }
 
 export interface SceneLine {
@@ -192,6 +194,8 @@ export interface MindsRequest {
   /** Everyone they could pick as a target, with where that person is. */
   others: { id: CharId; name: string; place: string }[];
   chaos: number;
+  /** Story mode: a story theme on their minds, so a written thought can match it. */
+  topic?: StoryTheme;
 }
 
 export interface MindResult {
@@ -209,6 +213,21 @@ export interface InterpretRequest {
   text: string;
   rooms: { id: string; name: string; people: string[] }[];
 }
+
+/**
+ * The week's story, as broad themes the written lines are grouped by (story mode). The chapters write
+ * their own topic sentences; brain/instinctRules.ts storyThemeOf() sorts a sentence into one of these.
+ *   hiding      something is up with the boss (before anyone knows why)
+ *   closure     the branch may close
+ *   feud        two colleagues not speaking, the row, making up
+ *   client      the big customer's visit
+ *   leak        someone emailing Corporate, who it is
+ *   inspection  the inspector and his tour
+ *   waiting     the tour is over, Corporate decides tonight
+ *   verdict     the decision itself, the end of the week
+ */
+export const STORY_THEMES = ['hiding', 'closure', 'feud', 'client', 'leak', 'inspection', 'waiting', 'verdict'] as const;
+export type StoryTheme = (typeof STORY_THEMES)[number];
 
 export const CUSTOM_VIBES = ['scary', 'funny', 'gross', 'wonderful', 'weird', 'annoying', 'dangerous', 'romantic', 'sad'] as const;
 export type CustomVibe = (typeof CUSTOM_VIBES)[number];

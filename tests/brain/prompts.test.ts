@@ -112,3 +112,52 @@ describe('prompts', () => {
     expect(i).toContain('shop: the Shop Floor: Fern');
   });
 });
+
+describe('story mode in the prompts', () => {
+  const book = new PromptBook(new WorldIndex(WORLD));
+
+  it('the report task says to lead with the story, in fixed text (the cache keeps it)', () => {
+    const sys = book.system('report');
+    expect(sys).toContain("If the request starts with TODAY'S STORY, the headline and the first paragraph are about it");
+    expect(new PromptBook(new WorldIndex(JSON.parse(JSON.stringify(WORLD)))).system('report')).toBe(sys);
+  });
+
+  it('the report request starts with the day\'s story, and its numbers are rounded', () => {
+    const names = new NameMap([{ id: 'fern', name: 'Fern Holloway' }]);
+    const u = book.reportUser({
+      id: 'r', day: 1, log: ['Fern sold a cactus.'],
+      stats: { incidents: 0, stockStart: 100.1, stockEnd: 101.77, morale: 57, chaosPeak: 10 },
+      people: [{ id: 'fern', name: 'Fern Holloway', mood: 'happy' }],
+      story: { title: 'Monday: The Memo', goal: 'All hands for the call', won: false, lines: ['At 15:00 the vice president phoned an almost empty room.'], changes: ['-8 Nobody was there for the call', '+2 Extra goal: Calm Monday'] }
+    }, names);
+    const lines = u.split('\n');
+    expect(lines[0]).toBe("TODAY'S STORY: Monday: The Memo. The job: All hands for the call. It was not done.");
+    expect(lines[1]).toBe('What happened: At 15:00 the vice president phoned an almost empty room.');
+    expect(lines[2]).toContain('-8 Nobody was there for the call; +2 Extra goal: Calm Monday.');
+    expect(u).toContain('Stock: 100.1 at the start, 101.8 at the end.');
+    // Without a story it reads as before.
+    const plain = book.reportUser({ id: 'r', day: 1, log: [], stats: { incidents: 0, stockStart: 1, stockEnd: 2, morale: 50, chaosPeak: 0 }, people: [] }, names);
+    expect(plain.startsWith('Day 1 is over.')).toBe(true);
+  });
+
+  it('someone keeping a secret is told to act on their belief, never to say it', () => {
+    const conviction = { text: 'if I stay in my office, nothing bad can happen', since: '08:50' };
+    const names = new NameMap([{ id: 'fern', name: 'Fern Holloway' }, { id: 'basil', name: 'Basil Okafor' }]);
+    const secret = book.sceneUser(sceneReq({ people: [person('fern', { conviction, hidden: 'Fern knows the shop may close.' }), person('basil')] }), names);
+    expect(secret).toContain('Fern has been privately sure of this: "If I stay in my office, nothing bad can happen."');
+    expect(secret).toContain('Fern keeps it private and never says it out loud or explains why.');
+    expect(secret).not.toContain('brings it up whenever possible');
+    expect(secret).toContain('Hidden from everyone, shows only as nerves unless they cannot lie: Fern knows the shop may close.');
+    const open = book.sceneUser(sceneReq({ people: [person('fern', { conviction }), person('basil')] }), names);
+    expect(open).toContain('Fern brings it up whenever possible');
+  });
+
+  it('a visitor known from the start still gets the note that carries their voice', () => {
+    const world = { ...WORLD, people: [...WORLD.people, { id: 'visitor:inspector', name: 'The Inspector', role: 'Inspector', summary: 'From head office.', speech: 'Brisk.', wants: '', fears: '', quirk: '', secret: '', examples: [] }] };
+    const b = new PromptBook(new WorldIndex(world));
+    const insp = person('visitor:inspector', { name: 'The Inspector', about: 'From head office. Talks: Flat and formal. Says things like "Carry on."' });
+    const names = new NameMap([{ id: 'visitor:inspector', name: 'The Inspector' }, { id: 'fern', name: 'Fern Holloway' }]);
+    const u = b.sceneUser(sceneReq({ people: [insp, person('fern')] }), names);
+    expect(u).toContain('(The Inspector, a visitor: From head office. Talks: Flat and formal. Says things like "Carry on.")');
+  });
+});

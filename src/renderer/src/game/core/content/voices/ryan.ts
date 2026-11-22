@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const ryan: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's gone dark. Classic founder move. He's pivoting.",
+      "If Michael is hiding, it's probably bad news. I can smell disruption.",
+      "Michael won't come out. Honestly, I respect the boundaries."
+    ],
+    closure: [
+      "If they close us, I'm going full time on my start-up. Finally.",
+      "Branches close. It's called the market. I've seen it happen. Online.",
+      "Closing the branch is so last century. They should rebrand it. I could rebrand it."
+    ],
+    feud: [
+      "Angela and Oscar need a mediator. I'm available. For a fee.",
+      "Workplace conflict is basically a synergy problem. I could fix it with an app.",
+      "Two accountants not talking. That's a podcast."
+    ],
+    client: [
+      "Mr Figgis needs to see the future of paper. I could pitch him my app.",
+      "Old-school client. Firm handshake, no email. I can work with that.",
+      "If Figgis walks, it's a market correction. Not my fault."
+    ],
+    leak: [
+      "Emailing Corporate is just networking. I'm not saying I do it. I'm saying it's smart.",
+      "A leak means someone's ambitious. I can respect that. Allegedly.",
+      "Whoever it is uses a fax. That's not a leak, that's a museum."
+    ],
+    inspection: [
+      "The inspector should see the real talent here. I have a deck ready.",
+      "Corporate guy. Perfect. Time to network.",
+      "I'm going to look busy. Not too busy. Executive busy."
+    ],
+    waiting: [
+      "Corporate decides tonight. I've already updated my profile. Just in case.",
+      "Waiting is so inefficient. There should be an app for this.",
+      "The inspection's over. Honestly, I think he noticed me."
+    ],
+    verdict: [
+      "Open or closed, I'm basically freelance.",
+      "Whatever happens, this was a great learning experience. For them.",
+      "If this is the end, I'm putting it on my profile as an exit."
+    ]
+  },
   barks: {
     scared: ["This is not my problem.", "I'm out. I'm out.", "Not worth it."],
     startled: ["Uh, what?", "Who does that? Seriously.", "Not cool, man."],
