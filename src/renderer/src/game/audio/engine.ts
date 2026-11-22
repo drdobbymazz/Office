@@ -168,6 +168,8 @@ export class Engine {
     }
     const v: SfxVoice = { id, out, start: t, end, dead: false };
     this.sfxVoices.push(v);
+    // stings dip the music while they play (a quieter sting dips it less)
+    if (def.duck && this.music?.running) this.music.duck(t, 1 - (1 - def.duck.depth) * vol, def.duck.hold);
     if (lastSrc) (lastSrc as AudioScheduledSourceNode).onended = () => { v.dead = true; try { out.disconnect(); } catch { /* */ } };
   }
 

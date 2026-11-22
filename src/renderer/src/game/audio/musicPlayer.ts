@@ -23,13 +23,18 @@ export class MusicPlayer {
   /** Last bars planned (for the harness / analysis). */
   readonly history: { t: number; bpm: number; chords: string; mix: string }[] = [];
 
+  /** Dips under stings (see duck()); separate from `out` so start/stop fades and ducks never fight. */
+  private ducker: GainNode;
+
   constructor(private ctx: BaseAudioContext, dest: AudioNode, wet: AudioNode | null, composer?: Composer) {
     this.composer = composer ?? new Composer();
     this.out = gain(ctx, 0);
-    this.out.connect(dest);
+    this.ducker = gain(ctx, 1);
+    this.out.connect(this.ducker);
+    this.ducker.connect(dest);
     if (wet) {
       const send = gain(ctx, 0.35);
-      this.out.connect(send).connect(wet);
+      this.ducker.connect(send).connect(wet);
     }
     const mk = (): GainNode => { const g = gain(ctx, 0); g.connect(this.out); return g; };
     this.groups = { office: mk(), disco: mk(), drone: mk(), frozen: mk() };
@@ -68,6 +73,21 @@ export class MusicPlayer {
     p.cancelScheduledValues(at);
     p.setValueAtTime(p.value, at);
     p.linearRampToValueAtTime(1, at + 0.3);
+  }
+
+  /**
+   * Dip the music to `depth` (0..1 gain) from `at` for `hold` seconds, then ease it back,
+   * so a sting reads clearly. A new duck takes over from wherever the last one is.
+   */
+  duck(at: number, depth: number, hold: number): void {
+    const d = Math.max(0, Math.min(1, depth));
+    const p = this.ducker.gain;
+    const t = Math.max(at, this.ctx.currentTime);
+    if (typeof p.cancelAndHoldAtTime === 'function') p.cancelAndHoldAtTime(t);
+    else { p.cancelScheduledValues(t); p.setValueAtTime(p.value, t); }
+    p.linearRampToValueAtTime(d, t + 0.08);
+    p.setValueAtTime(d, t + 0.08 + hold);
+    p.linearRampToValueAtTime(1, t + 0.08 + hold + 0.9);
   }
 
   stop(at: number, fade = 1.2): void {
