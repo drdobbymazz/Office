@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const dwight: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael has sealed himself in his office. Standard emergency procedure. What emergency?",
+      "I will guard Michael's door. Nobody passes without the password. There is no password.",
+      "Michael is not hiding. He is in a defensive position. Big difference."
+    ],
+    closure: [
+      "If Corporate closes us, I will buy the building. With beet money. Lots of beet money.",
+      "Closing this branch would be a mistake. I have filed a complaint. With myself.",
+      "False alarm or real alarm, I am prepared. I have supplies hidden everywhere."
+    ],
+    feud: [
+      "Oscar is plotting against Angela. I have no proof. That is how good he is.",
+      "Accounting is divided. A divided department falls. I read that in a war book.",
+      "Angela and Oscar must reconcile. For the branch. Not for feelings. Feelings are weak."
+    ],
+    client: [
+      "I will handle Mr Figgis. I know hardware. I own four hammers.",
+      "Mr Figgis respects strength. I will shake his hand until he signs.",
+      "Michael must not talk to the client. That is an order. From me."
+    ],
+    leak: [
+      "There is a mole in this office. I will find it. I have studied moles.",
+      "Nobody leaves the building. Everyone is a suspect. Except me. I'm the investigator.",
+      "The leak uses the fax machine. Old technology. Leaves no trace. Except paper."
+    ],
+    inspection: [
+      "Inspection protocol. Desks clean, faces blank, nobody mention the beets.",
+      "I will escort the inspector. He does not need an escort. I will escort him anyway.",
+      "Stand up straight. Corporate measures posture. Probably."
+    ],
+    waiting: [
+      "The inspection is over. Now we wait. I have waited out storms. Real storms.",
+      "Corporate decides tonight. I have written two speeches. One victory, one revenge.",
+      "Waiting is a test of discipline. I am passing. I am passing very hard."
+    ],
+    verdict: [
+      "Whatever the verdict, I was the best Assistant Regional Manager this branch ever had.",
+      "If this is the end, I am taking the stapler. It has served well.",
+      "Win or lose, nobody saw me cry. Because I did not. Mostly."
+    ]
+  },
   barks: {
     scared: ["Retreat! Tactical retreat!", "This is not fear. It's strategy.", "Defensive positions!"],
     startled: ["Ambush!", "Who goes there?", "Identify yourself!"],

@@ -8,4 +8,5 @@ export { StoryDay } from './day';
 export type { StoryDayHooks } from './day';
 export { CHAPTER_DEFS, FIGGIS, SALES, BULLPEN_STAFF, registerFiggis } from './chapters';
 export * from './rules';
+export { ENDING_RULE } from './text';
 export type { ChapterDef, ChapterResult, GoalState, PlayerAction, WeekNotes } from './types';

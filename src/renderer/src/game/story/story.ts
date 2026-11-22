@@ -13,12 +13,14 @@ import { createRng } from '@/game/sim/rng';
 import { loadJson, removeKey, saveJson } from '@/game/storage';
 import { CHAPTER_DEFS } from './chapters';
 import { StoryDay, type StoryDayHooks } from './day';
-import { CHAPTERS, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
-import { LEAK, endingText } from './text';
+import { CHAPTERS, ENDING, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
+import { LEAK, endingText, epilogueLines } from './text';
 import type { ChapterDef, ChapterResult, WeekNotes } from './types';
 
 export const STATE_KEY = 'story.state.v1';
 export const WORLD_KEY = 'story.world.v1';
+/** The chapter with the leak (a retry picks a new one). */
+const LEAK_CHAPTER = 4;
 
 /** Where the story keeps its saves (the browser's storage in the game; a map in tests). */
 export interface StoryStore {
@@ -104,8 +106,9 @@ function cleanState(raw: unknown): StoryState | null {
     seed,
     chapter,
     stage: r.stage === 'done' || r.stage === 'ended' ? r.stage : 'day',
-    standing: Math.max(0, Math.min(100, num(r.standing, STANDING_START))),
-    standingAtStart: Math.max(0, Math.min(100, num(r.standingAtStart, num(r.standing, STANDING_START)))),
+    // Standing is never capped (the report's arithmetic must add up); only absurd values are refused.
+    standing: Math.max(-200, Math.min(300, num(r.standing, STANDING_START))),
+    standingAtStart: Math.max(-200, Math.min(300, num(r.standingAtStart, num(r.standing, STANDING_START)))),
     notesAtStart: notes(r.notesAtStart) ?? clone(live),
     notes: live,
     results,
@@ -215,11 +218,37 @@ export class Story {
     this.save();
   }
 
+  /** The office at the end of the last day played (for the week's last scene). */
+  get endSnapshot(): SaveData | null {
+    return this.world.end ?? this.world.start;
+  }
+
+  /** Who the player picked up today (for the ending's epilogue). Cleared when a day begins. */
+  private carriedToday: Partial<Record<CastId, number>> = {};
+  private stopCounting: (() => void) | null = null;
+
   /** Set up today's chapter on a simulation that has just begun the day. */
   beginDay(sim: Sim, hooks?: StoryDayHooks): StoryDay {
+    this.stopCounting?.();
+    this.carriedToday = {};
+    this.stopCounting = sim.bus.on('pickedUp', (e) => {
+      if (isCastId(e.who)) this.carriedToday[e.who] = (this.carriedToday[e.who] ?? 0) + 1;
+    });
     const day = new StoryDay(sim, this.def, this.state.notes, { seed: this.state.seed, hooks });
     day.setup();
     return day;
+  }
+
+  /** Add the day's tools and pick-ups to the week's tally (kept in the notes, so a retry undoes them). */
+  private tallyWeek(day: StoryDay): void {
+    const st = (this.state.notes.stats ??= { whispers: 0, announcements: 0, powers: 0, carried: {} });
+    st.whispers += day.used.whisper;
+    st.announcements += day.used.announce;
+    st.powers += day.used.powers.length;
+    for (const [id, n] of Object.entries(this.carriedToday)) st.carried[id as CastId] = (st.carried[id as CastId] ?? 0) + (n ?? 0);
+    this.carriedToday = {};
+    this.stopCounting?.();
+    this.stopCounting = null;
   }
 
   /** The day is over: settle it, move Branch Standing, and save. Returns the result. */
@@ -227,6 +256,7 @@ export class Story {
     const existing = this.result;
     if (this.state.stage !== 'day' && existing) return existing;
     const t = day.tally();
+    this.tallyWeek(day);
     const changes = standingChanges(t);
     const before = this.state.standing;
     const after = applyChanges(before, changes);
@@ -249,6 +279,12 @@ export class Story {
   retry(): SaveData | null {
     // A day already counted as lost has had its try; a retry from the middle of a day counts as one.
     if (!(this.state.stage === 'done' && this.result && !this.result.won)) this.bumpTries();
+    // Thursday again: someone else is the leak this time (the report may have named the last one).
+    if (this.state.chapter === LEAK_CHAPTER) {
+      const was = this.state.notesAtStart.leak;
+      const rng = createRng((this.state.seed ^ Math.imul(this.state.tries[LEAK_CHAPTER - 1] + 1, 0x2c1b3c6d)) >>> 0);
+      this.state.notesAtStart.leak = rng.pick(LEAK.candidates.filter((id) => id !== was));
+    }
     this.state.standing = this.state.standingAtStart;
     this.state.notes = clone(this.state.notesAtStart);
     this.state.results[this.state.chapter - 1] = null;
@@ -276,17 +312,37 @@ export class Story {
     return 'next';
   }
 
+  /** Friday's inspection passed (the best ending needs it). */
+  get fridayWon(): boolean {
+    return !!this.state.results[CHAPTERS - 1]?.won;
+  }
+
   endingId(): EndingId {
-    return endingFor(this.state.standing);
+    return endingFor(this.state.standing, this.fridayWon);
   }
 
   ending(): { id: EndingId; title: string; text: string[]; epilogue: string[] } {
     const id = this.endingId();
     const n = this.state.notes;
     const t = endingText(id, {
-      call: n.call, accounts: n.accounts, figgis: n.figgis, leakName: displayName(n.leak), leakFound: n.leakFound, inspection: n.inspection
+      call: n.call, accounts: n.accounts, figgis: n.figgis, leakName: displayName(n.leak), leakFound: n.leakFound, inspection: n.inspection,
+      fridayWon: this.fridayWon, lostOnFriday: !this.fridayWon && this.state.standing >= ENDING.saved
     });
-    return { id, title: t.title, text: t.text, epilogue: [] };
+    const st = n.stats;
+    const most = st ? (Object.entries(st.carried) as [CastId, number][]).sort((a, b) => b[1] - a[1])[0] : undefined;
+    const epilogue = epilogueLines({
+      leakName: n.leakFound !== undefined ? displayName(n.leak) : undefined,
+      leakFound: n.leakFound,
+      accounts: n.accounts,
+      figgis: n.figgis,
+      speech: n.speech,
+      wrongedName: n.wronged?.length ? displayName(n.wronged[0]) : undefined,
+      carried: most ? { name: displayName(most[0]), times: most[1] } : undefined,
+      whispers: st?.whispers ?? 0,
+      announcements: st?.announcements ?? 0,
+      powers: st?.powers ?? 0
+    });
+    return { id, title: t.title, text: t.text, epilogue };
   }
 
   /** Everything the screens need. `day` is the live day (null on the ending screen). */

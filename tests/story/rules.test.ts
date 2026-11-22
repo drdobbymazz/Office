@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHAOS_IDS } from '@/game/core/types';
 import { CHAOS } from '@/game/core/chaos';
-import { BUDGETS, STANDING_START, allCosts, applyChanges, costOf, endingFor, powerCost, standingChanges } from '@/game/story';
+import { BUDGETS, ENDING, STANDING_START, allCosts, applyChanges, costOf, endingFor, powerCost, standingChanges } from '@/game/story';
 import { CHANGES, MEMO, NOT_ENOUGH } from '@/game/story/text';
 import { play, storyAt } from './harness';
 
@@ -65,28 +65,53 @@ describe('influence on a real day', () => {
 });
 
 describe('Branch Standing', () => {
-  it('adds up a day: main goal, extras, incidents (capped) and morale', () => {
+  it('adds up a day: main goal 8, extras 2, incidents 1 each (at most 3) and morale 1', () => {
     expect(standingChanges({ won: true, goalText: 'Won', extras: ['A', 'B'], incidents: 0, morale: 50 })).toEqual([
-      { text: 'Won', delta: 15 }, { text: CHANGES.extra('A'), delta: 5 }, { text: CHANGES.extra('B'), delta: 5 }
+      { text: 'Won', delta: 8 }, { text: CHANGES.extra('A'), delta: 2 }, { text: CHANGES.extra('B'), delta: 2 }
     ]);
     expect(standingChanges({ won: false, goalText: 'Lost', extras: [], incidents: 2, morale: 60 })).toEqual([
-      { text: 'Lost', delta: -10 }, { text: '2 incidents were reported to Corporate', delta: -4 }, { text: CHANGES.moraleHigh, delta: 3 }
+      { text: 'Lost', delta: -8 }, { text: '2 incidents were reported to Corporate', delta: -2 }, { text: CHANGES.moraleHigh, delta: 1 }
     ]);
-    const many = standingChanges({ won: false, goalText: 'Lost', extras: [], incidents: 9, morale: 30 });
-    expect(many).toContainEqual({ text: '9 incidents were reported to Corporate', delta: -10 });
-    expect(many).toContainEqual({ text: CHANGES.moraleLow, delta: -3 });
-    expect(standingChanges({ won: true, goalText: 'W', extras: [], incidents: 1, morale: 45 })[1]).toEqual({ text: '1 incident was reported to Corporate', delta: -2 });
-    expect(applyChanges(STANDING_START, [{ text: 'x', delta: 15 }, { text: 'y', delta: -4 }])).toBe(51);
-    expect(applyChanges(95, [{ text: 'x', delta: 15 }])).toBe(100);
-    expect(applyChanges(5, [{ text: 'x', delta: -10 }])).toBe(0);
+    const many = standingChanges({ won: false, goalText: 'Lost', extras: [], incidents: 9, morale: 29 });
+    expect(many).toContainEqual({ text: '9 incidents were reported to Corporate', delta: -3 });
+    expect(many).toContainEqual({ text: CHANGES.moraleLow, delta: -1 });
+    // Exactly 30 is not low.
+    expect(standingChanges({ won: true, goalText: 'W', extras: [], incidents: 0, morale: 30 })).toHaveLength(1);
+    expect(standingChanges({ won: true, goalText: 'W', extras: [], incidents: 1, morale: 45 })[1]).toEqual({ text: '1 incident was reported to Corporate', delta: -1 });
   });
 
-  it('picks the ending from the final standing', () => {
-    expect(endingFor(100)).toBe('saved');
-    expect(endingFor(65)).toBe('saved');
-    expect(endingFor(64)).toBe('scraped');
-    expect(endingFor(40)).toBe('scraped');
-    expect(endingFor(39)).toBe('closed');
-    expect(endingFor(0)).toBe('closed');
+  it('is never capped, so the report always adds up', () => {
+    expect(applyChanges(STANDING_START, [{ text: 'x', delta: 8 }, { text: 'y', delta: -1 }])).toBe(47);
+    expect(applyChanges(98, [{ text: 'x', delta: 8 }, { text: 'y', delta: 2 }])).toBe(108);
+    expect(applyChanges(3, [{ text: 'x', delta: -8 }])).toBe(-5);
+  });
+
+  it('a perfect Monday to Wednesday leaves the ending open; doing nothing costs standing', () => {
+    const perfect = { won: true, goalText: 'W', extras: ['A', 'B'], incidents: 0, morale: 65 };
+    const idle = { won: false, goalText: 'L', extras: [], incidents: 0, morale: 50 };
+    let s = STANDING_START;
+    for (let i = 0; i < 3; i++) s = applyChanges(s, standingChanges(perfect));
+    expect(s).toBe(79);
+    // Lose Thursday and Friday by doing nothing: the branch only survives with cuts.
+    const after = applyChanges(applyChanges(s, standingChanges(idle)), standingChanges(idle));
+    expect(after).toBe(63);
+    expect(endingFor(after, false)).toBe('scraped');
+    // A whole week of doing nothing closes it.
+    let none = STANDING_START;
+    for (let i = 0; i < 5; i++) none = applyChanges(none, standingChanges(idle));
+    expect(none).toBe(0);
+    expect(endingFor(none, false)).toBe('closed');
+  });
+
+  it('picks the ending from the final standing and Friday: 75+ and Friday won stays open, under 45 closes', () => {
+    expect(endingFor(100, true)).toBe('saved');
+    expect(endingFor(75, true)).toBe('saved');
+    expect(endingFor(75, false)).toBe('scraped');
+    expect(endingFor(120, false)).toBe('scraped');
+    expect(endingFor(74, true)).toBe('scraped');
+    expect(endingFor(45, true)).toBe('scraped');
+    expect(endingFor(44, true)).toBe('closed');
+    expect(endingFor(-5, false)).toBe('closed');
+    expect(ENDING).toEqual({ saved: 75, closedBelow: 45 });
   });
 });

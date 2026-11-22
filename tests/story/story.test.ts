@@ -1,51 +1,10 @@
 // The week as a whole: saving and loading, "Try the day again", moving on,
 // Branch Standing across the days, the screens' data, and the endings.
 import { describe, expect, it } from 'vitest';
-import { Story, memoryStore, STATE_KEY, WORLD_KEY, FIGGIS } from '@/game/story';
-import { LEAK, MEMO, ROW, VERDICT } from '@/game/story/text';
+import { Story, StoryDay, memoryStore, STATE_KEY, WORLD_KEY } from '@/game/story';
+import { FINALE, MEMO, ROW, VERDICT, endingText, epilogueLines } from '@/game/story/text';
+import { FinaleScene } from '@/game/story/finale';
 import { play, storyAt, type Played } from './harness';
-
-const othersInMeeting = (g: Played): number =>
-  g.sim.people().filter((p) => p.isCast && p.present && p.id !== 'michael' && p.room === 'meeting').length;
-
-/** One winning way through each day, as quick as possible. */
-const WIN: Record<number, (g: Played) => Promise<void>> = {
-  1: async (g) => {
-    await g.toClock(14);
-    for (let i = 0; i < 3 && othersInMeeting(g) < 9; i++) {
-      g.announce('Everyone to the conference room, now!');
-      await g.until(() => othersInMeeting(g) >= 9, 16);
-    }
-    await g.drop('michael', 'spot.meet8');
-  },
-  2: async (g) => {
-    await g.toClock(9, 10);
-    g.whisper('dwight', 'Oscar is a decent man. I was wrong about him.');
-    g.whisper('angela', 'I should make peace with Oscar.');
-    g.whisper('oscar', 'I should make peace with Angela.');
-    while (g.day.main === 'open' && g.sim.clock < 17 * 60) {
-      if (g.day.influence.left >= 1) g.cue('angela', 'go and make peace with Oscar');
-      await g.step(45);
-    }
-  },
-  3: async (g) => {
-    await g.toClock(10, 33);
-    await g.drop(FIGGIS, 'spot.meet8');
-    await g.drop('dwight', 'spot.meet10');
-  },
-  4: async (g) => {
-    let seen: string | null = null;
-    await g.until(() => {
-      seen = g.sim.people().find((p) => p.isCast && p.doing === LEAK.fax.stay)?.id ?? null;
-      return !!seen;
-    }, 400);
-    if (seen) g.day.accuse(seen);
-  },
-  5: async (g) => {
-    await g.toClock(12, 30);
-    g.whisper('michael', 'I should wait in my office for the inspector.');
-  }
-};
 
 describe('saving the story', () => {
   it('saves under its own keys and loads back; the title screen can offer to continue', () => {
@@ -121,6 +80,31 @@ describe('Try the day again', () => {
     expect(where(again)).toEqual(at10);
   });
 
+  it('trying Thursday again picks someone else as the leak, so the loss report does not give it away', async () => {
+    const store = memoryStore();
+    const story = Story.create(store, 86);
+    story.state.chapter = 4;
+    story.state.notesAtStart = { ...story.state.notes };
+    const g = play(story, store);
+    const first = story.state.notes.leak;
+    await g.toEnd();
+    story.finishDay(g.day, g.sim.serialize());
+    g.day.dispose();
+    expect(story.result?.won).toBe(false);
+    story.retry();
+    const second = story.state.notes.leak;
+    expect(second).not.toBe(first);
+    expect(story.state.notesAtStart.leak).toBe(second);
+    expect(story.state.tries[3]).toBe(1);
+    // And again, mid-day.
+    const again = play(story, store);
+    await again.toClock(10);
+    story.retry();
+    expect(story.state.notes.leak).not.toBe(second);
+    expect(story.state.tries[3]).toBe(2);
+    expect(story.ui(null).help.length).toBeGreaterThan(0);
+  });
+
   it('a day played after another starts from the end of the one before', async () => {
     const store = memoryStore();
     const story = Story.create(store, 85);
@@ -138,40 +122,49 @@ describe('Try the day again', () => {
   });
 });
 
+/** A finished day with a fixed result, for testing the week's arithmetic without playing it. */
+function fakeDay(t: { won: boolean; extras?: string[]; incidents?: number; morale?: number }): StoryDay {
+  return {
+    tally: () => ({ won: t.won, goalText: t.won ? 'Won' : 'Lost', extras: t.extras ?? [], incidents: t.incidents ?? 0, morale: t.morale ?? 50, lines: [] }),
+    used: { powers: [], whisper: 0, announce: 0, cue: 0, anything: 0 }
+  } as unknown as StoryDay;
+}
+
+/** Play out a whole week from fixed day results; returns the story at the end. */
+function weekOf(days: Parameters<typeof fakeDay>[0][], seed = 90): Story {
+  const story = Story.create(memoryStore(), seed);
+  days.forEach((d, i) => {
+    const r = story.finishDay(fakeDay(d), null);
+    // The report always adds up: no hidden cap.
+    expect(r.standingAfter).toBe(r.standingBefore + r.changes.reduce((sum, c) => sum + c.delta, 0));
+    if (i < 4) expect(story.advance()).toBe('next');
+  });
+  expect(story.advance()).toBe('ending');
+  return story;
+}
+
+const PERFECT = { won: true, extras: ['A', 'B'], morale: 65 };
+const IDLE = { won: false };
+
 describe('the week', () => {
-  it('five won days: standing climbs, each day carries on from the last, and the branch is saved', async () => {
-    const store = memoryStore();
-    let story = Story.create(store, 83);
-    const leak = story.state.notes.leak;
-    for (let ch = 1; ch <= 5; ch++) {
-      // Every other day, pretend the game was closed and opened again.
-      if (ch % 2 === 0) story = Story.load(store)!;
-      expect(story.chapter).toBe(ch);
-      const g = play(story, store);
-      expect(g.sim.day).toBe(ch);
-      expect(g.sim.weekday).toBe(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][ch - 1]);
-      await WIN[ch](g);
-      await g.toEnd();
-      const r = story.finishDay(g.day, g.sim.serialize());
-      g.day.dispose();
-      expect(r.won).toBe(true);
-      expect(r.changes[0].delta).toBe(15);
-      expect(r.standingAfter).toBeGreaterThanOrEqual(Math.min(100, r.standingBefore + 15 - 10));
-      if (ch < 5) {
-        expect(Story.peek(store)?.chapter).toBe(ch + 1);
-        expect(story.advance()).toBe('next');
-      }
-    }
-    expect(story.state.notes).toMatchObject({ call: true, accounts: true, figgis: true, leakFound: true, leak });
-    expect(story.ui(null).week.map((w) => w.result)).toEqual(['won', 'won', 'won', 'won', 'won']);
-    expect(story.advance()).toBe('ending');
-    expect(Story.peek(store)).toBeNull();
-    const end = story.ui(null).ending!;
-    expect(end.id).toBe('saved');
-    expect(end.title).toBe('THE BRANCH STAYS OPEN');
-    expect(end.text.join(' ')).toContain('Figgis Hardware signed for another year');
-    expect(end.text.join(' ')).toMatch(/caught sending emails to Corporate/);
-    for (const line of end.text) expect(line).not.toMatch(/—|–/);
+  it('five perfect days: standing climbs past 100 with honest arithmetic, and the branch stays open', () => {
+    const story = weekOf([PERFECT, PERFECT, PERFECT, PERFECT, PERFECT]);
+    expect(story.standing).toBe(40 + 5 * 13);
+    expect(story.endingId()).toBe('saved');
+    expect(story.ui(null).ending!.title).toBe('THE BRANCH STAYS OPEN');
+  });
+
+  it('a perfect Monday to Wednesday does not settle the week: Friday decides', () => {
+    // Thursday and Friday lost by doing nothing: survives with cuts.
+    expect(weekOf([PERFECT, PERFECT, PERFECT, IDLE, IDLE]).endingId()).toBe('scraped');
+    // Lots of standing, but the inspection failed: the best ending is out of reach.
+    const failedFriday = weekOf([PERFECT, PERFECT, PERFECT, PERFECT, IDLE]);
+    expect(failedFriday.standing).toBeGreaterThanOrEqual(75);
+    expect(failedFriday.endingId()).toBe('scraped');
+    // Only two days won: not enough to stay open even with Friday passed.
+    expect(weekOf([IDLE, IDLE, IDLE, PERFECT, PERFECT]).endingId()).toBe('closed');
+    expect(weekOf([PERFECT, IDLE, IDLE, PERFECT, PERFECT]).endingId()).toBe('scraped');
+    expect(weekOf([PERFECT, PERFECT, IDLE, PERFECT, PERFECT]).endingId()).toBe('saved');
   });
 
   it('five days of doing nothing: the branch closes, and later days remember what happened', async () => {
@@ -186,12 +179,93 @@ describe('the week', () => {
       const r = story.finishDay(g.day, g.sim.serialize());
       g.day.dispose();
       expect(r.won).toBe(false);
+      expect(r.standingAfter).toBeLessThan(r.standingBefore);
       story.advance();
     }
     expect(story.stage).toBe('ended');
-    expect(story.standing).toBeLessThan(40);
+    expect(story.standing).toBeLessThan(45);
     const end = story.ending();
     expect(end.id).toBe('closed');
     expect(end.title).toBe('CLOSING TIME');
+  });
+});
+
+describe('the ending', () => {
+  it('says honestly why the week ended as it did: thanks to, despite, and a failed Friday', () => {
+    const mixed = { call: true, accounts: false, figgis: true, leakName: 'Ryan', leakFound: false, inspection: 82, fridayWon: true };
+    const saved = endingText('saved', mixed).text.join(' ');
+    expect(saved).toContain("Thanks to Monday's call with the whole office there, the Figgis Hardware order and a good inspection, Corporate could overlook the late accounts and the leak nobody caught.");
+    const closed = endingText('closed', { call: false, accounts: false, figgis: true, leakName: 'Kelly', leakFound: false, inspection: 30, fridayWon: false }).text.join(' ');
+    expect(closed).toContain("Despite the Figgis Hardware order, Monday's empty conference room, the late accounts, the leak nobody caught and a poor inspection were too much for Corporate.");
+    const friday = endingText('scraped', { call: true, accounts: true, figgis: true, leakName: 'Pam', leakFound: true, inspection: 41, fridayWon: false, lostOnFriday: true }).text.join(' ');
+    expect(friday).toContain('but the inspection had not');
+    const perfect = endingText('saved', { call: true, accounts: true, figgis: true, leakName: 'Pam', leakFound: true, inspection: 95, fridayWon: true }).text.join(' ');
+    expect(perfect).not.toMatch(/overlook|despite/i);
+    for (const t of [saved, closed, friday, perfect]) expect(t).not.toMatch(/—|–/);
+  });
+
+  it('ends with three to five lines about people, drawn from the week', () => {
+    const lines = epilogueLines({
+      leakName: 'Kelly', leakFound: true, accounts: false, figgis: true, speech: 'after', wrongedName: 'Pam',
+      carried: { name: 'Kevin', times: 7 }, whispers: 12, announcements: 3, powers: 4
+    });
+    expect(lines.length).toBeGreaterThanOrEqual(3);
+    expect(lines.length).toBeLessThanOrEqual(5);
+    expect(lines[0]).toContain('Kelly');
+    expect(lines.join(' ')).toContain('Kevin was picked up 7 times');
+    expect(lines[lines.length - 1]).toBe('This week you whispered 12 times, made 3 announcements and used 4 powers.');
+    expect(epilogueLines({ whispers: 0, announcements: 0, powers: 0 })).toEqual([]);
+  });
+
+  it('the week keeps a tally of whispers, powers and who was picked up; a retry undoes the day\'s share', async () => {
+    const store = memoryStore();
+    const story = Story.create(store, 87);
+    const g = play(story, store);
+    await g.toClock(9, 20);
+    g.whisper('pam', 'Jim is lovely.');
+    await g.drop('kevin', 'spot.kitchen2');
+    await g.drop('kevin', 'spot.kitchen3');
+    await g.toEnd();
+    story.finishDay(g.day, g.sim.serialize());
+    expect(story.state.notes.stats).toMatchObject({ whispers: 1, carried: { kevin: 2 } });
+    story.retry();
+    expect(story.state.notes.stats).toBeUndefined();
+  });
+
+  for (const ending of ['saved', 'scraped', 'closed'] as const) {
+    it(`the last scene plays on the floor: ${ending}`, async () => {
+      const g = play(storyAt(5, 88));
+      await g.toClock(9, 20);
+      const scene = new FinaleScene(g.sim, ending, { leak: 'ryan', leakFound: true });
+      const feed: string[] = [];
+      g.sim.bus.on('feed', (f) => feed.push(f.text));
+      for (let t = 0; t < 30 && !scene.done; t += 0.1) {
+        g.sim.update(0.1);
+        scene.update(0.1);
+      }
+      expect(scene.done).toBe(true);
+      expect(scene.length).toBeGreaterThan(12);
+      expect(scene.length).toBeLessThan(22);
+      expect(feed.some((t) => t.startsWith('Vice president, on the phone:'))).toBe(true);
+      if (ending === 'saved') {
+        expect(g.sim.effect('finale-balloons')).toBeTruthy();
+        expect(g.sim.peopleIn('meeting').filter((p) => p.isCast).length).toBeGreaterThanOrEqual(8);
+        expect(feed).toContain(FINALE.saved.michael);
+      } else if (ending === 'scraped') {
+        expect(g.sim.effect('finale-cuts')).toBeTruthy();
+        expect(feed).toContain(FINALE.scraped.michael);
+      } else {
+        expect(g.sim.effect('finale-dark-bullpen')).toBeTruthy();
+        expect(g.sim.people().filter((p) => p.isCast && (p.doing === FINALE.closed.doing || !p.present)).length).toBeGreaterThanOrEqual(8);
+      }
+    });
+  }
+
+  it('a skipped scene stops at once', () => {
+    const g = play(storyAt(5, 89));
+    const scene = new FinaleScene(g.sim, 'saved', { leak: 'ryan' });
+    scene.update(1);
+    scene.skip();
+    expect(scene.done).toBe(true);
   });
 });

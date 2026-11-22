@@ -25,7 +25,8 @@ import { GameFloor } from '@/scene/office/floor/GameFloor';
 import { FloorInput } from '@/scene/office/floor/input';
 import { Director } from '@/game/director/director';
 import type { Sim, SimOptions } from '@/game/sim';
-import { EXTRA_INFLUENCE, Story, StoryDay, browserStore, type PlayerAction } from '@/game/story';
+import { EXTRA_INFLUENCE, Story, StoryDay, browserStore, type EndingId, type PlayerAction } from '@/game/story';
+import { FINALE_PREROLL, FinaleScene } from '@/game/story/finale';
 import { Objectives } from './objectives';
 import { loadSettings, saveSettings } from './settings';
 import { loadJson, removeKey, saveJson } from './storage';
@@ -107,6 +108,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   let finishing = false;
   /** A story day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
   let holdDayStart = false;
+  /** The week's last scene, playing on the floor while UiState.finale is true. */
+  let finaleScene: FinaleScene | null = null;
 
   const instinct = parts.createBrain({ ...settings.brain, provider: 'instinct' }, { bank: parts.bank, world });
   let brain: Brain = parts.createBrain(settings.brain, { bank: parts.bank, world });
@@ -365,7 +368,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const stats = { incidents: sim.incidentsToday, stockStart, stockEnd: m.stock, morale: m.morale, chaosPeak: Math.round(chaosPeak) };
     flushFeed();
     const todays = get().feed.filter((f) => f.day === day && f.kind === 'say' && f.who && f.text.length > 18);
-    const quotes = pickSpread(todays, 3).map((f) => ({ who: f.who as CharId, name: displayName(f.who as CharId), avatar: avatar(f.who as CharId, f.emotion), text: f.text }));
+    const quotes = director.pickQuotes(todays, 3).map((f) => ({ who: f.who as CharId, name: displayName(f.who as CharId), avatar: avatar(f.who as CharId, f.emotion), text: f.text }));
     const base: DayReport = { day, headline: '', paragraphs: [], awards: [], quotes, stats: { ...stats, lines: linesToday }, writing: true };
     // Story mode: settle the day, move Branch Standing and save, before the report shows.
     if (mode === 'story' && story && storyDay) {
@@ -478,11 +481,43 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     day = null;
     mode = 'story';
     finishing = false;
-    set({ mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, finishing: false, storySaved: Story.peek(browserStore) });
     const ending = story?.endingId() ?? 'scraped';
+    // The week's last scene plays on the floor first; the ending card waits for it (or for Skip).
+    finaleScene = buildFinale(ending);
+    set({ mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, finishing: false, finale: !!finaleScene, storySaved: Story.peek(browserStore) });
+    // The ending's sting and music start as the ending begins (the scene's phone call follows a moment later).
     audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
     audio.setMusicMood({ menu: true, ending });
     pushUi();
+  }
+
+  /** The office for the last scene (everyone in, quietly), with the scene on top. Null if it cannot be built. */
+  function buildFinale(ending: EndingId): FinaleScene | null {
+    if (!story) return null;
+    try {
+      const next = buildSim({ save: story.endSnapshot, dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: (story.simSeed() ^ 0x5eed) >>> 0 || 1 });
+      // Arrivals happen off stage: no greetings, footsteps or jingles while the staff come in.
+      finishing = true;
+      next.beginDay(story.chapter);
+      for (let t = 0; t < FINALE_PREROLL; t += 0.25) next.update(0.25);
+      finishing = false;
+      feedBuffer = [];
+      swapWorld(next);
+      set({ feed: [] });
+      const scene = new FinaleScene(sim, ending, story.state.notes);
+      floor.camera.frame(roomRectPx(scene.room));
+      return scene;
+    } catch (err) {
+      finishing = false;
+      console.error('[game] the last scene could not be set up', err);
+      return null;
+    }
+  }
+
+  function endFinale(): void {
+    finaleScene?.skip();
+    finaleScene = null;
+    if (get().finale) set({ finale: false });
   }
 
   /** Leave the story for the sandbox office (rebuilt from its own save). */
@@ -573,10 +608,12 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const s = get();
     // Behind the start card the office idles through the first few minutes of the morning, then waits.
     const waiting = s.phase === 'title' && sim.dayProgress > 0.06;
-    // Behind a chapter card the office is held at its 08:50 start; behind the ending, nothing moves.
-    const held = s.phase === 'briefing' || s.phase === 'ending';
+    // Behind a chapter card the office is held at its 08:50 start; behind the ending card nothing moves,
+    // but the week's last scene plays on the floor first (at normal speed).
+    const finale = s.phase === 'ending' && s.finale && !!finaleScene;
+    const held = s.phase === 'briefing' || (s.phase === 'ending' && !finale);
     const active = (!s.paused || finishing) && s.phase !== 'report' && !held && !waiting;
-    const simDt = active ? real * (finishing ? FINISH_SPEED : s.speed) : 0;
+    const simDt = active ? real * (finishing ? FINISH_SPEED : finale ? 1 : s.speed) : 0;
     if (simDt > 0) {
       // Large steps are split so people still walk and arrive properly.
       const steps = Math.max(1, Math.ceil(simDt / 0.25));
@@ -586,8 +623,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         if (s.phase === 'playing') {
           if (!finishing) director.update(dt);
           if (mode === 'story') day?.update(dt);
-        }
+        } else if (finale) finaleScene?.update(dt);
       }
+      if (finale && finaleScene?.done) endFinale();
     }
     input.update(real);
     floor.render(sim.frame(), simDt, real);
@@ -769,6 +807,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       void audio.unlock().then(() => audio.startMusic());
       // Keep the sandbox office as it was before stepping into the story.
       saveWorld();
+      finaleScene = null;
+      if (get().finale) set({ finale: false });
       let s = fresh ? null : Story.load(browserStore);
       if (!s || s.stage === 'ended') s = Story.create(browserStore, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
       story = s;
@@ -806,7 +846,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       storyDayStart();
     },
     skipFinale() {
-      if (get().phase === 'ending' && get().finale) set({ finale: false });
+      if (get().phase === 'ending' && get().finale) endFinale();
     },
     finishDay() {
       if (mode !== 'story' || !story || !day || get().phase !== 'playing' || finishing) return;
@@ -825,7 +865,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     },
     toTitle() {
       finishing = false;
-      set({ finishing: false, beat: null, ceremony: null });
+      finaleScene = null;
+      set({ finishing: false, beat: null, ceremony: null, finale: false });
       if (mode === 'story') enterSandbox();
       else saveWorld();
       set({ phase: 'title', paused: false, report: null, storySaved: Story.peek(browserStore) });

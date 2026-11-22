@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const creed: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's hiding. Smart man. I hid for six years once. Nobody found me.",
+      "When a boss shuts his door, you check the exits. I've checked the exits.",
+      "Something's up with Michael. I've seen that look. On wanted posters."
+    ],
+    closure: [
+      "If they close us, I'll just keep coming in. They never check.",
+      "Branches close. I've closed a few myself. Usually at night.",
+      "Closing, huh. I'll need a new address. Again."
+    ],
+    feud: [
+      "Angela and Oscar aren't speaking. At my old commune, we settled that with a goat.",
+      "Two people not speaking is peaceful. I prefer it to people speaking.",
+      "I could make one of them disappear. Not like that. Mostly not like that."
+    ],
+    client: [
+      "Mr Figgis and I go way back. He doesn't know that. Neither did I, until now.",
+      "I sold hardware once. Mostly to people who didn't ask questions.",
+      "Keep the client happy. Or keep him confused. Both work."
+    ],
+    leak: [
+      "I've emailed a lot of people. Corporate might be one of them. Hard to say.",
+      "Everybody's looking for the leak. Nobody's looking at the guy who sold the fax machine.",
+      "A leak? I've been one. In another life. It pays."
+    ],
+    inspection: [
+      "Inspectors. I've dodged better. Act natural, and never give your real name.",
+      "If the inspector asks, I work in quality. Of something.",
+      "I'll stand very still. They can't see you if you stand very still."
+    ],
+    waiting: [
+      "Corporate decides tonight. I've decided too. Somewhere warm, with no extradition.",
+      "Waiting makes people nervous. Not me. I've waited out a jury.",
+      "The inspector's gone. Good. He was looking at my desk."
+    ],
+    verdict: [
+      "Open or closed, I'll be fine. I've got a second name ready.",
+      "Whatever happens, it's been a good run. Better than the last one.",
+      "If this is goodbye, nobody saw me here. Remember that."
+    ]
+  },
   barks: {
     scared: ["Not again.", "I've got a bag packed.", "Where's the back exit?"],
     startled: ["Ah. That again.", "Hm. Thought you were a cop.", "Seen it."],

@@ -18,6 +18,14 @@ const ROUTE: { anchor: string; pause: number; doing: string }[] = [
   { anchor: 'exit.street', pause: 0, doing: 'leaving' }
 ];
 const LEG_LIMIT = 22;
+/** The story's Friday inspector is expected: he arrives on time instead of unannounced. */
+const EXPECTED_START = 'The inspector from Corporate arrives at the front door, right on time, with a clipboard.';
+let expectedNext = false;
+
+/** Mark the next inspection as expected (story mode, Friday): an arrival line instead of "unannounced". */
+export function expectInspector(on: boolean): void {
+  expectedNext = on;
+}
 /** Leave by this time whatever happens, so the run ends inside its slot. */
 const MUST_LEAVE = 50;
 
@@ -27,6 +35,7 @@ class InspectorRun extends Run {
   private arrivedAt = -1;
   private scene = false;
   private nervous: CharId[] = [];
+  private readonly expected: boolean;
 
   constructor(sim: SimApi) {
     super(sim, 'inspector', 'Inspection from Corporate', 'bullpen', {});
@@ -34,7 +43,10 @@ class InspectorRun extends Run {
     this.prop(INSPECTOR, 'clipboard');
     sim.feel(INSPECTOR, 'suspicious', 0.7, 60);
     sim.sfx('doorOpen', feetOf(anchor('door.entrance').tile).x);
-    this.narrate('start');
+    this.expected = expectedNext;
+    expectedNext = false;
+    if (this.expected) sim.narrate(EXPECTED_START, { icon: 'inspector', room: 'bullpen', beat: true });
+    else this.narrate('start');
     this.fact(true);
     this.next();
     const door = feetOf(anchor('door.entrance').tile);
@@ -90,15 +102,22 @@ class InspectorRun extends Run {
     if (this.scene) return;
     this.scene = true;
     const sim = this.sim;
-    const michael = sim.person('michael')?.present ? 'michael' : null;
+    const m = sim.person('michael');
+    const michael = m?.present ? 'michael' : null;
     const others = staff(sim).filter((p) => p.id !== 'michael' && p.available);
     const me = sim.person(INSPECTOR);
     const nearest = me ? others.sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0] : undefined;
-    const people = [INSPECTOR, ...(michael ? [michael] : []), ...(nearest ? [nearest.id] : [])];
+    // An expected inspector meets Michael in his own office: nobody is walked out of it for the chat.
+    const inOffice = !!michael && m?.room === 'boss';
+    const people = this.expected
+      ? (inOffice ? [INSPECTOR, 'michael'] : [INSPECTOR, ...(nearest ? [nearest.id] : [])])
+      : [INSPECTOR, ...(michael ? [michael] : []), ...(nearest ? [nearest.id] : [])];
     sim.requestScene({
       people,
       trigger: 'event',
-      why: "An inspector from Corporate has turned up unannounced and is inspecting the office with a clipboard, and has reached Michael's office.",
+      why: this.expected
+        ? "The inspector from Corporate has come, as arranged, to decide whether this branch stays open. He is touring the office with a clipboard and has reached Michael's office."
+        : "An inspector from Corporate has turned up unannounced and is inspecting the office with a clipboard, and has reached Michael's office.",
       priority: 7,
       minLines: 4,
       staleAfter: 25
