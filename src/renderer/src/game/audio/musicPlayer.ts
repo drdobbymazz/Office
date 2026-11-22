@@ -9,7 +9,8 @@ import { filt, gain } from './synth';
 interface Queued { t: number; dur: number; ev: NoteEv }
 
 /** Per-group trims so the layers sit together. */
-const GROUP_LEVEL: Record<Group, number> = { office: 1, disco: 0.9, drone: 1, frozen: 1.1 };
+// the stakes layer lives mostly in the band phone speakers play, so it can sit a little forward
+const GROUP_LEVEL: Record<Group, number> = { office: 1, disco: 0.9, drone: 1, frozen: 1.1, tension: 1.45, ending: 1 };
 
 export class MusicPlayer {
   readonly composer: Composer;
@@ -37,7 +38,7 @@ export class MusicPlayer {
       this.ducker.connect(send).connect(wet);
     }
     const mk = (): GainNode => { const g = gain(ctx, 0); g.connect(this.out); return g; };
-    this.groups = { office: mk(), disco: mk(), drone: mk(), frozen: mk() };
+    this.groups = { office: mk(), disco: mk(), drone: mk(), frozen: mk(), tension: mk(), ending: mk() };
     // electric piano tremolo lives on the office group input
     const trem = gain(ctx, 0.9);
     const l = ctx.createOscillator();
@@ -58,7 +59,7 @@ export class MusicPlayer {
     this.lfos.push(l, fl);
     l.start();
     fl.start();
-    this.inputs = { office: trem, disco: this.groups.disco, drone: dlp, frozen: flp };
+    this.inputs = { office: trem, disco: this.groups.disco, drone: dlp, frozen: flp, tension: this.groups.tension, ending: this.groups.ending };
   }
 
   setMood(m: Partial<MusicMood>): void { this.composer.setMood(m); }
@@ -108,6 +109,18 @@ export class MusicPlayer {
     if (this.nextBar < now - 0.05) {
       this.nextBar = now + 0.05;
       this.queue = this.queue.filter((q) => q.t >= now);
+    }
+    // an ending's theme starts with its sting, not at the next bar line: drop the rest of
+    // this bar (notes already sounding ring on) and begin the ending's first bar now
+    if (this.composer.endingChanged() && this.nextBar > now + 0.15) {
+      const at = now + 0.06;
+      this.queue = this.queue.filter((q) => q.t < at);
+      for (const g of GROUPS) {
+        const p = this.groups[g].gain;
+        if (typeof p.cancelAndHoldAtTime === 'function') p.cancelAndHoldAtTime(at);
+        else { p.cancelScheduledValues(at); p.setValueAtTime(p.value, at); }
+      }
+      this.nextBar = at;
     }
     while (this.nextBar < until) {
       const plan = this.composer.nextBar();

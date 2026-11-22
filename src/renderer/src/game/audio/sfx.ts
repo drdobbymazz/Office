@@ -943,7 +943,7 @@ export const SFX: Record<SfxId, SfxDef> = {
     }
   },
   endingSaved: {
-    gain: 0.5, wet: 0.32, dur: 3.5, vary: 0, max: 1, duck: { depth: 0.35, hold: 2.8 },
+    gain: 0.5, wet: 0.32, dur: 3.75, vary: 0, max: 1, duck: { depth: 0.35, hold: 2.0 },
     build(o, P, t) {
       // the branch stays open: a run up (C D E) to a brass F chord, then B flat, C, and a big F
       // with a glockenspiel spray and a cymbal swell
@@ -968,7 +968,7 @@ export const SFX: Record<SfxId, SfxDef> = {
     }
   },
   endingScraped: {
-    gain: 0.62, wet: 0.35, dur: 3.6, vary: 0, max: 1, duck: { depth: 0.35, hold: 2.8 },
+    gain: 0.62, wet: 0.35, dur: 3.9, vary: 0, max: 1, duck: { depth: 0.35, hold: 2.2 },
     build(o, P, t) {
       // the branch survives, with cuts: warm but wistful. F major, then B flat minor (the sigh), then home
       // to an open F: the mallet line falls C6 A5, then D flat 6 sinks to C6, and settles on A5
@@ -987,7 +987,7 @@ export const SFX: Record<SfxId, SfxDef> = {
     }
   },
   endingClosed: {
-    gain: 0.7, wet: 0.42, dur: 4.4, vary: 0, max: 1, duck: { depth: 0.3, hold: 3.4 },
+    gain: 0.7, wet: 0.42, dur: 4.4, vary: 0, max: 1, duck: { depth: 0.3, hold: 2.6 },
     build(o, P, t) {
       // the branch closes: slow, sparse, low. Three mallet notes fall with long gaps (A, F, D), a soft D minor
       // swells in muted brass under the last, and one far-off bell rings as the lights go
@@ -1002,7 +1002,7 @@ export const SFX: Record<SfxId, SfxDef> = {
     }
   },
   phoneRing: {
-    gain: 0.6, wet: 0.08, dur: 2.0, vary: 0, max: 1,
+    gain: 0.6, wet: 0.08, dur: 2.1, vary: 0, max: 1,
     build(o, P, t) {
       // an office phone's two bells (D6 and F6) struck by the ringer 20 times a second, in turn: ring ... ring
       const { ctx } = o;

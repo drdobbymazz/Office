@@ -135,6 +135,27 @@ function interactive() {
     b.onclick = () => { mood[k] = !mood[k]; b.classList.toggle('on', mood[k]); audio.setMusicMood({ [k]: mood[k] }); };
     mrow.appendChild(b);
   }
+  {
+    const l = el('label', {}, 'stakes');
+    const r = el('input', { type: 'range', min: '0', max: '1', step: '0.01', value: '0' });
+    const v = el('span', {}, '0');
+    r.oninput = () => { v.textContent = r.value; audio.setMusicMood({ stakes: Number(r.value) }); };
+    l.append(r, v);
+    mrow.appendChild(l);
+  }
+  const endBtns: HTMLButtonElement[] = [];
+  for (const k of ['saved', 'scraped', 'closed'] as const) {
+    const b = el('button', {}, `ending: ${k}`);
+    b.onclick = () => {
+      const on = !b.classList.contains('on');
+      for (const x of endBtns) x.classList.remove('on');
+      b.classList.toggle('on', on);
+      audio.setMusicMood({ ending: on ? k : null });
+      if (on) audio.sfx(k === 'saved' ? 'endingSaved' : k === 'closed' ? 'endingClosed' : 'endingScraped');
+    };
+    endBtns.push(b);
+    mrow.appendChild(b);
+  }
   app.appendChild(mrow);
   window.__h = { audio };
   (window as unknown as { __cast: typeof CAST }).__cast = CAST;
@@ -322,7 +343,9 @@ async function analysisMode() {
     const res: Record<string, unknown> = {};
     const moods: [string, Partial<MusicMood>][] = [
       ['calm', { chaos: 0 }], ['chaos .5', { chaos: 0.5 }], ['chaos 1', { chaos: 1 }], ['disco', { disco: true }],
-      ['blackout', { blackout: true }], ['frozen', { frozen: true }], ['menu', { menu: true }], ['evening', { hour: 18 }]
+      ['blackout', { blackout: true }], ['frozen', { frozen: true }], ['menu', { menu: true }], ['evening', { hour: 18 }],
+      ['stakes .5', { stakes: 0.5 }], ['stakes 1', { stakes: 1 }],
+      ['ending saved', { menu: true, ending: 'saved' }], ['ending scraped', { menu: true, ending: 'scraped' }], ['ending closed', { menu: true, ending: 'closed' }]
     ];
     for (const [label, mood] of moods) {
       const b = await renderMusic(mood, 8);
@@ -344,6 +367,16 @@ async function analysisMode() {
     }
     // a scripted ride: calm -> chaos ramp -> disco -> calm, measured in 2 s windows
     const script: [number, Partial<MusicMood>][] = [[0, { chaos: 0 }], [10, { chaos: 0.5 }], [20, { chaos: 1 }], [30, { chaos: 0, disco: true }], [40, { disco: false }]];
+    // a story deadline: stakes rises at 10 s and is gone at 30 s (it should ease both ways, without steps)
+    const ride = await renderMusicScript([[0, { stakes: 0 }], [10, { stakes: 1 }], [30, { stakes: 0 }]], 50);
+    wavs['music-stakes'] = ride;
+    {
+      const rx = mixdown([ride.getChannelData(0), ride.getChannelData(1)]);
+      const rf = rmsFrames(rx, ride.sampleRate, 2, 2);
+      const rm = analyze([ride.getChannelData(0), ride.getChannelData(1)], ride.sampleRate);
+      res.stakesRide = { windowsRmsDb: Array.from(rf, (v) => +f1(20 * Math.log10(v + 1e-12))), clipped: rm.clipped, peakDb: +f1(rm.peakDb) };
+      card(grid, 'music: stakes 0>1 (10 s)>0 (30 s)', ride, rm, `2 s windows rms:\n${Array.from(rf, (v) => Math.round(20 * Math.log10(v + 1e-12))).join(' ')}`, 99);
+    }
     const b = await renderMusicScript(script, 50);
     wavs['music-script'] = b;
     const x = mixdown([b.getChannelData(0), b.getChannelData(1)]);
