@@ -371,39 +371,128 @@ export const LEAK = {
 export const VERDICT = {
   title: 'The Verdict',
   intro: [
-    'Today Corporate decides. Their inspector arrives at 13:00 to tour the office, and everything this week has been reported.',
-    'Make the office look worth keeping while he tours: people at their desks, no disasters, and Michael waiting in his office at the end.'
+    "Today Corporate decides. Their inspector arrives at 13:00 to tour the bullpen, the accounting corner and Michael's office, and to write down what he sees.",
+    'Make the office look worth keeping while he tours: people at their desks, no disasters, and Michael waiting in his office at the end. Michael has other plans.'
   ],
   goal: {
-    id: 'inspection', title: 'Pass the inspection', icon: 'inspector',
-    detail: "Score 60 or more: the inspector checks the bullpen desks, the accounting desks, then Michael's office, from 13:00."
+    id: 'inspection', title: 'Pass the inspection', icon: 'inspector', stamp: ['PASSED', 'FAILED'] as [string, string], room: 'boss' as const,
+    detail: "Score 60 or more on the inspector's tour from 13:00: desks in the bullpen 30, accounting desks 20, Michael in his office 30, no incidents 20."
   },
   hints: [
-    'Michael wants to give a farewell speech in the break room. If he gives it while the inspector is here, everyone will go and listen.',
-    'Staff hurry to their desks when the inspector walks in. Anything that pulls them away costs you.',
-    "The inspector's last stop is Michael's office. Michael should be in it.",
-    'A disaster during the tour is noted. Points: desks in the bullpen 30, accounting desks 25, Michael 30, no incidents 15.'
+    'Michael is sure today is the day for a farewell speech in the break room. If he gives it during the tour, everyone goes to listen. His card shows what he is sure of.',
+    'Only an idea about the speech, the inspector or his office will change his mind.',
+    'Trouble is brewing for the tour. The captions say who is up to what before the inspector arrives.',
+    'A disaster during the tour costs the 20 points for no incidents.'
+  ],
+  help: [
+    'Whisper to Michael: "My farewell speech can wait until the inspector has gone. I should wait in my office." That stops the speech and keeps him in his office.',
+    'Deal with each problem before the inspector reaches it: whisper to the person, pick them up, or use a power on them.',
+    'If the speech starts anyway, announce "Everyone back to your desks" to pull the listeners back.'
   ],
   extras: [
-    { id: 'spotless', title: 'Spotless', icon: 'check', detail: 'Get through the whole day without a single incident.' },
-    { id: 'fullHouse', title: 'Full house', icon: 'people', detail: 'Have all fifteen staff in the building at 16:00.' }
+    { id: 'ovation', title: 'Standing ovation', icon: 'announce', detail: 'Let Michael give his farewell speech after the inspector has gone, with at least 8 people listening.' },
+    { id: 'spotless', title: 'Spotless tour', icon: 'check', detail: 'Score 90 or more on the inspection.' }
   ],
+  suggest: {
+    whisper: ['My farewell speech can wait until the inspector has gone.', 'I should wait in my office for the inspector.', 'Security can wait. I should be at my desk.'],
+    announce: ['Everyone back to your desks, the inspector is here!']
+  },
+  locked: 'Corporate is sending its own inspector today.',
   conviction: 'Today is the day to give a farewell speech in the break room.',
+  officeConviction: 'I should wait in my office for the inspector.',
   practising: 'practising a farewell speech',
   hurrying: 'hurrying to the break room to give his speech',
+  goingOffice: 'going to wait in his office',
   waitingOffice: 'waiting in his office for the inspector',
-  fact: "Corporate's inspector arrives at 13:00 to decide whether this branch stays open.",
+  fact: "Corporate's inspector arrives at 13:00 to decide whether this branch stays open. Michael plans a farewell speech.",
   before: 'The inspector comes at 13:00',
+  talkedOut: 'Michael decides the speech can wait. He stops rehearsing it.',
+  postponed: 'Michael decides to give his farewell speech after the inspector has gone.',
+  stillSpeech: 'Michael likes the idea, but he is still set on giving his farewell speech today.',
+  ignoresAnnounce: 'Michael does not move: he is busy rehearsing his farewell speech.',
   speech: 'Michael stands on a chair in the break room and calls everyone in for his farewell speech.',
-  speechWhy: 'Michael is giving a tearful farewell speech in the break room, while the inspector from Corporate tours the office.',
+  speechAfter: 'The inspector has gone. Michael stands on a chair in the break room and calls everyone in for his farewell speech.',
+  speechLines: [
+    'I have been your boss for a long time. Longer than some marriages.',
+    'Whatever Corporate says, you will always be my family.'
+  ],
+  speechReply: { who: 'kevin', text: 'I am not crying. You are crying.' },
+  speechWhy: 'Michael is giving a tearful farewell speech in the break room.',
   listening: "listening to Michael's farewell speech",
   goingToListen: "going to hear Michael's farewell speech",
   giving: 'giving a farewell speech',
+  ovation: (n: number) => `${n} people listened to Michael's farewell speech, and they clapped.`,
+  recall: 'Everyone hurries back to their desk.',
+  recallDoing: 'hurrying back to the desk for the inspector',
+  arrives: 'The inspector from Corporate arrives at the front door, right on time, with a clipboard.',
   stop: (n: number) => `Stop ${n} of 3`,
   score: (n: number) => `Score ${n}`,
-  passed: (n: number) => `The inspector took his notes and left. The office scored ${n} out of 100, enough to look worth keeping.`,
-  failed: (n: number) => `The inspector took his notes and left. The office scored ${n} out of 100.`,
+  bullpen: (n: number, of: number, pts: number) => `Bullpen: ${n} of ${of} at their desks. ${pts} of 30.`,
+  accounting: (n: number, of: number, pts: number) => `Accounting corner: ${n} of ${of} at their desks. ${pts} of 20.`,
+  michael: (there: boolean) => (there ? "Michael's office: Michael was waiting for him. 30 of 30." : "Michael's office: Michael was not there. 0 of 30."),
+  dangling: "Michael's office: Michael was dangling in mid-air. The inspector wrote that down. Minus 15.",
+  calm: (ok: boolean) => (ok ? 'No incidents during the tour. 20 of 20.' : 'An incident during the tour. 0 of 20.'),
+  passed: (n: number) => `The inspector took his notes and left. The office scored ${n} out of 100, enough to pass.`,
+  failed: (n: number) => `The inspector took his notes and left. The office scored ${n} out of 100. It needed 60.`,
   never: 'The inspector never got round the office.',
+  after: (n: number) => `The inspector has been and gone. The office scored ${n} out of 100. Corporate decides tonight.`,
+  // The week's leftovers.
+  apology: (name: string) => `${name}, caught yesterday, has sent Corporate an apology praising the branch. Plus 10.`,
+  figgisNote: "Mr Figgis's thank-you note is pinned up in reception for the inspector to see. Plus 5.",
+  boxes: [
+    { who: 'stanley', text: 'I packed on Monday. Saves time.' },
+    { who: 'jim', text: 'Stanley, it is not over.' },
+    { who: 'stanley', text: 'It is for this box.' }
+  ],
+  problems: {
+    dwight: {
+      start: 'Dwight has made himself head of security. He plans to search the inspector at the front door.',
+      conviction: 'I must search the inspector at the front door. Security comes first.',
+      going: 'going to search the inspector',
+      failed: 'Dwight searched the inspector at the front door. The inspector wrote it down. Minus 15.',
+      lines: [{ who: 'dwight', text: 'Arms up. This is a random security check.' }, { who: 'visitor:inspector', text: 'I will be noting that.' }],
+      fixed: {
+        talk: 'Dwight forgets about the security check and gets back to work.',
+        pickup: 'Dwight is too dizzy to search anyone, and sits back down at his desk.',
+        power: 'Dwight is in no state to search anyone.'
+      }
+    },
+    row: {
+      start: "Angela and Oscar have started arguing about Tuesday's figures in the accounting corner. The inspector will see it at his second stop.",
+      doing: 'arguing about the figures',
+      lines: [{ who: 'angela', text: 'Your figures were wrong on Tuesday, Oscar, and they are wrong today.' }, { who: 'oscar', text: 'My figures are fine. Your adding is the problem.' }],
+      failed: 'The inspector watched Angela and Oscar argue about the figures. Minus 15.',
+      fixed: { talk: 'Angela and Oscar stop arguing and go back to their desks.', pickup: 'Angela and Oscar stop arguing.', power: 'Angela and Oscar stop arguing.' }
+    },
+    leak: {
+      start: (name: string) => `Nobody caught ${name} yesterday. ${name} is planning one last page to Corporate during the tour, right under the inspector's nose.`,
+      going: 'sneaking to the fax machine',
+      sending: 'sending one last page to Corporate',
+      failed: (name: string) => `${name}'s last page reached Corporate during the tour. Minus 10.`,
+      fixed: (name: string) => `${name} gives up on the last page.`
+    },
+    sulk: {
+      start: (name: string) => `${name} is still hurt about being blamed yesterday, and is sulking in the break room instead of working.`,
+      doing: 'sulking in the break room',
+      fixed: (name: string) => `${name} feels better and goes back to work.`
+    }
+  },
+  topics: {
+    before: 'The inspector comes at one. This may be the last day.',
+    speech: 'Michael is planning a farewell speech for today.',
+    tour: 'The inspector from Corporate is touring the office with a clipboard.'
+  },
+  warns: {
+    disaster: 'A disaster during the tour costs the 20 points for no incidents.'
+  },
+  recap: {
+    caught: (name: string) => `${name} was caught leaking yesterday, and has already sent Corporate an apology.`,
+    escaped: (name: string) => `Nobody caught ${name} leaking yesterday, and ${name} may try one more page during the tour.`,
+    wronged: (name: string) => `${name} is still hurt about being blamed yesterday.`,
+    row: "Angela and Oscar are still arguing about Tuesday's figures.",
+    calm: 'Angela and Oscar made up on Tuesday, so the accounting corner is calm.',
+    figgis: "Mr Figgis's thank-you note is up in reception."
+  },
   changeWon: 'The inspection went well',
   changeLost: 'The inspection went badly'
 };

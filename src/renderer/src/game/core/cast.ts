@@ -486,7 +486,7 @@ export const VISITORS: Record<string, VisitorDef> = {
   'visitor:inspector': {
     id: 'visitor:inspector', name: 'The Inspector', role: 'Corporate Inspector', color: 0x55607a,
     voice: { pitch: 140, wave: 'square', spread: 0.6, speed: 0.8 },
-    summary: 'The Inspector, sent by Corporate without warning. Humourless, writes everything down, could close the branch.'
+    summary: 'The Inspector, sent by Corporate to check on the office. Humourless, writes everything down, could close the branch.'
   },
   'visitor:courier': {
     id: 'visitor:courier', name: 'Dee', role: 'Pizza Courier', color: 0xd9412e,

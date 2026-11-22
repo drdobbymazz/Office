@@ -9,7 +9,8 @@ import type { CastId, ChaosId, CharId, RoomId } from '@/game/core/types';
 import { formatClock, isCastId } from '@/game/core/types';
 import { CAST, registerVisitor, displayName } from '@/game/core/cast';
 import { CHAOS } from '@/game/core/chaos';
-import { anchor, deskOf, feetOf } from '@/game/core/world';
+import { anchor, deskOf, feetOf, roomCentrePx } from '@/game/core/world';
+import { expectInspector } from '@/game/sim/chaos/inspector';
 import type { SimPerson } from '@/game/core/simApi';
 import { summonChance } from '@/game/director/summon';
 import type { ChapterCtx, ChapterDef, ChapterRun, ChaosStartInfo, PlayerAction, SceneDoneInfo, ScriptLine, WeekNotes } from './types';
@@ -977,58 +978,134 @@ class LeakRun implements ChapterRun {
 }
 
 // ── Friday: The Verdict ──────────────────────────────────────────────────────
+//
+// The inspector tours at 13:00: the bullpen, the accounting corner, Michael's
+// office. Michael is set on a farewell speech in the break room; given during
+// the tour, it empties the desks. Only an idea about the speech, the inspector
+// or his office changes his mind (anything else, and he says so). The week's
+// leftovers make trouble on the tour: Dwight's security check (always),
+// Angela and Oscar's row (if Tuesday was lost), the uncaught leak's last page
+// (if Thursday was lost), and anyone wrongly accused sulking in the break room.
+// Each can be dealt with by a word, a hand or a power. Every stop says its
+// score as it is counted.
 
 const INSPECTOR = 'visitor:inspector';
 const KITCHEN_EVERY = 25;
-const STOPS = [
+const STOPS: { doing: string; anchor: string; room?: RoomId }[] = [
   { doing: 'inspecting the bullpen', anchor: 'spot.bullpen9' },
-  { doing: 'inspecting the accounting corner', anchor: 'spot.accounts1' },
-  { doing: "inspecting Michael's office", anchor: 'spot.boss1' }
+  // The last two count as soon as he walks into the room (a chat may move him off the exact spot).
+  { doing: 'inspecting the accounting corner', anchor: 'spot.accounts1', room: 'accounts' },
+  { doing: "inspecting Michael's office", anchor: 'spot.boss1', room: 'boss' }
 ];
 export const BULLPEN_STAFF: readonly CastId[] = (Object.keys(CAST) as CastId[]).filter((id) => deskOf(id).room === 'bullpen');
 const ACCOUNTS_STAFF: readonly CastId[] = ['angela', 'oscar', 'kevin'];
-const OFFICE_RE = /\b(office|inspector|inspection|desk)\b/i;
+/** A whisper or order that engages with the speech, the inspector or his office. */
+const ABOUT_SPEECH_RE = /\b(speech|farewell|goodbye|inspector|inspection|tour|office|desk|corporate)\b/i;
+const OFFICE_RE = /\b(office|desk|wait|waiting)\b/i;
+const LATER_RE = /\b(after|later|tonight|once|until|when)\b/i;
+const DESKS_RE = /\b(desk|desks|work|working|inspector)\b/i;
+const ROOM_WORD_RE = /\b(conference|meeting|break ?room|kitchen|bullpen|annex|accounting|reception)\b/i;
+export const INSPECTION_POINTS = { bullpen: 30, accounts: 20, michael: 30, calm: 20, problem: 15, lastPage: 10, apology: 10, figgis: 5, pass: 60 } as const;
+
+type ProblemId = 'dwight' | 'row' | 'leak' | 'sulk';
+interface Problem {
+  id: ProblemId;
+  state: 'waiting' | 'live' | 'fixed' | 'failed';
+  who: CastId[];
+  startAt: number;
+  /** Seconds the leak has been at the fax machine during the tour. */
+  atFax?: number;
+  nextMove?: number;
+}
 
 class VerdictRun implements ChapterRun {
+  private speech: 'planned' | 'cancelled' | 'after' | 'during' | 'afterGiven' = 'planned';
+  private toOffice = false;
   private kitchenAt = 0;
   private officeAt = 0;
+  private reconvinceAt = -1;
   private started = false;
   private startedAt = 0;
   private incidentsAt = 0;
   private seen = false;
-  private speech = false;
   private hurried = false;
   private scores: (number | null)[] = [null, null, null];
+  private stopLines: string[] = ['', '', ''];
   private total: number | null = null;
+  private problems: Problem[] = [];
+  private bonuses: { text: string; pts: number }[] = [];
+  private leftAt = -1;
+  private afterSpeechAt = -1;
+  private ovationAt = -1;
+  private boxesAt = -1;
+  private dangling = false;
 
   constructor(private c: ChapterCtx) {}
 
   setup(): void {
     const s = this.c.sim;
+    const n = this.c.notes;
     s.convince('michael', VERDICT.conviction);
     s.setFact('story.verdict', VERDICT.fact);
     this.kitchenAt = s.time + KITCHEN_EVERY;
     this.officeAt = s.time + 5;
+    // Michael's farewell cake and a few balloons are already in the break room.
+    const k = roomCentrePx('kitchen');
+    s.addEffect({ id: 'story-farewell-cake', kind: 'item', item: 'cake', x: k.x + 8, y: k.y + 6 });
+    s.addEffect({ id: 'story-farewell-balloons', kind: 'balloons', room: 'kitchen', count: 3 });
+    // The week's leftovers.
+    this.problems.push({ id: 'dwight', state: 'waiting', who: ['dwight'], startAt: DAY(12, 30) });
+    if (n.accounts === false) this.problems.push({ id: 'row', state: 'waiting', who: ['angela', 'oscar'], startAt: DAY(12, 45) });
+    const busy = new Set<CastId>(['dwight', 'angela', 'oscar', 'michael']);
+    if (n.leakFound === false && n.leak && !busy.has(n.leak)) {
+      this.problems.push({ id: 'leak', state: 'waiting', who: [n.leak], startAt: DAY(12, 40) });
+      busy.add(n.leak);
+    }
+    const sulker = (n.wronged ?? []).find((id) => !busy.has(id));
+    if (sulker) this.problems.push({ id: 'sulk', state: 'waiting', who: [sulker], startAt: DAY(9, 12) });
+    if (n.leakFound && n.leak) this.bonuses.push({ text: VERDICT.apology(displayName(n.leak)), pts: INSPECTION_POINTS.apology });
+    if (n.figgis) this.bonuses.push({ text: VERDICT.figgisNote, pts: INSPECTION_POINTS.figgis });
+    // The worse the week has gone, the more people arrive with a box to pack.
+    const fails = [n.call, n.accounts, n.figgis, n.leakFound].filter((v) => v === false).length;
+    const packers = (['stanley', 'creed', 'meredith', 'phyllis'] as CastId[]).slice(0, fails);
+    for (const id of packers) s.setProp(id, 'box');
+    if (packers.includes('stanley')) this.boxesAt = DAY(9, 8);
   }
 
   private holds(): boolean {
-    return this.c.sim.person('michael')?.conviction?.text === VERDICT.conviction;
+    return this.speech === 'planned';
   }
 
-  update(): void {
+  private problem(id: ProblemId): Problem | undefined {
+    return this.problems.find((p) => p.id === id);
+  }
+
+  update(dt: number): void {
     const s = this.c.sim;
-    if (s.incidentsToday > 0) this.c.setExtra('spotless', 'lost');
-    if (this.c.extra('fullHouse') === 'open' && s.clock >= DAY(16)) {
-      const all = s.people().filter((p) => p.isCast && p.present && p.room !== 'outside').length;
-      this.c.setExtra('fullHouse', all >= 15 ? 'won' : 'lost');
+    if (this.reconvinceAt >= 0 && s.time >= this.reconvinceAt) {
+      this.reconvinceAt = -1;
+      if (this.holds()) s.convince('michael', VERDICT.conviction);
     }
+    if (this.boxesAt >= 0 && s.clock >= this.boxesAt) {
+      this.boxesAt = -1;
+      this.c.script(VERDICT.boxes.map((l) => ({ who: l.who as CastId, text: l.text })), { room: 'bullpen' });
+    }
+    this.afterTheTour();
     if (this.c.main() !== 'open') return;
+    this.updateProblems(dt);
     this.steerMichael();
     if (!this.started && s.clock >= DAY(13)) {
-      if (s.startChaos('inspector', {}, { force: true }) === null) {
+      // The Inspection power is locked today for the player; the story's own inspector is let in.
+      s.setLocks({});
+      expectInspector(true);
+      const no = s.startChaos('inspector', {}, { force: true });
+      expectInspector(false);
+      s.setLocks({ inspector: VERDICT.locked });
+      if (no === null) {
         this.started = true;
         this.startedAt = s.time;
         this.incidentsAt = s.incidentsToday;
+        this.tourBegins();
       }
     }
     if (!this.started) return;
@@ -1037,10 +1114,10 @@ class VerdictRun implements ChapterRun {
     if (touring) this.seen = true;
     // The inspector's arrival is Michael's cue: unless he is in his own office, he hurries
     // to the break room and gives the speech the moment he gets there.
-    if (touring && !this.speech && this.holds() && s.time >= this.startedAt + 3) {
+    if (touring && this.holds() && s.time >= this.startedAt + 3) {
       const m = s.person('michael');
       if (m && m.present && m.available && !m.sceneId) {
-        if (m.room === 'kitchen') this.giveSpeech();
+        if (m.room === 'kitchen') this.giveSpeech(false);
         else if (m.room !== 'boss' && !this.hurried) {
           this.hurried = true;
           s.goTo('michael', { room: 'kitchen' }, { style: 'run', doing: VERDICT.hurrying, stay: 60, stayDoing: VERDICT.practising });
@@ -1051,21 +1128,20 @@ class VerdictRun implements ChapterRun {
       const at = STOPS.findIndex((st) => st.doing === insp.doing);
       for (let i = 0; i < STOPS.length; i++) {
         if (this.scores[i] !== null) continue;
-        const arrived = at === i && near(insp, feetOf(anchor(STOPS[i].anchor).tile), 24);
+        const arrived = at === i && (near(insp, feetOf(anchor(STOPS[i].anchor).tile), 24) || (!!STOPS[i].room && insp.room === STOPS[i].room));
         const passed = at > i || insp.doing === 'leaving';
-        if (arrived || passed) this.scores[i] = this.measure(i);
+        if (arrived || passed) this.scoreStop(i);
       }
     }
     if ((this.seen && !touring) || s.time - this.startedAt > 120) this.finish();
   }
 
-  /** Keep Michael where his idea sends him: the break room, or (a whisper about his office) his office. */
+  // ── Michael ──
+
   private steerMichael(): void {
     const s = this.c.sim;
     const m = s.person('michael');
     if (!m || !m.present) return;
-    // Talked out of the speech: he stops rehearsing it there and then.
-    if (!this.holds() && (m.doing === VERDICT.practising || m.doing === VERDICT.hurrying) && m.available && !m.sceneId) s.resume('michael');
     if (this.holds()) {
       if (s.time < this.kitchenAt) return;
       this.kitchenAt = s.time + KITCHEN_EVERY;
@@ -1074,35 +1150,237 @@ class VerdictRun implements ChapterRun {
       else this.kitchenAt = s.time + 3;
       return;
     }
-    if (m.conviction && OFFICE_RE.test(m.conviction.text) && s.time >= this.officeAt) {
-      this.officeAt = s.time + KITCHEN_EVERY;
-      if (m.available && m.room !== 'boss' && !m.sceneId) {
-        s.goTo('michael', { anchor: 'desk.michael' }, { doing: 'going to wait in his office', stay: 60, stayDoing: VERDICT.waitingOffice });
-      }
+    // Talked out of it: he stops rehearsing there and then.
+    if ((m.doing === VERDICT.practising || m.doing === VERDICT.hurrying) && m.available && !m.sceneId) s.resume('michael');
+    if (!this.toOffice && this.speech !== 'after') return;
+    if (!m.available || m.sceneId) return;
+    // From just before the tour until the inspector has gone, he keeps busy at his own desk (an idea
+    // of his own would otherwise send him off to tell someone about it, right as the inspector arrives).
+    if (s.clock >= DAY(12, 45) && this.total === null) {
+      if (m.plan?.kind !== 'work') s.setPlan('michael', { kind: 'work', target: null, about: VERDICT.waitingOffice });
+      return;
     }
+    if (s.time < this.officeAt) return;
+    this.officeAt = s.time + KITCHEN_EVERY;
+    // Already there and staying, or on the way: leave him be. A coffee run or a chat, and he goes back.
+    const staying = m.doing === VERDICT.waitingOffice || m.doing === VERDICT.goingOffice;
+    if (staying || (m.room === 'boss' && !/\b(going|heading|walking|wandering|strolling)\b/.test(m.doing))) return;
+    if (m.plan) s.setPlan('michael', null);
+    s.goTo('michael', { anchor: 'desk.michael' }, { doing: VERDICT.goingOffice, stay: 90, stayDoing: VERDICT.waitingOffice });
   }
 
-  private giveSpeech(): void {
+  /** A whisper or an order to Michael: does it engage with the speech? */
+  private aboutMichael(a: PlayerAction): void {
     const s = this.c.sim;
-    this.speech = true;
-    s.sfx('paChime');
-    s.narrate(VERDICT.speech, { icon: 'announce', room: 'kitchen' });
+    const text = a.text ?? '';
+    if (!this.holds()) {
+      if (OFFICE_RE.test(text) && ABOUT_SPEECH_RE.test(text)) this.toOffice = true;
+      return;
+    }
+    if (!ABOUT_SPEECH_RE.test(text)) {
+      // Not about the speech: he keeps his plan, and the player is told so.
+      s.narrate(VERDICT.stillSpeech, { icon: 'whisper', room: s.person('michael')?.room, beat: true });
+      this.reconvinceAt = s.time + 1.5;
+      return;
+    }
+    this.toOffice = OFFICE_RE.test(text) || /\binspector\b/i.test(text);
+    if (LATER_RE.test(text) && /\bspeech|farewell|goodbye\b/i.test(text)) {
+      this.speech = 'after';
+      this.toOffice = true;
+      s.narrate(VERDICT.postponed, { icon: 'whisper', beat: true });
+    } else {
+      this.speech = 'cancelled';
+      s.narrate(VERDICT.talkedOut, { icon: 'whisper', beat: true });
+    }
+    // An order (rather than a whisper) still leaves his card saying what he now means to do.
+    if (a.kind === 'cue') s.convince('michael', this.toOffice ? VERDICT.officeConviction : null);
+  }
+
+  private giveSpeech(afterTour: boolean): void {
+    const s = this.c.sim;
+    this.speech = afterTour ? 'afterGiven' : 'during';
+    s.sfx('clink');
+    s.narrate(afterTour ? VERDICT.speechAfter : VERDICT.speech, { icon: 'announce', room: 'kitchen', beat: true });
     s.goTo('michael', { room: 'kitchen' }, { doing: VERDICT.giving, stay: 60, stayDoing: VERDICT.giving });
     const went: CharId[] = [];
     for (const p of s.people()) {
       if (!p.isCast || p.id === 'michael' || !p.present || s.isSeized(p.id) || s.isAirborne(p.id)) continue;
       if (!p.available && !p.sceneId) continue;
-      if (s.rng() >= Math.min(0.97, summonChance(p.id, { food: false, named: false }) + 0.2)) continue;
+      if (s.rng() >= Math.min(0.97, summonChance(p.id, { food: false, named: false }) + (afterTour ? 0.4 : 0.2))) continue;
       s.goTo(p.id, { room: 'kitchen' }, { doing: VERDICT.goingToListen, stay: 60, stayDoing: VERDICT.listening });
       went.push(p.id);
     }
-    s.requestScene({ people: ['michael', ...went.slice(0, 2)], room: 'kitchen', trigger: 'event', why: VERDICT.speechWhy, priority: 8, gather: false, staleAfter: 30 });
+    const reply = VERDICT.speechReply;
+    const lines: ScriptLine[] = VERDICT.speechLines.map((text) => ({ who: 'michael', text, kind: 'say' as const, emotion: 'sad' as const }));
+    if (went.includes(reply.who as CastId)) lines.push({ who: reply.who as CastId, text: reply.text, kind: 'say', emotion: 'sad' });
+    this.c.script(lines, { room: 'kitchen', then: 'model', why: VERDICT.speechWhy });
+    if (afterTour) this.ovationAt = s.time + 22;
+  }
+
+  // ── the week's leftovers ──
+
+  private updateProblems(dt: number): void {
+    const s = this.c.sim;
+    const insp = s.person(INSPECTOR);
+    const touring = this.started && !!insp?.present;
+    for (const p of this.problems) {
+      if (p.state === 'waiting' && s.clock >= p.startAt) this.startProblem(p);
+      if (p.state !== 'live') continue;
+      const who = s.person(p.who[0]);
+      if (p.id === 'dwight' && touring && insp && who?.present) {
+        if (near(who, insp, 28)) {
+          this.fail(p);
+          this.c.script(VERDICT.problems.dwight.lines.map((l) => ({ who: l.who as CharId, text: l.text })), { room: who.room });
+          continue;
+        }
+        if (s.time >= (p.nextMove ?? 0) && who.available && !who.sceneId) {
+          p.nextMove = s.time + 2;
+          s.goTo('dwight', { near: INSPECTOR }, { doing: VERDICT.problems.dwight.going, stay: 4, stayDoing: VERDICT.problems.dwight.going });
+        }
+      }
+      if (p.id === 'row' && s.time >= (p.nextMove ?? 0)) {
+        p.nextMove = s.time + 18;
+        for (const id of p.who) {
+          const q = s.person(id);
+          if (q?.present && q.available && !q.sceneId && q.room !== 'accounts') s.goTo(id, { room: 'accounts' }, { doing: VERDICT.problems.row.doing, stay: 40, stayDoing: VERDICT.problems.row.doing });
+        }
+      }
+      if (p.id === 'leak' && touring && who?.present) {
+        if (who.doing === VERDICT.problems.leak.sending) {
+          p.atFax = (p.atFax ?? 0) + dt;
+          if (p.atFax >= 6) this.fail(p);
+        } else if (s.time >= (p.nextMove ?? 0) && who.available && !who.sceneId) {
+          p.nextMove = s.time + 6;
+          s.goTo(p.who[0], { anchor: 'spot.annex4' }, { doing: VERDICT.problems.leak.going, stay: 12, stayDoing: VERDICT.problems.leak.sending });
+        }
+      }
+      if (p.id === 'sulk' && s.time >= (p.nextMove ?? 0)) {
+        p.nextMove = s.time + 20;
+        if (who?.present && who.available && !who.sceneId && who.room !== 'kitchen') {
+          s.goTo(p.who[0], { room: 'kitchen' }, { doing: VERDICT.problems.sulk.doing, stay: 60, stayDoing: VERDICT.problems.sulk.doing });
+        }
+      }
+    }
+  }
+
+  private startProblem(p: Problem): void {
+    const s = this.c.sim;
+    const who = p.who[0];
+    if (!s.person(who)?.present) {
+      p.startAt = s.clock + 5;
+      return;
+    }
+    p.state = 'live';
+    const name = displayName(who);
+    if (p.id === 'dwight') {
+      s.convince('dwight', VERDICT.problems.dwight.conviction);
+      s.narrate(VERDICT.problems.dwight.start, { icon: 'warn', beat: true });
+    } else if (p.id === 'row') {
+      s.narrate(VERDICT.problems.row.start, { icon: 'rage', room: 'accounts', beat: true });
+      for (const id of p.who) s.feel(id, 'angry', 0.8, 60);
+      this.c.script(VERDICT.problems.row.lines.map((l) => ({ who: l.who as CastId, text: l.text, kind: 'say' as const, emotion: 'angry' as const })), { room: 'accounts' });
+    } else if (p.id === 'leak') {
+      s.narrate(VERDICT.problems.leak.start(name), { icon: 'phone', beat: true });
+    } else {
+      s.narrate(VERDICT.problems.sulk.start(name), { icon: 'morale', room: 'kitchen', beat: true });
+      s.feel(who, 'sad', 0.8, 120);
+    }
+  }
+
+  private fix(p: Problem, how: 'talk' | 'pickup' | 'power'): void {
+    if (p.state !== 'live') return;
+    const s = this.c.sim;
+    p.state = 'fixed';
+    const name = displayName(p.who[0]);
+    const text = p.id === 'dwight' ? VERDICT.problems.dwight.fixed[how]
+      : p.id === 'row' ? VERDICT.problems.row.fixed[how]
+        : p.id === 'leak' ? VERDICT.problems.leak.fixed(name)
+          : VERDICT.problems.sulk.fixed(name);
+    s.narrate(text, { icon: 'check', beat: true });
+    for (const id of p.who) {
+      if (p.id === 'dwight' && s.person('dwight')?.conviction?.text === VERDICT.problems.dwight.conviction) s.convince('dwight', null);
+      const q = s.person(id);
+      if (how !== 'pickup' && q?.present && q.available && !q.sceneId) s.goTo(id, { anchor: `desk.${id}` }, { doing: VERDICT.recallDoing, stay: 60, stayDoing: 'working at the desk' });
+      if (p.id === 'sulk') s.feel(id, 'happy', 0.6, 20);
+    }
+  }
+
+  private fail(p: Problem): void {
+    if (p.state !== 'live') return;
+    p.state = 'failed';
+    const name = displayName(p.who[0]);
+    const text = p.id === 'dwight' ? VERDICT.problems.dwight.failed : p.id === 'row' ? VERDICT.problems.row.failed : VERDICT.problems.leak.failed(name);
+    this.c.sim.narrate(text, { icon: 'inspector', beat: true });
+  }
+
+  private liveProblemOf(who: CharId | undefined): Problem | undefined {
+    if (!who || !isCastId(who)) return undefined;
+    return this.problems.find((p) => p.state === 'live' && p.who.includes(who));
+  }
+
+  onAction(a: PlayerAction): void {
+    if (this.c.main() !== 'open') return;
+    const s = this.c.sim;
+    if ((a.kind === 'whisper' || a.kind === 'cue') && a.who) {
+      if (a.who === 'michael') this.aboutMichael(a);
+      const p = this.liveProblemOf(a.who);
+      if (p) this.fix(p, 'talk');
+    }
+    if (a.kind === 'announce' && a.text) {
+      const touring = this.started && !!s.person(INSPECTOR)?.present;
+      if (touring && DESKS_RE.test(a.text)) this.recall(true);
+      else if (this.holds() && ROOM_WORD_RE.test(a.text)) s.narrate(VERDICT.ignoresAnnounce, { icon: 'announce', beat: true });
+    }
+  }
+
+  onPickedUp(who: CharId): void {
+    if (this.c.main() !== 'open') return;
+    const p = this.liveProblemOf(who);
+    if (p && p.id !== 'sulk') this.fix(p, 'pickup');
+  }
+
+  onChaosStart(e: ChaosStartInfo): void {
+    if (this.c.main() !== 'open') return;
+    const s = this.c.sim;
+    for (const p of this.problems) {
+      if (p.state !== 'live') continue;
+      const targeted = p.who.some((id) => id === e.target.who || id === e.target.other);
+      const inRoom = !!e.room && p.who.some((id) => s.person(id)?.room === e.room) && (e.id === 'sleep' || e.id === 'timeFreeze');
+      if (p.id === 'sulk' ? targeted && (e.id === 'birthday' || e.id === 'puppy' || e.id === 'espresso') : targeted || inRoom) this.fix(p, 'power');
+      if (p.id === 'sulk' && (e.id === 'puppy' || e.id === 'pizza') && e.room === 'kitchen') this.fix(p, 'power');
+    }
+  }
+
+  // ── the tour ──
+
+  private tourBegins(): void {
+    const s = this.c.sim;
+    for (const b of this.bonuses) s.narrate(b.text, { icon: 'check', beat: true });
+    this.recall(false);
+  }
+
+  /** Everyone not otherwise engaged goes back to their desk (on the inspector's arrival, or an announcement during the tour). */
+  private recall(announced: boolean): void {
+    const s = this.c.sim;
+    const busy = new Set(this.problems.filter((p) => p.state === 'live' && (p.id !== 'row' || !announced)).flatMap((p) => p.who));
+    for (const p of s.people()) {
+      if (!p.isCast || p.id === 'michael' || !p.present || busy.has(p.id as CastId) || s.isSeized(p.id) || s.isAirborne(p.id)) continue;
+      if (!announced && (p.doing === VERDICT.listening || p.doing === VERDICT.goingToListen)) continue;
+      if (!p.available || p.sceneId) continue;
+      if (this.atDesk(p.id as CastId)) continue;
+      s.goTo(p.id, { anchor: `desk.${p.id}` }, { style: announced ? 'run' : 'walk', doing: VERDICT.recallDoing, stay: 80, stayDoing: 'working at the desk' });
+    }
+    if (announced) {
+      const row = this.problem('row');
+      if (row?.state === 'live') this.fix(row, 'talk');
+      s.narrate(VERDICT.recall, { icon: 'announce', beat: true });
+    }
   }
 
   private atDesk(id: CastId): boolean {
     const p = this.c.sim.person(id);
     if (!onFloor(this.c, p)) return false;
-    return /\bdesk\b/i.test(p.doing) || near(p, feetOf(deskOf(id).tile), 24);
+    return /\bdesk\b/i.test(p.doing) && !p.doing.includes('hurrying') ? true : near(p, feetOf(deskOf(id).tile), 24);
   }
 
   /** How a stop looks right now: share of desks filled (0..1), or Michael in his office (0 or 1). */
@@ -1114,20 +1392,81 @@ class VerdictRun implements ChapterRun {
     return onFloor(this.c, m) && m.room === 'boss' ? 1 : 0;
   }
 
+  private scoreStop(i: number): void {
+    const v = this.measure(i);
+    this.scores[i] = v;
+    let line: string;
+    if (i === 0) line = VERDICT.bullpen(Math.round(v * BULLPEN_STAFF.length), BULLPEN_STAFF.length, Math.round(INSPECTION_POINTS.bullpen * v));
+    else if (i === 1) {
+      line = VERDICT.accounting(Math.round(v * ACCOUNTS_STAFF.length), ACCOUNTS_STAFF.length, Math.round(INSPECTION_POINTS.accounts * v));
+      const row = this.problem('row');
+      if (row?.state === 'live') this.fail(row);
+    } else {
+      // Held up in the air for the whole tour is not "waiting in his office".
+      this.dangling = !!this.c.sim.person('michael')?.present && (this.c.sim.holding === 'michael' || this.c.sim.isAirborne('michael'));
+      line = this.dangling ? VERDICT.dangling : VERDICT.michael(v === 1);
+    }
+    this.stopLines[i] = line;
+    this.c.sim.narrate(line, { icon: 'inspector', beat: true });
+  }
+
   private finish(): void {
     if (this.total !== null) return;
     const s = this.c.sim;
-    const sc = this.scores.map((v, i) => v ?? this.measure(i));
-    const calm = s.incidentsToday === this.incidentsAt ? 1 : 0;
-    const total = Math.round(30 * sc[0] + 25 * sc[1] + 30 * sc[2] + 15 * calm);
+    for (let i = 0; i < 3; i++) if (this.scores[i] === null) this.scoreStop(i);
+    const calm = s.incidentsToday === this.incidentsAt;
+    // A row nobody stopped is seen even if the tour was cut short.
+    const row = this.problem('row');
+    if (row?.state === 'live') this.fail(row);
+    const failed = this.problems.filter((p) => p.state === 'failed');
+    const penalty = failed.reduce((sum, p) => sum + (p.id === 'leak' ? INSPECTION_POINTS.lastPage : INSPECTION_POINTS.problem), 0) + (this.dangling ? INSPECTION_POINTS.problem : 0);
+    const bonus = this.bonuses.reduce((sum, b) => sum + b.pts, 0);
+    const sc = this.scores.map((v) => v ?? 0);
+    const raw = INSPECTION_POINTS.bullpen * sc[0] + INSPECTION_POINTS.accounts * sc[1] + INSPECTION_POINTS.michael * sc[2] + (calm ? INSPECTION_POINTS.calm : 0) - penalty + bonus;
+    const total = Math.max(0, Math.min(100, Math.round(raw)));
     this.total = total;
-    this.c.notes.inspection = total;
-    if (total >= 60) {
-      s.narrate(VERDICT.passed(total), { icon: 'inspector' });
-      this.c.win([VERDICT.passed(total)]);
-    } else {
-      s.narrate(VERDICT.failed(total), { icon: 'inspector' });
-      this.c.lose([VERDICT.failed(total)]);
+    const n = this.c.notes;
+    n.inspection = total;
+    const went = this.problems.filter((p) => p.state !== 'waiting');
+    n.tour = { of: went.length, fixed: went.filter((p) => p.state === 'fixed').length };
+    n.speech = this.speech === 'during' ? 'during' : this.speech === 'after' || this.speech === 'afterGiven' ? 'after' : 'never';
+    s.setFact('story.verdict', VERDICT.after(total));
+    const calmLine = VERDICT.calm(calm);
+    s.narrate(calmLine, { icon: 'inspector' });
+    const pass = total >= INSPECTION_POINTS.pass;
+    s.narrate(pass ? VERDICT.passed(total) : VERDICT.failed(total), { icon: 'inspector', beat: true });
+    this.c.setExtra('spotless', total >= 90 ? 'won' : 'lost');
+    if (this.speech === 'cancelled' || this.speech === 'planned' || this.speech === 'during') this.c.setExtra('ovation', 'lost');
+    const lines = [
+      pass ? VERDICT.passed(total) : VERDICT.failed(total),
+      [...this.stopLines.filter(Boolean), calmLine].join(' '),
+      [...failed.map((p) => (p.id === 'dwight' ? VERDICT.problems.dwight.failed : p.id === 'row' ? VERDICT.problems.row.failed : VERDICT.problems.leak.failed(displayName(p.who[0])))), ...this.bonuses.map((b) => b.text)].join(' ')
+    ].filter(Boolean);
+    this.leftAt = s.time;
+    if (pass) this.c.win(lines);
+    else this.c.lose(lines);
+  }
+
+  /** Once the inspector has gone: the speech, if Michael saved it for afterwards. */
+  private afterTheTour(): void {
+    const s = this.c.sim;
+    if (this.total === null) return;
+    if (this.speech === 'after' && this.afterSpeechAt < 0) {
+      this.afterSpeechAt = s.time + 6;
+      s.goTo('michael', { room: 'kitchen' }, { doing: VERDICT.hurrying, stay: 60, stayDoing: VERDICT.practising });
+    }
+    if (this.speech === 'after' && this.afterSpeechAt >= 0 && s.time >= this.afterSpeechAt) {
+      const m = s.person('michael');
+      if (m && m.present && (m.room === 'kitchen' || s.time > this.afterSpeechAt + 25) && !m.sceneId) this.giveSpeech(true);
+    }
+    if (this.ovationAt >= 0 && s.time >= this.ovationAt && this.c.extra('ovation') === 'open') {
+      this.ovationAt = -1;
+      const n = s.peopleIn('kitchen').filter((p) => p.isCast && p.id !== 'michael' && p.present).length;
+      if (n >= 8) {
+        s.narrate(VERDICT.ovation(n), { icon: 'announce', room: 'kitchen', beat: true });
+        for (const p of s.peopleIn('kitchen')) if (p.isCast && p.id !== 'michael') s.react(p.id, 'cheer', 1.5);
+        this.c.setExtra('ovation', 'won');
+      } else this.c.setExtra('ovation', 'lost');
     }
   }
 
@@ -1144,17 +1483,59 @@ class VerdictRun implements ChapterRun {
     return { progress: done / 3, status: VERDICT.stop(Math.min(3, done + 1)) };
   }
 
+  /** Nothing left to change, unless Michael's speech after the tour is still to come. */
+  settled(): boolean {
+    return this.c.main() !== 'open' && !(this.speech === 'after' && this.c.extra('ovation') === 'open');
+  }
+
+  topics(): string[] {
+    if (this.total !== null) return [VERDICT.after(this.total)];
+    if (this.started) return [VERDICT.topics.tour];
+    return this.holds() ? [VERDICT.topics.before, VERDICT.topics.speech] : [VERDICT.topics.before];
+  }
+
+  warns(): Partial<Record<ActionId, string>> {
+    if (this.c.main() !== 'open') return {};
+    const out: Partial<Record<ActionId, string>> = {};
+    for (const id of Object.keys(CHAOS) as ChaosId[]) if (CHAOS[id].incident) out[id] = VERDICT.warns.disaster;
+    return out;
+  }
+
+  stakes(): number {
+    const s = this.c.sim;
+    if (this.total !== null) return 0.15;
+    if (this.started) return 0.95;
+    return s.clock >= DAY(12, 30) ? 0.65 : 0.3;
+  }
+
   /** Read by tests. */
   get score(): number | null {
     return this.total;
   }
 
+  /** Read by tests. */
+  get state(): { speech: string; problems: { id: string; state: string }[]; stops: (number | null)[] } {
+    return { speech: this.speech, problems: this.problems.map((p) => ({ id: p.id, state: p.state })), stops: [...this.scores] };
+  }
+
   pinned(who: CharId): boolean {
-    return who === 'michael' && this.holds();
+    return who === 'michael' && (this.holds() || this.toOffice || this.speech === 'after');
   }
 }
 
 // ── The week ─────────────────────────────────────────────────────────────────
+
+/** Friday's card: what carried over from earlier in the week (at most two short sentences). */
+function fridayRecap(n: WeekNotes): string | null {
+  const out: string[] = [];
+  if (n.leakFound === true && n.leak) out.push(VERDICT.recap.caught(displayName(n.leak)));
+  else if (n.leakFound === false && n.leak) out.push(VERDICT.recap.escaped(displayName(n.leak)));
+  if (n.wronged?.length) out.push(VERDICT.recap.wronged(displayName(n.wronged[0])));
+  if (n.accounts === false) out.push(VERDICT.recap.row);
+  else if (n.accounts === true) out.push(VERDICT.recap.calm);
+  if (n.figgis === true) out.push(VERDICT.recap.figgis);
+  return out.length ? out.slice(0, 2).join(' ') : null;
+}
 
 export const CHAPTER_DEFS: readonly ChapterDef[] = [
   {
@@ -1182,9 +1563,11 @@ export const CHAPTER_DEFS: readonly ChapterDef[] = [
     create: (c) => new LeakRun(c)
   },
   {
-    chapter: 5, weekday: 'Friday', title: VERDICT.title, intro: VERDICT.intro, hints: VERDICT.hints, goal: VERDICT.goal,
-    extras: [{ ...VERDICT.extras[0], atFive: 'won' }, { ...VERDICT.extras[1], atFive: 'lost' }],
-    locked: {}, change: [VERDICT.changeWon, VERDICT.changeLost], create: (c) => new VerdictRun(c)
+    chapter: 5, weekday: 'Friday', title: VERDICT.title, intro: VERDICT.intro, hints: VERDICT.hints, help: VERDICT.help, goal: VERDICT.goal,
+    extras: [{ ...VERDICT.extras[0], atFive: 'lost' }, { ...VERDICT.extras[1], atFive: 'lost' }],
+    locked: { inspector: VERDICT.locked }, change: [VERDICT.changeWon, VERDICT.changeLost], suggest: VERDICT.suggest,
+    recap: fridayRecap,
+    create: (c) => new VerdictRun(c)
   }
 ];
 
