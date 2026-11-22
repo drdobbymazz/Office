@@ -21,6 +21,8 @@ export interface SfxDef {
   vary: number;
   /** At most this many of the same effect at once (older ones are stolen). */
   max: number;
+  /** A sting: the music dips to `depth` (gain) for `hold` seconds so it reads clearly, then comes back. */
+  duck?: { depth: number; hold: number };
   build(o: Out, P: number, t: number): void;
 }
 
@@ -76,6 +78,163 @@ function flap(o: Out, t: number, peak: number) {
 
 function droplet(o: Out, t: number, f: number, peak: number) {
   tone(o, { f, f2: f * 1.9, glide: 0.05, t, a: 0.002, d: 0.06, peak });
+}
+
+// ── story helpers ─────────────────────────────────────────────────────────
+
+/** Glockenspiel bar: bright, short, a little inharmonic. */
+const GLOCK: ReadonlyArray<readonly [number, number, number]> = [[1, 1, 0.7], [2.76, 0.22, 0.22], [5.4, 0.06, 0.07]];
+/** A wine glass: free-bell modes (ratio, amp, seconds to fade). */
+const GLASS: ReadonlyArray<readonly [number, number, number]> = [[1, 1, 1.25], [2.32, 0.32, 0.6], [4.25, 0.11, 0.25], [6.63, 0.04, 0.12]];
+
+interface BrassSpec {
+  a?: number;
+  hold: number;
+  d: number;
+  peak: number;
+  /** Low-pass contour: closed, bloomed (after the attack), settled (at the end). */
+  ff?: readonly [number, number, number];
+  /** Cents to droop over the release (a sigh). */
+  bend?: number;
+  /** Vibrato on the held part: rate Hz, depth cents. */
+  vib?: readonly [number, number];
+  /** Detune of each saw pair, cents. */
+  spread?: number;
+}
+
+/**
+ * Soft brass: a chord of detuned saw pairs through ONE shared low-pass that blooms
+ * open on the attack and settles, under one envelope. Cheap: one filter per chord.
+ */
+function brass(o: Out, freqs: readonly number[], t: number, s: BrassSpec): number {
+  const { ctx } = o;
+  const a = s.a ?? 0.035;
+  const [f0, f1, f2] = s.ff ?? [900, 2800, 1100];
+  const end = t + a + s.hold + s.d + 0.01;
+  const lp = filt(ctx, 'lowpass', f0, 1.5);
+  lp.frequency.setValueAtTime(f0, t);
+  lp.frequency.exponentialRampToValueAtTime(f1, t + a + 0.04);
+  lp.frequency.exponentialRampToValueAtTime(f2, end);
+  const mix = gain(ctx, 1 / Math.sqrt(freqs.length * 2));
+  const g = gain(ctx, 0);
+  env(g.gain, t, a, s.peak, s.d, s.hold);
+  mix.connect(lp).connect(g).connect(o.dest);
+  let vg: GainNode | null = null;
+  if (s.vib) {
+    const l = osc(o, 'sine', s.vib[0], t, end + 0.02);
+    vg = gain(ctx, 0);
+    vg.gain.setValueAtTime(0, t);
+    vg.gain.linearRampToValueAtTime(s.vib[1], t + a + Math.min(0.25, s.hold));
+    l.connect(vg);
+  }
+  const w = softWave(ctx, 'sawtooth');
+  const spread = s.spread ?? 7;
+  for (const f of freqs) {
+    for (const det of [-spread, spread]) {
+      const n = osc(o, w, f, t, end + 0.02);
+      n.detune.value = det;
+      if (s.bend) {
+        n.detune.setValueAtTime(det, t + a + s.hold);
+        n.detune.linearRampToValueAtTime(det + s.bend, end);
+      }
+      if (vg) vg.connect(n.detune);
+      n.connect(mix);
+    }
+  }
+  return end;
+}
+
+/** A muted horn note with a plunger "wa": the tone opens then closes again. */
+function wah(o: Out, f: number, t: number, s: { hold: number; d: number; peak: number; vib?: readonly [number, number]; bend?: number }): number {
+  const { ctx } = o;
+  const end = t + 0.03 + s.hold + s.d + 0.01;
+  const w = softWave(ctx, 'sawtooth');
+  const lp = filt(ctx, 'lowpass', 450, 4);
+  lp.frequency.setValueAtTime(420, t);
+  lp.frequency.exponentialRampToValueAtTime(1500, t + 0.07);
+  lp.frequency.exponentialRampToValueAtTime(700, t + 0.03 + s.hold);
+  lp.frequency.exponentialRampToValueAtTime(380, end);
+  const g = gain(ctx, 0);
+  env(g.gain, t, 0.03, s.peak, s.d, s.hold);
+  lp.connect(g).connect(o.dest);
+  const mix = gain(ctx, 0.7);
+  mix.connect(lp);
+  let vg: GainNode | null = null;
+  if (s.vib) {
+    const l = osc(o, 'sine', s.vib[0], t, end + 0.02);
+    vg = gain(ctx, 0);
+    vg.gain.setValueAtTime(0, t + 0.1);
+    vg.gain.linearRampToValueAtTime(s.vib[1], t + 0.03 + s.hold);
+    l.connect(vg);
+  }
+  for (const det of [-6, 6]) {
+    const n = osc(o, w, f, t, end + 0.02);
+    n.detune.value = det;
+    if (s.bend) {
+      n.detune.setValueAtTime(det, t + 0.03 + s.hold * 0.5);
+      n.detune.linearRampToValueAtTime(det + s.bend, end);
+    }
+    if (vg) vg.connect(n.detune);
+    n.connect(mix);
+  }
+  return end;
+}
+
+const strikeCache = new WeakMap<BaseAudioContext, PeriodicWave>();
+/** Strike envelope f(x) = e^(-4x) over one period, as a wave (DC removed): for bells struck again and again. */
+const STRIKE_K = 4;
+const STRIKE_DC = (1 - Math.exp(-STRIKE_K)) / STRIKE_K;
+function strikeWave(ctx: BaseAudioContext): PeriodicWave {
+  let w = strikeCache.get(ctx);
+  if (w) return w;
+  const n = 32;
+  const re = new Float32Array(n), im = new Float32Array(n);
+  const A = 1 - Math.exp(-STRIKE_K);
+  for (let k = 1; k < n; k++) {
+    const den = STRIKE_K * STRIKE_K + 4 * Math.PI * Math.PI * k * k;
+    re[k] = (2 * A * STRIKE_K) / den;
+    im[k] = (4 * Math.PI * k * A) / den;
+  }
+  w = ctx.createPeriodicWave(re, im, { disableNormalization: true });
+  strikeCache.set(ctx, w);
+  return w;
+}
+
+/**
+ * A telephone bell struck `rate` times a second: partials through a gain whose level
+ * follows the strike wave (base + depth * strikes), starting `phase` seconds in.
+ */
+function struckBell(o: Out, f: number, t: number, end: number, rate: number, phase: number, depth: number, dest: AudioNode): void {
+  const { ctx } = o;
+  const am = gain(ctx, 1 - depth + depth * STRIKE_DC);
+  am.connect(dest);
+  const lfo = o.ctx.createOscillator();
+  lfo.setPeriodicWave(strikeWave(ctx));
+  lfo.frequency.value = rate;
+  lfo.start(t + phase);
+  lfo.stop(end + 0.02);
+  o.track(lfo, end + 0.02);
+  const lg = gain(ctx, depth);
+  lfo.connect(lg).connect(am.gain);
+  for (const [r, amp] of [[1, 1], [2.76, 0.32], [5.4, 0.1]] as const) {
+    if (f * r > ctx.sampleRate * 0.45) continue;
+    const n = osc(o, 'sine', f * r, t, end + 0.02);
+    const g = gain(ctx, amp);
+    n.connect(g).connect(am);
+  }
+}
+
+/** Count-up ticks climb a pentatonic step every second tick while they come quickly. */
+const TICK_STEPS = [0, 2, 4, 7, 9, 12];
+let tickCtx: BaseAudioContext | null = null;
+let tickAt = -1;
+let tickN = 0;
+function tickStep(ctx: BaseAudioContext, t: number): number {
+  if (ctx !== tickCtx || t < tickAt || t - tickAt > 0.3) tickN = 0;
+  else tickN++;
+  tickCtx = ctx;
+  tickAt = t;
+  return TICK_STEPS[Math.min(TICK_STEPS.length - 1, Math.floor(tickN / 2))];
 }
 
 export const SFX: Record<SfxId, SfxDef> = {
@@ -672,103 +831,264 @@ export const SFX: Record<SfxId, SfxDef> = {
     }
   },
 
-  // ── story mode (first drafts: simple, so every id has a sound) ──────
+  // ── story mode ───────────────────────────────────────────────────────
+  // In F major like the score: mallets carry the tune, soft brass the chords,
+  // bells and air the sparkle. Wins climb and open up; losses fall, darken and droop.
   goalWin: {
-    gain: 0.55, wet: 0.2, dur: 1.4, vary: 0, max: 1,
+    gain: 0.46, wet: 0.22, dur: 1.5, vary: 0, max: 1, duck: { depth: 0.5, hold: 0.9 },
     build(o, P, t) {
-      [KEY.C5, KEY.F5, KEY.A5, KEY.C6, KEY.F6].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.07, 0.24, 0.5));
+      // "da-da-DAA": a quick mallet run up the F chord lands on a bright brass F chord with F6 on top
+      [KEY.C5, KEY.F5, KEY.A5].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.065, 0.15 + i * 0.03, 0.22));
+      const tl = t + 0.2;
+      brass(o, [KEY.F4, KEY.A4, KEY.C5, KEY.F5].map((m) => N(m) * P), tl, { a: 0.025, hold: 0.2, d: 0.7, peak: 0.2, ff: [900, 3400, 1100] });
+      mallet(o, N(KEY.F6) * P, tl, 0.24, 0.85);
+      mallet(o, N(KEY.C6) * P, tl, 0.1, 0.5);
+      // a spray of high pings and a breath of air
+      [KEY.A6, KEY.C7, KEY.D7, KEY.F7].forEach((m, i) => tone(o, { f: N(m) * P, t: tl + 0.06 + i * 0.04, a: 0.002, d: 0.24, peak: 0.04 }));
+      burst(o, { kind: 'white', t: tl, a: 0.04, d: 0.55, peak: 0.022, type: 'highpass', f: 7000 });
     }
   },
   goalFail: {
-    gain: 0.5, wet: 0.15, dur: 1.2, vary: 0, max: 1,
+    gain: 0.56, wet: 0.18, dur: 1.5, vary: 0, max: 1, duck: { depth: 0.55, hold: 0.9 },
     build(o, P, t) {
-      mallet(o, N(KEY.A5) * P, t, 0.22, 0.35);
-      mallet(o, N(KEY.F5 - 1) * P, t + 0.18, 0.22, 0.6);
+      // a let-down: two mallet notes fall (C5, A flat 4), then a muted F minor chord droops and closes
+      mallet(o, N(KEY.C5) * P, t, 0.2, 0.3);
+      mallet(o, N(KEY.A4 - 1) * P, t + 0.15, 0.2, 0.5);
+      const tl = t + 0.3;
+      brass(o, [KEY.F4, KEY.A4 - 1, KEY.C5].map((m) => N(m) * P), tl, { a: 0.05, hold: 0.25, d: 0.75, peak: 0.2, ff: [1300, 1100, 380], bend: -70 });
+      mallet(o, N(KEY.F4) * P, tl, 0.16, 0.8);
     }
   },
   dayWon: {
-    gain: 0.5, wet: 0.3, dur: 2.2, vary: 0, max: 1,
+    gain: 0.5, wet: 0.28, dur: 2.5, vary: 0, max: 1, duck: { depth: 0.45, hold: 1.7 },
     build(o, P, t) {
-      [KEY.F5, KEY.A5, KEY.C6, KEY.F6].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.12, 0.22, i === 3 ? 1.4 : 0.5));
+      // a cadence, IV V I, in soft brass under a mallet tune that climbs home (D6 E6 F6), then bells and a cymbal swell
+      const n = (m: number) => N(m) * P;
+      brass(o, [KEY.Bb4, KEY.D5, KEY.F5].map(n), t, { a: 0.03, hold: 0.09, d: 0.18, peak: 0.15, ff: [1000, 3000, 1300] });
+      mallet(o, n(KEY.D6), t, 0.19, 0.3);
+      brass(o, [KEY.C5, KEY.E5, KEY.G5].map(n), t + 0.2, { a: 0.03, hold: 0.09, d: 0.18, peak: 0.16, ff: [1000, 3000, 1300] });
+      mallet(o, n(KEY.E6), t + 0.2, 0.2, 0.3);
+      const tl = t + 0.42;
+      brass(o, [KEY.F4, KEY.A4, KEY.C5, KEY.F5].map(n), tl, { a: 0.03, hold: 0.45, d: 1.25, peak: 0.21, ff: [1000, 3400, 1200], vib: [5.5, 5] });
+      mallet(o, n(KEY.F6), tl, 0.25, 1.4);
+      mallet(o, n(KEY.A5), tl, 0.1, 0.9);
+      [KEY.F6, KEY.A6, KEY.C7, KEY.F7].forEach((m, i) => bell(o, n(m), tl + 0.14 + i * 0.07, 0.045, GLOCK));
+      burst(o, { kind: 'white', t: tl - 0.12, a: 0.14, d: 1.1, peak: 0.028, type: 'highpass', f: 6500 });
     }
   },
   dayLost: {
-    gain: 0.5, wet: 0.3, dur: 2.4, vary: 0, max: 1,
+    gain: 0.36, wet: 0.25, dur: 2.4, vary: 0, max: 1, duck: { depth: 0.5, hold: 1.7 },
     build(o, P, t) {
-      [KEY.C6, KEY.A5, KEY.F5, KEY.C5].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.2, 0.2, i === 3 ? 1.5 : 0.5));
+      // "wah, wah, wah, wahhh": a muted horn steps down (B flat, A, A flat) and sags on a long G,
+      // over a soft low mallet; kind rather than mocking
+      const notes = [KEY.Bb4, KEY.A4, KEY.A4 - 1, KEY.G4];
+      notes.forEach((m, i) => {
+        const last = i === notes.length - 1;
+        wah(o, N(m) * P, t + i * 0.28, { hold: last ? 0.5 : 0.1, d: last ? 0.65 : 0.12, peak: last ? 0.3 : 0.26, vib: last ? [5, 22] : undefined, bend: last ? -45 : 0 });
+      });
+      mallet(o, N(KEY.G4 - 12) * P, t + 0.84, 0.12, 1.1);
+      mallet(o, N(KEY.D5) * P, t + 0.84, 0.07, 0.9);
     }
   },
   stamp: {
-    gain: 0.55, wet: 0.08, dur: 0.4, vary: 0.03, max: 2,
+    gain: 0.75, wet: 0.06, dur: 0.4, vary: 0.03, max: 2,
     build(o, P, t) {
-      tone(o, { type: 'triangle', f: 110 * P, f2: 60 * P, glide: 0.12, t, a: 0.002, d: 0.18, peak: 0.5 });
-      burst(o, { t, a: 0.002, d: 0.08, peak: 0.25, type: 'lowpass', f: 1800, q: 0.7 });
+      // a rubber stamp slammed on paper on a desk: the slap of rubber on paper, the wooden thock of the handle
+      // and desk (in the band a phone speaker plays), a little low weight, the spring, and the sheet settling
+      burst(o, { kind: 'white', t, a: 0.0008, d: 0.024, peak: 0.42, type: 'bandpass', f: 2200 * P, q: 0.8 });
+      burst(o, { kind: 'white', t, a: 0.0008, d: 0.03, peak: 0.3, type: 'bandpass', f: 1150 * P, q: 1.4 });
+      burst(o, { kind: 'pink', t, a: 0.001, d: 0.1, peak: 0.55, type: 'bandpass', f: 520 * P, q: 1.8 });
+      tone(o, { f: 760 * P, f2: 690 * P, t, a: 0.001, d: 0.055, peak: 0.2 });
+      tone(o, { type: 'triangle', f: 330 * P, f2: 250 * P, glide: 0.05, t, a: 0.001, d: 0.07, peak: 0.24 });
+      tone(o, { f: 190 * P, f2: 72 * P, glide: 0.07, t, a: 0.0015, d: 0.12, peak: 0.3 });
+      burst(o, { t: t + 0.05, a: 0.001, d: 0.012, peak: 0.07, type: 'bandpass', f: 3800, q: 2 });
+      for (let i = 0; i < 3; i++) {
+        burst(o, { kind: 'white', t: t + 0.07 + i * rr(0.025, 0.04), a: 0.003, d: 0.025, peak: 0.045, type: 'bandpass', f: rr(3000, 5000), q: 1.2 });
+      }
     }
   },
   tick: {
-    gain: 0.35, wet: 0.02, dur: 0.06, vary: 0.04, max: 6,
+    gain: 0.6, wet: 0.02, dur: 0.06, vary: 0.01, max: 6,
     build(o, P, t) {
-      tone(o, { f: N(KEY.C6) * 2 * P, t, a: 0.001, d: 0.025, peak: 0.12 });
+      // a tiny counter tick; quick runs of ticks (a count-up) climb the F pentatonic, one step every second tick
+      const m = KEY.F6 + tickStep(o.ctx, t);
+      tone(o, { f: N(m) * P, t, a: 0.001, d: 0.028, peak: 0.11 });
+      burst(o, { kind: 'white', t, a: 0.0005, d: 0.006, peak: 0.06, type: 'bandpass', f: 5000, q: 1 });
     }
   },
   wipe: {
-    gain: 0.35, wet: 0.1, dur: 0.35, vary: 0.03, max: 2,
+    gain: 0.55, wet: 0.08, dur: 0.4, vary: 0.04, max: 2,
     build(o, P, t) {
-      burst(o, { kind: 'pink', t, a: 0.06, d: 0.2, peak: 0.12, type: 'bandpass', f: 600 * P, f2: 3200 * P, q: 0.9 });
+      // a sheet of paper drawn across the screen: a soft swish that brightens and fades, moving left to right
+      const { ctx } = o;
+      const end = t + 0.34;
+      const n = noise(o, 'pink', t, end);
+      const bp = filt(ctx, 'bandpass', 700 * P, 0.9);
+      bp.frequency.setValueAtTime(700 * P, t);
+      bp.frequency.exponentialRampToValueAtTime(3000 * P, t + 0.2);
+      bp.frequency.exponentialRampToValueAtTime(2000 * P, end);
+      const g = gain(ctx);
+      shape(g.gain, t, [[0.09, 0.45], [0.2, 0.3], [0.34, 0]]);
+      let tail: AudioNode = g;
+      if (ctx.createStereoPanner) {
+        const p = ctx.createStereoPanner();
+        p.pan.setValueAtTime(-0.35, t);
+        p.pan.linearRampToValueAtTime(0.35, end);
+        g.connect(p);
+        tail = p;
+      }
+      n.connect(bp).connect(g);
+      tail.connect(o.dest);
+      burst(o, { kind: 'white', t: t + 0.03, a: 0.08, d: 0.16, peak: 0.05, type: 'highpass', f: 5500 });
     }
   },
   endingSaved: {
-    gain: 0.55, wet: 0.35, dur: 3.2, vary: 0, max: 1,
+    gain: 0.5, wet: 0.32, dur: 3.75, vary: 0, max: 1, duck: { depth: 0.35, hold: 2.0 },
     build(o, P, t) {
-      [KEY.C5, KEY.F5, KEY.A5, KEY.C6, KEY.F6, KEY.A6].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.1, 0.22, i === 5 ? 2.0 : 0.6));
+      // the branch stays open: a run up (C D E) to a brass F chord, then B flat, C, and a big F
+      // with a glockenspiel spray and a cymbal swell
+      const n = (m: number) => N(m) * P;
+      [KEY.C5, KEY.D5, KEY.E5].forEach((m, i) => mallet(o, n(m), t + i * 0.07, 0.14 + i * 0.02, 0.2));
+      const t1 = t + 0.21;
+      brass(o, [KEY.F4, KEY.A4, KEY.C5, KEY.F5].map(n), t1, { a: 0.03, hold: 0.3, d: 0.28, peak: 0.19, ff: [1000, 3400, 1500] });
+      mallet(o, n(KEY.F6), t1, 0.21, 0.5);
+      mallet(o, n(KEY.C6), t1, 0.09, 0.4);
+      const t2 = t1 + 0.6;
+      brass(o, [KEY.Bb4, KEY.D5, KEY.F5].map(n), t2, { a: 0.03, hold: 0.1, d: 0.16, peak: 0.16, ff: [1000, 3000, 1400] });
+      mallet(o, n(KEY.D6), t2, 0.17, 0.3);
+      const t3 = t2 + 0.3;
+      brass(o, [KEY.C5, KEY.E5, KEY.G5].map(n), t3, { a: 0.03, hold: 0.1, d: 0.16, peak: 0.17, ff: [1000, 3000, 1400] });
+      mallet(o, n(KEY.E6), t3, 0.18, 0.3);
+      const t4 = t3 + 0.32;
+      brass(o, [KEY.F4, KEY.A4, KEY.C5, KEY.F5, KEY.A5].map(n), t4, { a: 0.04, hold: 0.7, d: 1.5, peak: 0.23, ff: [1200, 3600, 1300], vib: [5, 6] });
+      mallet(o, n(KEY.F6), t4, 0.25, 1.8);
+      mallet(o, n(KEY.A6), t4 + 0.01, 0.08, 1.1);
+      [KEY.F6, KEY.A6, KEY.C7, KEY.F7, KEY.C7, KEY.A6].forEach((m, i) => bell(o, n(m), t4 + 0.1 + i * 0.075, 0.04, GLOCK));
+      burst(o, { kind: 'white', t: t4 - 0.25, a: 0.25, d: 1.5, peak: 0.03, type: 'highpass', f: 6000 });
     }
   },
   endingScraped: {
-    gain: 0.5, wet: 0.35, dur: 3.0, vary: 0, max: 1,
+    gain: 0.62, wet: 0.35, dur: 3.9, vary: 0, max: 1, duck: { depth: 0.35, hold: 2.2 },
     build(o, P, t) {
-      [KEY.F5, KEY.A5, KEY.G5, KEY.F5].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.22, 0.2, i === 3 ? 1.8 : 0.6));
+      // the branch survives, with cuts: warm but wistful. F major, then B flat minor (the sigh), then home
+      // to an open F: the mallet line falls C6 A5, then D flat 6 sinks to C6, and settles on A5
+      const n = (m: number) => N(m) * P;
+      brass(o, [KEY.F4, KEY.A4, KEY.C5, KEY.E5].map(n), t, { a: 0.09, hold: 0.45, d: 0.5, peak: 0.16, ff: [700, 2000, 900] });
+      mallet(o, n(KEY.C6), t, 0.19, 0.6);
+      mallet(o, n(KEY.A5), t + 0.42, 0.16, 0.5);
+      const t2 = t + 0.95;
+      brass(o, [KEY.F4, KEY.Bb4, KEY.Bb4 + 3, KEY.G5].map(n), t2, { a: 0.12, hold: 0.55, d: 0.45, peak: 0.16, ff: [700, 1800, 800] });
+      mallet(o, n(KEY.C6 + 1), t2, 0.18, 0.5);
+      mallet(o, n(KEY.C6), t2 + 0.45, 0.15, 0.5);
+      const t3 = t2 + 1.0;
+      brass(o, [KEY.F4, KEY.A4, KEY.C5, KEY.G5].map(n), t3, { a: 0.15, hold: 0.4, d: 1.3, peak: 0.15, ff: [700, 1700, 600] });
+      mallet(o, n(KEY.A5), t3, 0.17, 1.4);
+      bell(o, n(KEY.C7), t3 + 0.25, 0.03, GLOCK);
     }
   },
   endingClosed: {
-    gain: 0.5, wet: 0.4, dur: 3.6, vary: 0, max: 1,
+    gain: 0.7, wet: 0.42, dur: 4.4, vary: 0, max: 1, duck: { depth: 0.3, hold: 2.6 },
     build(o, P, t) {
-      [KEY.A5, KEY.F5, KEY.C5, KEY.F4].forEach((m, i) => mallet(o, N(m) * P, t + i * 0.32, 0.2, i === 3 ? 2.4 : 0.7));
+      // the branch closes: slow, sparse, low. Three mallet notes fall with long gaps (A, F, D), a soft D minor
+      // swells in muted brass under the last, and one far-off bell rings as the lights go
+      const n = (m: number) => N(m) * P;
+      mallet(o, n(KEY.A5), t, 0.18, 0.9);
+      mallet(o, n(KEY.F5), t + 0.7, 0.17, 0.9);
+      const t3 = t + 1.4;
+      mallet(o, n(KEY.D5), t3, 0.17, 1.5);
+      mallet(o, n(KEY.D5 - 12), t3, 0.11, 1.5);
+      brass(o, [KEY.D5 - 12, KEY.F4, KEY.A4].map(n), t3, { a: 0.4, hold: 0.7, d: 1.4, peak: 0.15, ff: [450, 1000, 380] });
+      bell(o, n(KEY.A5), t3 + 1.5, 0.05, CHIME.map(([r, a, d]) => [r, a, d * 1.2] as const));
     }
   },
   phoneRing: {
-    gain: 0.45, wet: 0.08, dur: 1.4, vary: 0, max: 1,
+    gain: 0.6, wet: 0.08, dur: 2.1, vary: 0, max: 1,
     build(o, P, t) {
-      for (let i = 0; i < 2; i++) {
-        const t0 = t + i * 0.55;
-        for (let k = 0; k < 8; k++) {
-          tone(o, { f: (k % 2 ? 480 : 440) * P, t: t0 + k * 0.05, a: 0.002, d: 0.045, peak: 0.12 });
-        }
+      // an office phone's two bells (D6 and F6) struck by the ringer 20 times a second, in turn: ring ... ring
+      const { ctx } = o;
+      const out = gain(ctx, 0);
+      out.connect(o.dest);
+      const hp = filt(ctx, 'highpass', 500, 0.7);
+      hp.connect(out);
+      const ringAt = [0, 1.05], ringLen = 0.72;
+      const end = t + ringAt[1] + ringLen + 0.3;
+      out.gain.setValueAtTime(0, t);
+      for (const r of ringAt) {
+        const a = t + r, b = a + ringLen;
+        out.gain.setValueAtTime(0, a);
+        out.gain.linearRampToValueAtTime(0.22, a + 0.006);
+        out.gain.linearRampToValueAtTime(0.17, b);
+        out.gain.exponentialRampToValueAtTime(0.004, b + 0.24);
+        out.gain.linearRampToValueAtTime(0, b + 0.26);
       }
+      struckBell(o, N(KEY.D6) * P, t, end, 20, 0, 0.85, hp);
+      struckBell(o, N(KEY.F6) * P, t, end, 20, 0.025, 0.85, hp);
     }
   },
   fax: {
-    gain: 0.35, wet: 0.05, dur: 1.0, vary: 0.02, max: 1,
+    gain: 0.55, wet: 0.05, dur: 1.2, vary: 0.01, max: 1,
     build(o, P, t) {
-      tone(o, { type: 'square', f: 1100 * P, t, a: 0.005, d: 0.25, peak: 0.05 });
-      tone(o, { type: 'square', f: 1650 * P, t: t + 0.3, a: 0.005, d: 0.25, peak: 0.05 });
-      burst(o, { t: t + 0.6, a: 0.01, d: 0.3, peak: 0.06, type: 'bandpass', f: 2400, q: 2 });
+      // a fax going out, through the machine's little speaker: its calling beep (1100 Hz), the answer tone
+      // (2100 Hz), the warbling handshake (1650 / 1850 Hz at 300 baud), then the training hiss, cut off
+      const { ctx } = o;
+      const band = filt(ctx, 'bandpass', 1700, 0.55);
+      band.connect(o.dest);
+      const sq = softWave(ctx, 'square');
+      tone(o, { type: sq, f: 1100 * P, t, a: 0.004, d: 0.015, hold: 0.11, peak: 0.12, dest: band });
+      tone(o, { f: 2100 * P, t: t + 0.17, a: 0.004, d: 0.015, hold: 0.2, peak: 0.18, dest: band });
+      const t1 = t + 0.42, len = 0.3;
+      const fsk = osc(o, sq, 1650 * P, t1, t1 + len + 0.03);
+      for (let x = 0; x < len; x += 1 / 300) fsk.frequency.setValueAtTime((Math.random() < 0.5 ? 1650 : 1850) * P, t1 + x);
+      const fg = gain(ctx);
+      env(fg.gain, t1, 0.004, 0.12, 0.02, len - 0.03);
+      fsk.connect(fg).connect(band);
+      const t2 = t1 + len + 0.03;
+      burst(o, { kind: 'white', t: t2, a: 0.01, d: 0.04, hold: 0.36, peak: 0.24, type: 'bandpass', f: 1900 * P, q: 0.8, dest: band });
+      tone(o, { type: sq, f: 1200 * P, t: t2, a: 0.01, d: 0.04, hold: 0.36, peak: 0.04, vib: [80, 300], dest: band });
     }
   },
   gavel: {
-    gain: 0.55, wet: 0.12, dur: 0.6, vary: 0.02, max: 2,
+    gain: 0.58, wet: 0.14, dur: 0.6, vary: 0.02, max: 1,
     build(o, P, t) {
-      for (let i = 0; i < 2; i++) {
-        tone(o, { type: 'triangle', f: 220 * P, f2: 120 * P, glide: 0.05, t: t + i * 0.16, a: 0.001, d: 0.09, peak: 0.4 });
-        burst(o, { t: t + i * 0.16, a: 0.001, d: 0.04, peak: 0.2, type: 'bandpass', f: 1400, q: 1.5 });
-      }
+      // a wooden gavel on its block, twice: the click of wood on wood, the block's hollow modes, the bench's thump
+      const knock = (at: number, k: number) => {
+        burst(o, { kind: 'white', t: at, a: 0.0005, d: 0.008, peak: 0.32 * k, type: 'bandpass', f: 3200 * P, q: 0.9 });
+        tone(o, { f: 540 * P, f2: 500 * P, t: at, a: 0.001, d: 0.075, peak: 0.4 * k });
+        tone(o, { f: 1230 * P, t: at, a: 0.001, d: 0.04, peak: 0.18 * k });
+        tone(o, { f: 2050 * P, t: at, a: 0.001, d: 0.022, peak: 0.09 * k });
+        burst(o, { kind: 'pink', t: at, a: 0.001, d: 0.06, peak: 0.28 * k, type: 'bandpass', f: 700 * P, q: 2.2 });
+        tone(o, { f: 150 * P, f2: 95 * P, glide: 0.05, t: at, a: 0.002, d: 0.09, peak: 0.18 * k });
+      };
+      knock(t, 0.85);
+      knock(t + 0.24, 1);
     }
   },
   clink: {
-    gain: 0.45, wet: 0.25, dur: 1.2, vary: 0.02, max: 2,
+    gain: 0.62, wet: 0.3, dur: 1.6, vary: 0.015, max: 1,
     build(o, P, t) {
-      tone(o, { f: 2637 * P, t, a: 0.001, d: 0.9, peak: 0.08 });
-      tone(o, { f: 3951 * P, t: t + 0.002, a: 0.001, d: 0.6, peak: 0.05 });
-      tone(o, { f: 2637 * P, t: t + 0.12, a: 0.001, d: 0.7, peak: 0.05 });
+      // a fork tapped on a wine glass three times; the one glass rings on through all three taps
+      const { ctx } = o;
+      const taps = [0, 0.17, 0.34], amp = [0.8, 1, 0.9];
+      const f0 = N(KEY.A6) * P;
+      for (const [r, a, d] of GLASS) {
+        const tau = d / 8.5;
+        const stop = t + taps[taps.length - 1] + d + 0.03;
+        const n = osc(o, 'sine', f0 * r, t, stop);
+        const g = gain(ctx, 0);
+        g.gain.setValueAtTime(0, t);
+        let level = 0;
+        taps.forEach((dt, i) => {
+          const at = t + dt;
+          const before = i === 0 ? 0 : level * Math.exp(-(dt - taps[i - 1]) / tau);
+          if (i > 0) g.gain.exponentialRampToValueAtTime(Math.max(1e-5, before), at);
+          level = before + 0.14 * a * amp[i];
+          g.gain.linearRampToValueAtTime(level, at + 0.002);
+        });
+        g.gain.exponentialRampToValueAtTime(Math.max(1e-5, level * 2e-4), stop - 0.01);
+        g.gain.linearRampToValueAtTime(0, stop);
+        n.connect(g).connect(o.dest);
+      }
+      taps.forEach((dt, i) => burst(o, { kind: 'white', t: t + dt, a: 0.0005, d: 0.004, peak: 0.1 * amp[i], type: 'highpass', f: 6000 }));
     }
   }
 };

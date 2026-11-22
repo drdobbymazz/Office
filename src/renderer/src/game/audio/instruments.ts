@@ -151,15 +151,78 @@ const bellP: Player = (o, t, midi, _dur, vel) => {
   tone(o, { f: f * 2.76, t, a: 0.002, d: 0.6, peak: 0.025 * vel });
 };
 
+/** Two detuned soft saws through a low-pass with its own contour: the house's soft brass. */
+function softBrass(o: Out, t: number, midi: number, end: number, shapeGain: (g: AudioParam) => void, ff: readonly [number, number, number, number], spread: number): void {
+  const f = mtof(midi);
+  const lp = filt(o.ctx, 'lowpass', ff[0], 1);
+  lp.frequency.setValueAtTime(ff[0], t);
+  lp.frequency.exponentialRampToValueAtTime(ff[1], t + ff[3]);
+  lp.frequency.exponentialRampToValueAtTime(ff[2], end);
+  const g = gain(o.ctx, 0);
+  shapeGain(g.gain);
+  lp.connect(g).connect(o.dest);
+  const w = softWave(o.ctx, 'sawtooth');
+  for (const det of [-spread, spread]) {
+    const n = osc(o, w, f, t, end + 0.02);
+    n.detune.value = det;
+    n.connect(lp);
+  }
+}
+
+/** Soft brass chord note: blooms on the attack, sags a little, releases over 0.3 s. */
+const brassP: Player = (o, t, midi, dur, vel) => {
+  const end = t + dur + 0.3;
+  const pk = 0.05 * vel;
+  softBrass(o, t, midi, end, (p) => {
+    p.setValueAtTime(0, t);
+    p.linearRampToValueAtTime(pk, t + 0.06);
+    p.linearRampToValueAtTime(pk * 0.75, t + dur);
+    p.linearRampToValueAtTime(0, end);
+  }, [700, 2200, 1000, 0.08], 7);
+};
+
+/** Brass crescendo over the note into the next downbeat, then a quick release. */
+const swell: Player = (o, t, midi, dur, vel) => {
+  const end = t + dur + 0.12;
+  const pk = 0.055 * vel;
+  softBrass(o, t, midi, end, (p) => {
+    p.setValueAtTime(0, t);
+    p.linearRampToValueAtTime(pk * 0.12, t + dur * 0.5);
+    p.linearRampToValueAtTime(pk, t + dur);
+    p.linearRampToValueAtTime(0, end);
+  }, [380, 2000, 900, Math.max(0.05, dur)], 8);
+};
+
+/** Glockenspiel: a bright, short bar doubling the endings' tune. */
+const glock: Player = (o, t, midi, _dur, vel) => {
+  const f = mtof(midi);
+  tone(o, { f, t, a: 0.002, d: 0.55, peak: 0.07 * vel });
+  tone(o, { f: f * 2.76, t, a: 0.001, d: 0.15, peak: 0.016 * vel });
+};
+
+/** The stakes pulse: a short, rounded note (organ-like partials carry on small speakers); no filter. */
+const pulse: Player = (o, t, midi, dur, vel) => {
+  tone(o, { type: softWave(o.ctx, 'organ'), f: mtof(midi), t, a: 0.003, d: Math.min(0.16, 0.06 + dur * 0.25), peak: 0.1 * vel });
+};
+
+/** Wood block (the stakes clock), synthesised; played from a pre-rendered buffer below. */
+const wood: Player = (o, t, midi, _dur, vel) => {
+  const k = midi ? 1 : 0.8;
+  tone(o, { f: 1180 * k, t, a: 0.001, d: 0.035, peak: 0.13 * vel });
+  tone(o, { f: 2650 * k, t, a: 0.001, d: 0.016, peak: 0.05 * vel });
+  burst(o, { kind: 'white', t, a: 0.0005, d: 0.004, peak: 0.06 * vel, type: 'bandpass', f: 2500 * k, q: 1.2 });
+};
+
 const SYNTH: Record<Inst, Player> = {
-  keys, bass, brush, tick, hat, ohat, kick, rim, clap, lead, pluck, stab, pad, drone, bell: bellP
+  keys, bass, brush, tick, hat, ohat, kick, rim, clap, lead, pluck, stab, pad, drone, bell: bellP,
+  brass: brassP, swell, glock, pulse, wood
 };
 
 // ── pre-rendered percussion ─────────────────────────────────────────────
 // Drum hits are identical every time apart from level, so render each once
 // (per sample rate) and play it as a buffer: 2 nodes per hit instead of 3-6,
 // and no filters to run. Until the buffers are ready, the synth versions play.
-const PERC = ['brush', 'tick', 'hat', 'ohat', 'kick', 'rim', 'clap'] as const;
+const PERC = ['brush', 'tick', 'hat', 'ohat', 'kick', 'rim', 'clap', 'wood'] as const;
 type Perc = (typeof PERC)[number];
 const percCache = new Map<number, Partial<Record<Perc, AudioBuffer>>>();
 const percPending = new Map<number, Promise<void>>();
@@ -174,7 +237,8 @@ export function prepareDrums(sampleRate: number): Promise<void> {
     for (const id of PERC) {
       const len = id === 'kick' ? 0.42 : id === 'ohat' || id === 'brush' || id === 'clap' ? 0.25 : 0.1;
       const c = new OfflineAudioContext(1, Math.ceil(len * sampleRate), sampleRate);
-      SYNTH[id]({ ctx: c, dest: c.destination, track() {} }, 0, 0, 0.3, 1);
+      // the wood block is rendered as its tick (midi 1) and played slower for the tock
+      SYNTH[id]({ ctx: c, dest: c.destination, track() {} }, 0, id === 'wood' ? 1 : 0, 0.3, 1);
       kit[id] = await c.startRendering();
     }
     percCache.set(sampleRate, kit);
@@ -189,7 +253,8 @@ function percPlayer(id: Perc): Player {
     if (!buf) { SYNTH[id](o, t, midi, dur, vel); return; }
     const src = o.ctx.createBufferSource();
     src.buffer = buf;
-    src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.04;
+    // the wood block's tock (midi 0) is the same block a little lower
+    src.playbackRate.value = (id === 'wood' && !midi ? 0.8 : 1) * (1 + (Math.random() - 0.5) * 0.04);
     const g = gain(o.ctx, vel);
     src.connect(g).connect(o.dest);
     src.start(t);
@@ -202,5 +267,5 @@ function percPlayer(id: Perc): Player {
 export const INSTRUMENTS: Record<Inst, Player> = {
   ...SYNTH,
   brush: percPlayer('brush'), tick: percPlayer('tick'), hat: percPlayer('hat'), ohat: percPlayer('ohat'),
-  kick: percPlayer('kick'), rim: percPlayer('rim'), clap: percPlayer('clap')
+  kick: percPlayer('kick'), rim: percPlayer('rim'), clap: percPlayer('clap'), wood: percPlayer('wood')
 };

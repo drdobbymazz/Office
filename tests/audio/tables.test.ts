@@ -30,7 +30,7 @@ describe('parameter tables', () => {
     expect(Object.keys(LOOPS).sort()).toEqual([...LOOP_IDS].sort());
   });
   it('every instrument the composer uses exists', () => {
-    for (const i of ['keys', 'bass', 'brush', 'tick', 'hat', 'ohat', 'kick', 'rim', 'clap', 'lead', 'pluck', 'stab', 'pad', 'drone', 'bell'] as const) {
+    for (const i of ['keys', 'bass', 'brush', 'tick', 'hat', 'ohat', 'kick', 'rim', 'clap', 'lead', 'pluck', 'stab', 'pad', 'drone', 'bell', 'brass', 'swell', 'glock', 'pulse', 'wood'] as const) {
       expect(typeof INSTRUMENTS[i]).toBe('function');
     }
   });
