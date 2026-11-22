@@ -149,16 +149,16 @@ function wah(o: Out, f: number, t: number, s: { hold: number; d: number; peak: n
   const { ctx } = o;
   const end = t + 0.03 + s.hold + s.d + 0.01;
   const w = softWave(ctx, 'sawtooth');
-  const bp = filt(ctx, 'lowpass', 450, 4);
-  bp.frequency.setValueAtTime(420, t);
-  bp.frequency.exponentialRampToValueAtTime(1500, t + 0.07);
-  bp.frequency.exponentialRampToValueAtTime(700, t + 0.03 + s.hold);
-  bp.frequency.exponentialRampToValueAtTime(380, end);
+  const lp = filt(ctx, 'lowpass', 450, 4);
+  lp.frequency.setValueAtTime(420, t);
+  lp.frequency.exponentialRampToValueAtTime(1500, t + 0.07);
+  lp.frequency.exponentialRampToValueAtTime(700, t + 0.03 + s.hold);
+  lp.frequency.exponentialRampToValueAtTime(380, end);
   const g = gain(ctx, 0);
   env(g.gain, t, 0.03, s.peak, s.d, s.hold);
-  bp.connect(g).connect(o.dest);
+  lp.connect(g).connect(o.dest);
   const mix = gain(ctx, 0.7);
-  mix.connect(bp);
+  mix.connect(lp);
   let vg: GainNode | null = null;
   if (s.vib) {
     const l = osc(o, 'sine', s.vib[0], t, end + 0.02);
