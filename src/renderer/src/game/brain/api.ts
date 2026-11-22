@@ -120,6 +120,8 @@ export interface PersonBrief {
   conviction?: { text: string; since: string };
   /** For a visitor: who they are, in one line. */
   about?: string;
+  /** Something they hide from everyone (a story secret). Shows only as nerves, unless they cannot lie. */
+  hidden?: string;
 }
 
 export type SceneTrigger =

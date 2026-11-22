@@ -7,7 +7,7 @@
 
 import type {
   AnimId, CastId, ChaosId, ChaosTarget, CharId, Dir, EmotionId, FeedKind, Headgear, HeldProp,
-  LineAct, Plan, RoomId, Speech, SpeechKind, StatusEffect, StatusKind, Tile, Vec
+  LineAct, Plan, PlanKind, RoomId, Speech, SpeechKind, StatusEffect, StatusKind, Tile, Vec
 } from './types';
 import type { FixSkill } from './cast';
 import type { GameBus } from './bus';
@@ -131,6 +131,8 @@ export interface SceneAsk {
   staleAfter?: number;
   /** Walk them together first. Default: yes, unless it is an announcement or one person. */
   gather?: boolean;
+  /** (added) For trigger 'plan': the kind of plan that brought them together. */
+  planKind?: PlanKind;
 }
 
 export interface SimApi {
@@ -200,6 +202,11 @@ export interface SimApi {
   setThought(who: CharId, thought: string): void;
   /** Make a whispered idea stick for the rest of the day (null forgets it). */
   convince(who: CharId, text: string | null): void;
+  /**
+   * (added) Something this person hides from everyone until the morning (null forgets it).
+   * The model sees it and plays it as nerves; nobody else is told.
+   */
+  setHiddenNote(who: CharId, text: string | null): void;
   setProp(who: CharId, prop: HeldProp | null): void;
   setHeadgear(who: CharId, gear: Headgear | null): void;
   /** Move instantly to a tile. */

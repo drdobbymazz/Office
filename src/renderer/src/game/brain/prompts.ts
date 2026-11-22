@@ -197,6 +197,7 @@ export class PromptBook {
     for (const f of p.feelings) if (f.text) parts.push(`About ${this.nameFor(f.about, names)}: ${sentence(f.text)}`);
     if (p.memories.length) parts.push(`Remembers: ${p.memories.slice(0, 3).map((m) => m.trim().replace(/\.$/, '')).join('; ')}.`);
     if (p.secret) parts.push(`Secret (it may slip out now): ${sentence(p.secret)}`);
+    if (p.hidden) parts.push(`Hidden from everyone, shows only as nerves unless they cannot lie: ${sentence(p.hidden)}`);
     return parts.join(' ');
   }
 

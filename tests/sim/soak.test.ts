@@ -72,7 +72,9 @@ function soak(seed: number, days: number, dtMode: 'fixed' | 'coarse' | 'jitter' 
         held = null;
       }
     }
-    if (t >= nextBlock) {
+    // No new blockages after five either: in the game every blocked tile is cleared at home time
+    // (the events end), and the test insists that everyone gets home.
+    if (t >= nextBlock && sim.phase !== 'leaving') {
       nextBlock = t + r.range(15, 30);
       const tiles = [];
       const n = r.int(1, 5);

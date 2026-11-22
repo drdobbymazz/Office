@@ -29,6 +29,7 @@ export function resetPersonForDay(core: SimCore, p: Person): void {
   p.plan = null;
   p.thought = '';
   p.conviction = null;
+  p.hiddenNote = null;
   p.prop = null;
   p.headgear = null;
   p.scale = 1;

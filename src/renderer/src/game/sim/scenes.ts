@@ -126,7 +126,9 @@ export class SceneManager {
     this.scenes.set(opts.id, rec);
 
     for (const p of people) {
-      p.stash = p.job && p.job.kind !== 'settle' ? p.job : null;
+      // A plain settle is only finding a free tile; one with something to do (staying where the
+      // player put them) is picked up again after the talk.
+      p.stash = p.job && (p.job.kind !== 'settle' || p.job.act) ? p.job : null;
       p.job = null;
       p.walk = null;
       p.waiting = false;

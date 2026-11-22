@@ -97,7 +97,12 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
   if (isCastId(who) && p && (p.has('truth') || core.secretOut(who))) brief.secret = CAST[who].persona.secret;
   if (mindOf) brief.mindOf = mindOf;
   if (p?.conviction) brief.conviction = { text: p.conviction.text, since: formatClock(p.conviction.since) };
-  if (!isCastId(who) && VISITORS[who]?.summary) brief.about = VISITORS[who].summary;
+  const visitor = !isCastId(who) ? VISITORS[who] : undefined;
+  if (visitor?.summary) {
+    const extra = [visitor.wants ? `Wants ${visitor.wants}.` : '', visitor.fears ? `Cannot stand ${visitor.fears}.` : '', visitor.quirk ? `${visitor.quirk.replace(/^./, (c) => c.toUpperCase())}.` : ''];
+    brief.about = [visitor.summary, ...extra].filter(Boolean).join(' ');
+  }
+  if (p?.hiddenNote) brief.hidden = p.hiddenNote;
   return brief;
 }
 

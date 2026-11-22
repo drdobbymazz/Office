@@ -89,6 +89,8 @@ export interface Sim extends DirectorSimApi {
   registerChaos(script: ChaosScript): void;
   /** null on success, else a plain reason. */
   startChaos(id: ChaosId, target?: ChaosTarget, opts?: { force?: boolean }): string | null;
+  /** (added) Forbid powers outright, with the plain reason for each ({} lifts every lock). */
+  setLocks(locks: Partial<Record<ChaosId, string>>): void;
   /** Seconds until a power can be used again (0 = ready). */
   cooldownLeft(id: ChaosId): number;
   cooldowns(): Partial<Record<ChaosId, CooldownUi>>;
@@ -145,6 +147,10 @@ class SimImpl extends SimCore implements Sim {
 
   select(who: CharId | null): void {
     this.selectedId = who;
+  }
+
+  setLocks(locks: Partial<Record<ChaosId, string>>): void {
+    this.chaosReg.setLocks(locks);
   }
 
   cooldownLeft(id: ChaosId): number {

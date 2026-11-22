@@ -1,7 +1,8 @@
 // A tiny typed event bus. The sim and director emit; the stage, audio and UI
 // listen. One instance per game.
 
-import type { ChaosId, ChaosTarget, CharId, FeedItem, RoomId, Speech } from './types';
+import type { ChaosId, ChaosTarget, CharId, FeedItem, PlanKind, RoomId, Speech } from './types';
+import type { SceneTrigger } from '@/game/brain/api';
 import type { FxCue } from '@/game/view/api';
 import type { LoopId, SfxId, SfxOptions } from '@/game/audio/api';
 
@@ -35,6 +36,8 @@ export interface GameEvents {
   dropped: { who: CharId; room: RoomId; hard: boolean };
   /** Haptic buzz request (ms pattern). */
   buzz: { pattern: number | number[] };
+  /** (added) A conversation played out to its end (not cut short). */
+  sceneDone: { people: CharId[]; trigger: SceneTrigger; planKind?: PlanKind; room?: RoomId };
 }
 
 type Handler<T> = (payload: T) => void;

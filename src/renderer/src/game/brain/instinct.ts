@@ -87,6 +87,16 @@ const GENERIC: VoiceBank = {
   }
 };
 
+/** Thoughts of someone hiding something: nerves, never the thing itself. */
+const HIDDEN_HINTS = [
+  'Act normal. Nobody knows.',
+  'If anyone finds out, I am finished.',
+  'Did anyone see me just now?',
+  'Keep calm. Keep your head down.',
+  'Nobody can ever know about this.',
+  'Why does everyone keep looking at me?'
+];
+
 function chaosCategoryLines(id: ChaosId): string[] {
   if (TREATS.includes(id)) return GENERIC_CHAOS.treat;
   if (DISASTERS.includes(id)) return GENERIC_CHAOS.disaster;
@@ -457,7 +467,11 @@ export class InstinctBrain implements Brain, Reflexes {
     let thought: string;
     let feel: EmotionId = p.mood;
     const stateBark = STATE_BARKS.find(([re]) => p.state.some((s) => re.test(s)));
-    if (chaos && rng() < 0.6) {
+    if (p.hidden && rng() < 0.45) {
+      // Someone with something to hide keeps coming back to it, without ever saying what it is.
+      thought = this.draw(p.id, 'hidden', HIDDEN_HINTS);
+      feel = 'nervous';
+    } else if (chaos && rng() < 0.6) {
       thought = this.chaosBark(p.id, chaos);
       feel = chaosFeel(chaos, this.index.nerve(p.id));
     } else if (stateBark && rng() < 0.6) {

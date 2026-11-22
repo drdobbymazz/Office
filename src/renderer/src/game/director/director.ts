@@ -18,6 +18,7 @@ import type { CharId, Plan, RoomId, ShiftKind, TargetRoomId } from '@/game/core/
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
 import { room as roomDef } from '@/game/core/world';
 import { Guests } from './guests';
+import { invitesPeople, mentionsFood, roomNamedIn, speaksToEveryone, summonChance, summonLine, withoutRooms } from './summon';
 
 export interface DirectorOptions {
   sim: DirectorSimApi;
@@ -31,6 +32,8 @@ export interface DirectorOptions {
   speed?: () => number;
   /** Called whenever the director starts or stops waiting on the model. */
   onBusy?: (state: { thinking: boolean; queued: number; source: 'model' | 'instinct' | null }) => void;
+  /** People something else (a story chapter) is holding where they are: announcements do not move them. */
+  pinned?: (who: CharId) => boolean;
 }
 
 interface Pending {
@@ -67,6 +70,9 @@ interface Running {
 const SHIFT_DELTA: Record<ShiftKind, number> = {
   likes_more: 12, likes_less: -12, trusts_more: 8, trusts_less: -10, admires: 14, resents: -15, fancies: 16, fears: -8
 };
+
+/** Seconds people answering an announcement wait where they were sent. */
+const SUMMON_STAY = 100;
 
 let seq = 0;
 const nextId = (p: string): string => `${p}-${(seq += 1).toString(36)}`;
@@ -208,7 +214,11 @@ export class Director {
       if (!p.present || !p.available) continue;
       this.api.react(p.id, 'startle', 0.7);
     }
-    const group = this.biggestGroup(4);
+    // An announcement that names a room and asks people to go there sends most of them.
+    const sent = this.summon(said);
+    // The people talking about it are, where possible, the ones who stayed put.
+    const stayed = this.biggestGroup(4, sent);
+    const group = stayed.length >= 2 ? stayed : this.biggestGroup(4);
     if (!group.length) return;
     this.enqueue({
       people: group,
@@ -219,6 +229,46 @@ export class Director {
       maxLines: 4,
       staleAfter: 40
     }, true);
+  }
+
+  /**
+   * "Everyone to the conference room", "Free cake in the break room", "Jim, Michael's office":
+   * the people it names (or, failing that, everyone) go there and wait a while, each by
+   * temperament. Anyone busy with a whispered idea, or held by the story, ignores it.
+   * Returns who went.
+   */
+  private summon(text: string): CharId[] {
+    const room = roomNamedIn(text);
+    if (!room || !invitesPeople(text)) return [];
+    const roomName = roomDef(room).name;
+    if (this.api.isHazard(room)) {
+      this.api.narrate(`Nobody wants to go anywhere near ${roomName} right now.`, { icon: 'announce' });
+      return [];
+    }
+    const food = mentionsFood(text);
+    const rest = withoutRooms(text);
+    const present = this.api.people().filter((p) => p.present);
+    const named = present.filter((p) => mentions(rest, p.name) || (!p.isCast && mentions(rest, p.name.split(' ').pop() ?? p.name)));
+    const everyone = !named.length || speaksToEveryone(rest);
+    const pool = everyone ? [...present.filter((p) => p.isCast), ...named.filter((p) => !p.isCast)] : named;
+    const namedIds = new Set(named.map((p) => p.id));
+    const went: CharId[] = [];
+    for (const p of pool) {
+      if (!p.present || this.api.isSeized(p.id) || this.api.isAirborne(p.id)) continue;
+      if (p.statuses.some((st) => st.kind === 'asleep' || st.kind === 'frozen')) continue;
+      if (!p.available && !p.sceneId) continue;
+      if (p.conviction || this.opts.pinned?.(p.id)) continue;
+      const chance = summonChance(p.id, { food, named: namedIds.has(p.id) });
+      if (this.api.rng() >= chance) continue;
+      this.api.goTo(p.id, { room }, {
+        doing: `heading to ${roomName}`,
+        stay: SUMMON_STAY,
+        stayDoing: food ? `waiting for the food in ${roomName}` : `waiting in ${roomName} as asked`
+      });
+      went.push(p.id);
+    }
+    this.api.narrate(summonLine(went.map((id) => this.api.person(id)?.name ?? id), roomName, !everyone), { icon: 'announce', room });
+    return went;
   }
 
   /** Tell one person exactly what to do. */
@@ -347,6 +397,21 @@ export class Director {
       if (now < d.nextAt) continue;
       if (!p.present || !p.available || p.urgent || p.plan || p.sceneId || p.speaking) {
         d.nextAt = now + 4;
+        continue;
+      }
+      // An idea about being somewhere ("I should be in the conference room") takes them there
+      // for a while, every other turn, as long as it is not about somebody.
+      const place = roomNamedIn(p.conviction.text);
+      const aboutSomeone = this.api.people().some((o) => o.isCast && o.id !== p.id && mentions(withoutRooms(p.conviction!.text), o.name));
+      if (place && !aboutSomeone && d.acts % 2 === 0) {
+        d.acts += 1;
+        d.nextAt = now + (this.slow ? 70 : 50) + this.api.rng() * 30;
+        if (p.room !== place && !this.api.isHazard(place)) {
+          const name = roomDef(place).name;
+          this.api.emote(who, 'idea');
+          this.api.feel(who, 'determined', 0.7, 10);
+          this.api.goTo(who, { room: place }, { doing: `heading to ${name}`, stay: 60, stayDoing: `waiting in ${name}` });
+        }
         continue;
       }
       const plan = this.convictionPlan(p, p.conviction.text, d.acts);
@@ -655,6 +720,10 @@ export class Director {
         break;
       }
     }
+    // Anyone keeping score (the story) hears that these people really talked.
+    if (res || r.spoken > 0) {
+      this.api.bus.emit('sceneDone', { people: [...r.people], trigger: r.ask.trigger, planKind: r.ask.planKind, room: r.room });
+    }
     const done = this.api.time;
     for (let i = 0; i < r.people.length; i++) {
       for (let j = i + 1; j < r.people.length; j++) this.pairAt.set(pairKey(r.people[i], r.people[j]), done);
@@ -850,11 +919,11 @@ export class Director {
       .map((p) => p.id);
   }
 
-  private busiestRoom(): TargetRoomId {
+  private busiestRoom(skip: readonly CharId[] = []): TargetRoomId {
     let best: TargetRoomId = 'bullpen';
     let n = -1;
     for (const id of TARGET_ROOMS) {
-      const c = this.api.peopleIn(id).filter((p) => p.present).length;
+      const c = this.api.peopleIn(id).filter((p) => p.present && !skip.includes(p.id)).length;
       if (c > n) {
         n = c;
         best = id;
@@ -863,12 +932,12 @@ export class Director {
     return best;
   }
 
-  /** The most people who are in one room together and able to talk. */
-  private biggestGroup(max: number): CharId[] {
-    const room = this.busiestRoom();
-    const picked = this.pickFromRoom(room, max);
+  /** The most people who are in one room together and able to talk (leaving out `skip`). */
+  private biggestGroup(max: number, skip: readonly CharId[] = []): CharId[] {
+    const room = this.busiestRoom(skip);
+    const picked = this.pickFromRoom(room, max).filter((id) => !skip.includes(id));
     if (picked.length >= 2) return picked;
-    return this.api.people().filter((p) => p.isCast && this.canSpeak(p.id)).slice(0, max).map((p) => p.id);
+    return this.api.people().filter((p) => p.isCast && this.canSpeak(p.id) && !skip.includes(p.id)).slice(0, max).map((p) => p.id);
   }
 
   private focusOn(ids: CharId[], priority: number): void {

@@ -476,6 +476,10 @@ export interface VisitorDef {
   summary: string;
   /** Guests the player makes up have no hand-drawn recipe: they are drawn from this. */
   look?: GuestLook;
+  /** (optional) For their card in People: what they want, what they cannot stand, and a quirk. */
+  wants?: string;
+  fears?: string;
+  quirk?: string;
 }
 
 export const VISITORS: Record<string, VisitorDef> = {

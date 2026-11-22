@@ -49,6 +49,7 @@ export function planJob(core: SimCore, p: Person, plan: Plan): Job | null {
       core.requestScene({
         people: [p.id, t.id],
         trigger: 'plan',
+        planKind: plan.kind,
         why: `${p.name} walked over to ${verb} ${t.name}${aboutText(plan)}.`,
         priority: 5,
         staleAfter: 25

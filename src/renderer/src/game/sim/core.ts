@@ -657,6 +657,13 @@ export class SimCore implements DirectorSimApi {
     p.conviction = t ? { text: t, since: this.clock } : null;
   }
 
+  setHiddenNote(who: CharId, text: string | null): void {
+    const p = this.map.get(who);
+    if (!p) return;
+    const t = String(text ?? '').trim().slice(0, 300);
+    p.hiddenNote = t || null;
+  }
+
   setProp(who: CharId, prop: HeldProp | null): void {
     const p = this.map.get(who);
     if (!p) return;

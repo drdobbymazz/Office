@@ -24,11 +24,18 @@ export class ChaosRegistry {
   private runs: ActiveRun[] = [];
   private readyAt = new Map<ChaosId, number>();
   private counter = 0;
+  /** Powers not allowed at all right now, with the plain reason (a story chapter's rules). */
+  private locks: Partial<Record<ChaosId, string>> = {};
 
   constructor(private core: SimCore, private sandbox: boolean) {}
 
   register(script: ChaosScript): void {
     this.scripts.set(script.id, script);
+  }
+
+  /** Forbid powers outright (even when something else sets them off), with a reason each. */
+  setLocks(locks: Partial<Record<ChaosId, string>>): void {
+    this.locks = { ...locks };
   }
 
   has(id: ChaosId): boolean {
@@ -45,6 +52,8 @@ export class ChaosRegistry {
     const core = this.core;
     const def = CHAOS[id];
     if (!def) return 'There is no such power.';
+    const locked = this.locks[id];
+    if (locked) return locked;
     const script = this.scripts.get(id);
     if (!script) return `${def.name} is not ready yet.`;
     const phase = core.clockState.phase;

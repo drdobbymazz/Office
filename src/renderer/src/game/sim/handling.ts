@@ -5,11 +5,13 @@
 import { WORLD_H, WORLD_W, feetOf, isWalkable, roomAt, tileAt } from '@/game/core/world';
 import type { Tile } from '@/game/core/types';
 import { glide } from './movement';
-import { cancelJob, reserve, settleJob } from './jobs';
+import { cancelJob, idleAct, makeJob, reserve } from './jobs';
 import type { AirState, Person } from './people';
 import type { SimCore } from './core';
 
 export const HOLD_LIFT = 22;
+/** Seconds someone stays where they were put down before going back to the routine. */
+export const LINGER = 40;
 const GRAVITY = 900;
 const THROW_MIN = 140;
 const THROW_MAX = 650;
@@ -180,9 +182,16 @@ function afterLanding(core: SimCore, p: Person): void {
   }
   if (p.plan) {
     core.replan(p);
-    return;
+    // A plan that cannot be carried out from here is dropped: they still need somewhere to stand.
+    if (p.job) return;
   }
-  p.job = settleJob('getting back up');
+  // Put down somewhere new, they stay a while to get their bearings before wandering back
+  // to the routine, so the player can move people about on purpose. A plan still comes first.
+  const at = p.res ?? p.tile;
+  p.job = makeJob('settle', { kind: 'tile', tile: { x: at.x, y: at.y } }, {
+    doing: 'getting back up',
+    act: idleAct(`getting ${p.his} bearings`, LINGER)
+  });
 }
 
 export function updateAir(core: SimCore, p: Person, dt: number): void {
