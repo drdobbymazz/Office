@@ -13,8 +13,8 @@ import { createRng } from '@/game/sim/rng';
 import { loadJson, removeKey, saveJson } from '@/game/storage';
 import { CHAPTER_DEFS } from './chapters';
 import { StoryDay, type StoryDayHooks } from './day';
-import { CHAPTERS, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
-import { LEAK, endingText } from './text';
+import { CHAPTERS, ENDING, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
+import { LEAK, endingText, epilogueLines } from './text';
 import type { ChapterDef, ChapterResult, WeekNotes } from './types';
 
 export const STATE_KEY = 'story.state.v1';
@@ -218,11 +218,37 @@ export class Story {
     this.save();
   }
 
+  /** The office at the end of the last day played (for the week's last scene). */
+  get endSnapshot(): SaveData | null {
+    return this.world.end ?? this.world.start;
+  }
+
+  /** Who the player picked up today (for the ending's epilogue). Cleared when a day begins. */
+  private carriedToday: Partial<Record<CastId, number>> = {};
+  private stopCounting: (() => void) | null = null;
+
   /** Set up today's chapter on a simulation that has just begun the day. */
   beginDay(sim: Sim, hooks?: StoryDayHooks): StoryDay {
+    this.stopCounting?.();
+    this.carriedToday = {};
+    this.stopCounting = sim.bus.on('pickedUp', (e) => {
+      if (isCastId(e.who)) this.carriedToday[e.who] = (this.carriedToday[e.who] ?? 0) + 1;
+    });
     const day = new StoryDay(sim, this.def, this.state.notes, { seed: this.state.seed, hooks });
     day.setup();
     return day;
+  }
+
+  /** Add the day's tools and pick-ups to the week's tally (kept in the notes, so a retry undoes them). */
+  private tallyWeek(day: StoryDay): void {
+    const st = (this.state.notes.stats ??= { whispers: 0, announcements: 0, powers: 0, carried: {} });
+    st.whispers += day.used.whisper;
+    st.announcements += day.used.announce;
+    st.powers += day.used.powers.length;
+    for (const [id, n] of Object.entries(this.carriedToday)) st.carried[id as CastId] = (st.carried[id as CastId] ?? 0) + (n ?? 0);
+    this.carriedToday = {};
+    this.stopCounting?.();
+    this.stopCounting = null;
   }
 
   /** The day is over: settle it, move Branch Standing, and save. Returns the result. */
@@ -230,6 +256,7 @@ export class Story {
     const existing = this.result;
     if (this.state.stage !== 'day' && existing) return existing;
     const t = day.tally();
+    this.tallyWeek(day);
     const changes = standingChanges(t);
     const before = this.state.standing;
     const after = applyChanges(before, changes);
@@ -298,9 +325,24 @@ export class Story {
     const id = this.endingId();
     const n = this.state.notes;
     const t = endingText(id, {
-      call: n.call, accounts: n.accounts, figgis: n.figgis, leakName: displayName(n.leak), leakFound: n.leakFound, inspection: n.inspection
+      call: n.call, accounts: n.accounts, figgis: n.figgis, leakName: displayName(n.leak), leakFound: n.leakFound, inspection: n.inspection,
+      fridayWon: this.fridayWon, lostOnFriday: !this.fridayWon && this.state.standing >= ENDING.saved
     });
-    return { id, title: t.title, text: t.text, epilogue: [] };
+    const st = n.stats;
+    const most = st ? (Object.entries(st.carried) as [CastId, number][]).sort((a, b) => b[1] - a[1])[0] : undefined;
+    const epilogue = epilogueLines({
+      leakName: n.leakFound !== undefined ? displayName(n.leak) : undefined,
+      leakFound: n.leakFound,
+      accounts: n.accounts,
+      figgis: n.figgis,
+      speech: n.speech,
+      wrongedName: n.wronged?.length ? displayName(n.wronged[0]) : undefined,
+      carried: most ? { name: displayName(most[0]), times: most[1] } : undefined,
+      whispers: st?.whispers ?? 0,
+      announcements: st?.announcements ?? 0,
+      powers: st?.powers ?? 0
+    });
+    return { id, title: t.title, text: t.text, epilogue };
   }
 
   /** Everything the screens need. `day` is the live day (null on the ending screen). */

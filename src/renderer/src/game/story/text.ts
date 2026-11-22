@@ -519,33 +519,67 @@ export interface WeekRecap {
   leakName?: string;
   leakFound?: boolean;
   inspection?: number;
+  /** Friday's inspection passed. */
+  fridayWon?: boolean;
+  /** Standing was high enough to stay open, but the inspection failed. */
+  lostOnFriday?: boolean;
 }
 
-/** One plain sentence on how the week went, from what happened. */
-function weekLine(w: WeekRecap): string {
-  const bits: string[] = [];
-  bits.push(w.call ? 'The whole office heard the call from Corporate on Monday' : 'Nobody turned up for the call from Corporate on Monday');
-  bits.push(w.accounts ? 'the accounts went in on time' : 'the accounts went in late');
-  bits.push(w.figgis ? 'Figgis Hardware signed for another year' : 'Figgis Hardware walked away');
-  return `${bits[0]}, ${bits[1]}, and ${bits[2]}.`;
+/** "a, b and c" */
+function joinAnd(items: string[]): string {
+  return items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-function leakLine(w: WeekRecap): string {
-  if (!w.leakName) return '';
-  return w.leakFound ? `${w.leakName} was caught sending emails to Corporate.` : `${w.leakName} kept emailing Corporate, and nobody ever found out.`;
+const capFirst = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** What went right and what went wrong this week, as short noun phrases. */
+function weekParts(w: WeekRecap): { good: string[]; bad: string[] } {
+  const good: string[] = [];
+  const bad: string[] = [];
+  const add = (v: boolean | undefined, yes: string, no: string): void => {
+    if (v === true) good.push(yes);
+    else if (v === false) bad.push(no);
+  };
+  add(w.call, "Monday's call with the whole office there", "Monday's empty conference room");
+  add(w.accounts, 'the accounts arriving on time', 'the late accounts');
+  add(w.figgis, 'the Figgis Hardware order', 'losing Figgis Hardware');
+  if (w.leakName) add(w.leakFound, `catching ${w.leakName} leaking`, `the leak nobody caught`);
+  if (w.inspection !== undefined) add(w.fridayWon, 'a good inspection', 'a poor inspection');
+  return { good, bad };
+}
+
+/** One honest sentence on why the week ended the way it did ("thanks to" / "despite"). */
+function weekLine(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): string {
+  const { good, bad } = weekParts(w);
+  const g = joinAnd(good);
+  const b = joinAnd(bad);
+  if (id === 'saved') {
+    if (!bad.length) return `${capFirst(g)}: it was a week to remember.`;
+    return `Thanks to ${g}, Corporate could overlook ${b}.`;
+  }
+  if (id === 'scraped') {
+    if (w.lostOnFriday) {
+      return `The week had gone well, with ${g}, but the inspection had not, and Corporate does not overlook a poor inspection.`;
+    }
+    if (!good.length) return `${capFirst(b)} nearly finished the branch off.`;
+    if (!bad.length) return `${capFirst(g)} kept the branch alive.`;
+    return `${capFirst(g)} kept the branch alive, despite ${b}.`;
+  }
+  if (!good.length) return `${capFirst(b)} were too much for Corporate.`;
+  if (!bad.length) return `${capFirst(g)} were not enough for Corporate.`;
+  return `Despite ${g}, ${b} ${bad.length > 1 ? 'were' : 'was'} too much for Corporate.`;
 }
 
 export function endingText(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): { title: string; text: string[] } {
-  const week = weekLine(w);
-  const leak = leakLine(w);
   const inspected = w.inspection !== undefined ? `The inspector gave the office ${w.inspection} out of 100.` : '';
+  const week = weekLine(id, w);
   switch (id) {
     case 'saved':
       return {
         title: 'THE BRANCH STAYS OPEN',
         text: [
           `On Friday evening Corporate rang to say the Scranton branch stays open. ${inspected}`.trim(),
-          `${week} ${leak}`.trim(),
+          week,
           'Michael called everyone into the conference room to celebrate. For once, nobody minded.'
         ]
       };
@@ -554,8 +588,8 @@ export function endingText(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): { 
         title: 'OPEN, JUST',
         text: [
           `Corporate is keeping the Scranton branch open, but only just. ${inspected}`.trim(),
-          `${week} ${leak}`.trim(),
-          "The budget is cut in half and Michael is on probation. He has already planned a probation party."
+          week,
+          'The budget is cut in half and Michael is on probation. He has already planned a probation party.'
         ]
       };
     default:
@@ -563,9 +597,76 @@ export function endingText(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): { 
         title: 'CLOSING TIME',
         text: [
           `Corporate is closing the Scranton branch. ${inspected}`.trim(),
-          `${week} ${leak}`.trim(),
+          week,
           'The staff packed their desks into boxes. Dwight took the stapler. Michael says this is not goodbye, it is see you later.'
         ]
       };
   }
 }
+
+/** What the week's data says about a few people, for the ending card (3 to 5 lines). */
+export interface EpilogueFacts {
+  leakName?: string;
+  leakFound?: boolean;
+  accounts?: boolean;
+  figgis?: boolean;
+  speech?: 'during' | 'after' | 'never';
+  wrongedName?: string;
+  carried?: { name: string; times: number };
+  whispers: number;
+  announcements: number;
+  powers: number;
+}
+
+export function epilogueLines(f: EpilogueFacts): string[] {
+  const out: string[] = [];
+  if (f.leakName) {
+    out.push(f.leakFound
+      ? `${f.leakName} has been moved to a desk with no fax machine in sight.`
+      : `${f.leakName} still sends Corporate a page now and then. Nobody knows, except you.`);
+  }
+  if (f.carried && f.carried.times >= 3) out.push(`${f.carried.name} was picked up ${f.carried.times} times this week, and now keeps one hand on the desk at all times.`);
+  if (f.wrongedName) out.push(`${f.wrongedName} has forgiven you for Thursday. Mostly.`);
+  if (f.speech === 'after') out.push("Michael's farewell speech got a standing ovation. He offers to give it again every Friday.");
+  else if (f.speech === 'during') out.push("The inspector's report has a whole page on Michael's farewell speech.");
+  else if (f.speech === 'never') out.push("Michael never gave his farewell speech. It is still in his desk drawer, just in case.");
+  if (f.accounts === true) out.push("Angela and Oscar still check each other's figures, but now they do it over coffee.");
+  else if (f.accounts === false) out.push('Angela and Oscar still speak to each other only through Kevin.');
+  if (f.figgis === true) out.push('Mr Figgis comes in every Monday now, and brings his dog.');
+  else if (f.figgis === false) out.push('Mr Figgis buys his paper somewhere else, and tells anyone who asks why.');
+  const lines = out.slice(0, 4);
+  const tools = f.whispers + f.announcements + f.powers;
+  if (tools > 0) lines.push(`This week you whispered ${f.whispers} ${f.whispers === 1 ? 'time' : 'times'}, made ${f.announcements} ${f.announcements === 1 ? 'announcement' : 'announcements'} and used ${f.powers} ${f.powers === 1 ? 'power' : 'powers'}.`);
+  return lines.slice(0, 5);
+}
+
+/** The last scene on the floor, before the ending card. */
+export const FINALE = {
+  vp: (text: string) => `Vice president, on the phone: "${text}"`,
+  saved: {
+    vp: 'Michael, we have decided. The Scranton branch stays open.',
+    michael: "We're staying! Conference room! Everybody!",
+    doing: 'celebrating in the conference room',
+    lines: [
+      { who: 'dwight', text: 'I never doubted us for a second. I doubted Jim.' },
+      { who: 'kevin', text: 'Does this mean there is cake?' },
+      { who: 'pam', text: 'We actually did it.' }
+    ],
+    leak: 'I have already emailed Corporate to say thank you. Just the once.'
+  },
+  scraped: {
+    vp: 'Michael, you stay open. On probation, with half the budget.',
+    michael: 'Probation party! Conference room! Bring your own chair!',
+    doing: 'at the probation party',
+    lines: [
+      { who: 'kevin', text: 'Is there cake?' },
+      { who: 'michael', text: 'There is half a cake.' }
+    ]
+  },
+  closed: {
+    vp: 'Michael, I am sorry. The branch closes tonight.',
+    michael: 'Okay. Okay. Everyone, take a stapler.',
+    doing: 'carrying a box out',
+    last: 'This is not goodbye. It is see you later.'
+  }
+};
