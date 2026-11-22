@@ -21,7 +21,7 @@ export const michael: VoiceBank = {
     client: [
       "Mr Figgis wants a straight answer. I'm going to give him the straightest joke ever.",
       "Leave Mr Figgis to me. I can close any deal. Mostly with charm.",
-      "Our biggest client is here. Everybody act like you love selling paper. I do."
+      "Our biggest client is in today. Everybody act like you love selling paper. I do."
     ],
     leak: [
       "Someone is emailing Corporate behind my back? At least copy me in.",
@@ -29,7 +29,7 @@ export const michael: VoiceBank = {
       "A traitor in my own office. This is like a movie. I'm the hero, obviously."
     ],
     inspection: [
-      "The inspector is coming. Everyone be yourselves. No, wait. Be better than yourselves.",
+      "For the inspector, everyone be yourselves. No, wait. Be better than yourselves.",
       "When the inspector walks in, laugh at my jokes. Not too hard. Natural laughing.",
       "I've prepared a short speech for the inspector. Forty minutes. With slides."
     ],

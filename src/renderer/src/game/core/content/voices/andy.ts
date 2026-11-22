@@ -20,7 +20,7 @@ export const andy: VoiceBank = {
     ],
     client: [
       "Leave Mr Figgis to me. I'll win him over with a song about hardware.",
-      "Mr Figgis hasn't laughed once. Tough crowd. I love a tough crowd.",
+      "Mr Figgis never laughs, apparently. Tough crowd. I love a tough crowd.",
       "I'm going to call Mr Figgis Big Fig. People love nicknames."
     ],
     leak: [
@@ -29,7 +29,7 @@ export const andy: VoiceBank = {
       "Everyone's a suspect! Like a murder mystery! Except nobody's dead! Right?"
     ],
     inspection: [
-      "An inspector! I'll show him my firm handshake. Everybody loves a firm handshake.",
+      "I'll show the inspector my firm handshake. Everybody loves a firm handshake.",
       "Should I sing for the inspector? Just a little welcome song? No? Okay.",
       "Smile, everybody! Corporate likes teeth!"
     ],

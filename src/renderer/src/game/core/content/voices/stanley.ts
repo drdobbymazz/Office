@@ -29,7 +29,7 @@ export const stanley: VoiceBank = {
       "Everyone's looking at each other funny. I'm looking at my puzzle."
     ],
     inspection: [
-      "The inspector is here. I'm going to look busy. It's exhausting.",
+      "For the inspector, I'm going to look busy. It's exhausting.",
       "If the inspector asks, I've been typing all day. Don't contradict me.",
       "Corporate sends a man with a clipboard. I've outlasted ten of them."
     ],

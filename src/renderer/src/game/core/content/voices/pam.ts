@@ -19,8 +19,8 @@ export const pam: VoiceBank = {
       "Somebody needs to get those two talking before five. The accounts won't do themselves."
     ],
     client: [
-      "Mr Figgis is in reception. He has not smiled once. I tried. Twice.",
-      "I offered Mr Figgis a coffee. He asked how much it cost.",
+      "I've spoken to Mr Figgis on the phone. He has never once smiled. I could tell.",
+      "Last time I offered Mr Figgis a coffee, he asked how much it cost.",
       "Please, nobody let Michael tell Mr Figgis a joke."
     ],
     leak: [
@@ -29,7 +29,7 @@ export const pam: VoiceBank = {
       "Whoever it is, I hope they said nice things. Some nice things."
     ],
     inspection: [
-      "The inspector is writing everything down. I just saw him write Kevin.",
+      "Apparently the inspector writes everything down. Everything. Kevin, please.",
       "Okay, everybody smile. Not like that. Normal smiles.",
       "I tidied reception three times for the inspector. It looks exactly the same."
     ],

@@ -19,7 +19,7 @@ export const toby: VoiceBank = {
       "Workplace conflict is technically my area. Nobody ever lets me do my area."
     ],
     client: [
-      "Mr Figgis seems stressed. I could... no, nobody wants HR right now.",
+      "Mr Figgis always seems stressed. I could... no, nobody wants HR right now.",
       "Please, someone stop Michael before he hugs the client.",
       "If Mr Figgis complains, I'll have to file it. I'll file it nicely."
     ],
@@ -29,9 +29,9 @@ export const toby: VoiceBank = {
       "Whoever it is, they should come to HR. We could talk about it. Confidentially."
     ],
     inspection: [
-      "The inspector asked where HR was. Nobody pointed at me.",
+      "If the inspector asks where HR is, nobody will point at me.",
       "I hope the inspector reads the safety forms. Somebody should.",
-      "Everyone, please follow procedure while the inspector is here. Please."
+      "Everyone, please follow procedure for the inspector. Please."
     ],
     waiting: [
       "The inspection's done. I think it went... I don't actually know how it went.",

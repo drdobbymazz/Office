@@ -513,8 +513,9 @@ export class Director {
   private topicFor(ask: SceneAsk): StoryTheme | undefined {
     const tagged = this.askTopic.get(ask);
     if (tagged) return tagged;
-    if (!this.storyTopics().length) return undefined;
     if (ask.trigger !== 'event' && ask.trigger !== 'aftermath' && ask.trigger !== 'plan') return undefined;
+    // Story mode, or a beat a chapter asked for itself (an urgent event: the call, the pitch, the catch).
+    if (!this.storyTopics().length && !(ask.trigger === 'event' && ask.priority >= 8)) return undefined;
     if (detectChaos(ask.why) && !STORY_BEAT.test(ask.why)) return undefined;
     return storyThemeOf(ask.why) ?? undefined;
   }

@@ -29,7 +29,7 @@ export const dwight: VoiceBank = {
       "The leak uses the fax machine. Old technology. Leaves no trace. Except paper."
     ],
     inspection: [
-      "The inspector is here. Desks clean, faces blank, nobody mention the beets.",
+      "Inspection protocol. Desks clean, faces blank, nobody mention the beets.",
       "I will escort the inspector. He does not need an escort. I will escort him anyway.",
       "Stand up straight. Corporate measures posture. Probably."
     ],

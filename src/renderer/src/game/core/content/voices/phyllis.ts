@@ -29,8 +29,8 @@ export const phyllis: VoiceBank = {
       "Whoever it is, they're very well informed. Almost as well as me."
     ],
     inspection: [
-      "The inspector's here. Look sharp, everyone. Bob always says first impressions count.",
-      "That inspector hasn't smiled once. Bob could sell him a fridge.",
+      "Look sharp for the inspector, everyone. Bob always says first impressions count.",
+      "Inspectors never smile. Bob could sell one a fridge, though.",
       "I've put my knitting away for the inspector. My hands don't know what to do."
     ],
     waiting: [

@@ -21,7 +21,7 @@ export const kelly: VoiceBank = {
     client: [
       "Mr Figgis is so grumpy. He looks like an actor who plays a grumpy guy.",
       "If Mr Figgis signs, can we have a party? I have outfit ideas.",
-      "I said hi to Mr Figgis and he said nothing. Rude. But kind of iconic."
+      "Mr Figgis never says hi back. Rude. But kind of iconic."
     ],
     leak: [
       "Oh my God, a leak? It's not me! I only email Ryan. Like, a lot.",
@@ -29,8 +29,8 @@ export const kelly: VoiceBank = {
       "I bet it's someone quiet. It's always someone quiet. Like on TV."
     ],
     inspection: [
-      "The inspector is here! Is my hair okay? Be honest. No, lie.",
-      "He looked at me! The inspector looked right at me! Was it good?",
+      "Corporate is sending an inspector! Is my hair okay? Be honest. No, lie.",
+      "If the inspector looks at me, do I smile or look serious? Both?",
       "I'm going to act so professional for the inspector. Watch me. Watch."
     ],
     waiting: [

@@ -29,8 +29,8 @@ export const jim: VoiceBank = {
       "Whoever the leak is, I'd love to read those emails. For research."
     ],
     inspection: [
-      "The inspector is here. Everybody look like you work here. Which we do.",
-      "I've never seen Stanley type this fast. The inspector should come every day.",
+      "When the inspector comes round, everybody look like you work here. Which we do.",
+      "Stanley is typing. Actual typing. Corporate should send inspectors every day.",
       "Dwight is standing so straight. I think he's trying to impress the clipboard."
     ],
     waiting: [

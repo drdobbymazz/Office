@@ -19,9 +19,9 @@ export const kevin: VoiceBank = {
       "Angela says Oscar's wrong. Oscar says Angela's wrong. I'm hungry."
     ],
     client: [
-      "Mr Figgis looks mean. I hid my snacks just in case.",
+      "Mr Figgis is scary. I hid my snacks just in case.",
       "If Mr Figgis signs, do we get a party? Parties have cake.",
-      "I said hi to Mr Figgis. He looked at me like I was a puddle."
+      "Last time I said hi to Mr Figgis, he looked at me like I was a puddle."
     ],
     leak: [
       "Someone's been telling Corporate stuff. I didn't. I don't know any stuff.",
@@ -29,9 +29,9 @@ export const kevin: VoiceBank = {
       "Is the leak a person or a pipe? Oh. A person. Okay."
     ],
     inspection: [
-      "The inspector is here. I put my snacks in a drawer. All of them. It's very full.",
+      "I put my snacks in a drawer for the inspector. All of them. It's very full.",
       "Act smart for the inspector. How do you act smart? Glasses?",
-      "The inspector looked at my desk and wrote something down. Probably snack."
+      "If the inspector looks at my desk, he'll write down snack. Probably."
     ],
     waiting: [
       "Corporate decides tonight. I'm too nervous to eat. Just kidding. I'm eating.",

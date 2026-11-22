@@ -29,7 +29,7 @@ export const meredith: VoiceBank = {
       "I've got money on who the leak is. Want in?"
     ],
     inspection: [
-      "The inspector's here. Hide the party stuff. Not all of it.",
+      "Inspector day. Hide the party stuff. Not all of it.",
       "I'm going to be on my best manners. For about ten minutes.",
       "That inspector needs a nap. Or a party. Or a party then a nap."
     ],
