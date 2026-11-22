@@ -4,18 +4,30 @@
 //
 // Look: the existing thought cloud (scene/office/ThoughtBubble.ts): cream fill,
 // hard 1 px ink outline, pixel font, a small tail. say = plain, shout = bigger,
-// bold, jagged edge, small shake; whisper = smaller, dashed edge; think =
-// italic with a trail of puffs.
+// bold, jagged edge, small shake; whisper = smaller, dashed edge; think = softer
+// ink with a trail of puffs.
+//
+// Rules (bubbleLayout.ts): the newest line gets the best spot, at most three full
+// bubbles at once, two text boxes never overlap, older finished lines dim, and a
+// line with no room shows as a small "..." over the speaker until there is room.
+// At the fitted zoom bubbles are narrower, so one does not cover a whole room.
 
 import { MutableRefObject, useEffect, useRef } from 'react';
 import type { Speech } from '@/game/core/types';
 import { useGame } from './ctx';
 import { readableOnCream } from './words';
 import { displayName } from '@/game/core/cast';
+import { layoutBubbles, type BubbleIn, type Box } from './bubbleLayout';
 
 export interface Bounds { left: number; right: number; top: number; bottom: number }
 
 const MAX_W = 220;
+/** Bubble width when the camera shows the whole office (a person is a few pixels tall there). */
+const MAX_W_FITTED = 176;
+/** Zoom (CSS px per art px) above which bubbles may use their full width. */
+const CLOSE_ZOOM = 1.6;
+/** A line that lost its room stays a tag at least this long, so bubbles do not flicker. */
+const TAG_HOLD_MS = 700;
 const TAIL_H = 6;
 const PUFF_H = 13;
 const GAP = 4;
@@ -29,13 +41,14 @@ interface Node {
   w: number;
   h: number;
   shown: number;
-  /** Smoothed extra lift from the overlap pass. */
-  lift: number;
-  slide: number;
   x: number;
   y: number;
   flipped: boolean;
   dying: boolean;
+  /** Showing as a small "..." tag instead of the full bubble. */
+  tag: boolean;
+  tagUntil: number;
+  dim: boolean;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -117,7 +130,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       return c;
     };
 
-    function make(sp: Speech): Node {
+    function make(sp: Speech, maxW: number): Node {
       const el = document.createElement('div');
       el.className = `gu-bubble k-${sp.kind}`;
       const pop = document.createElement('div');
@@ -127,7 +140,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       inner.style.position = 'relative';
       const box = document.createElement('div');
       box.className = 'gu-bubble-box';
-      box.style.maxWidth = `${MAX_W}px`;
+      box.style.maxWidth = `${maxW}px`;
       box.style.width = 'max-content';
       const meta = who(sp.who);
       const name = document.createElement('span');
@@ -146,7 +159,10 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       tail.style.position = 'absolute';
       inner.append(box, tail);
       pop.append(inner);
-      el.append(pop);
+      const tag = document.createElement('div');
+      tag.className = 'gu-bubble-tag';
+      tag.textContent = '...';
+      el.append(pop, tag);
       el.style.visibility = 'hidden';
       root!.append(el);
       // Measure once with the whole line laid out (unrevealed letters are transparent), then fix the size.
@@ -156,7 +172,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       box.style.width = `${w}px`;
       const h = Math.ceil(box.getBoundingClientRect().height);
       if (sp.kind === 'shout') inner.insertBefore(shoutBg(w, h), box);
-      const n: Node = { sp, el, rev, rest, tail, w, h, shown: 0, lift: 0, slide: 0, x: -999, y: -999, flipped: false, dying: false };
+      const n: Node = { sp, el, rev, rest, tail, w, h, shown: 0, x: -999, y: -999, flipped: false, dying: false, tag: false, tagUntil: 0, dim: false };
       setTail(n, false, w / 2);
       return n;
     }
@@ -191,16 +207,30 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       for (const sp of list) {
         if (now < sp.startedAt || now > sp.startedAt + sp.durationMs) continue;
         live.add(sp.id);
-        if (!nodes.has(sp.id)) nodes.set(sp.id, make(sp));
+        if (!nodes.has(sp.id)) {
+          // Narrower at the fitted zoom, where a 220 px bubble would cover a room and a half.
+          const zoom = game.headOnScreen(sp.who).scale;
+          nodes.set(sp.id, make(sp, zoom < CLOSE_ZOOM ? MAX_W_FITTED : MAX_W));
+        }
       }
       for (const [id, n] of nodes) if (!live.has(id)) kill(id, n);
 
       const b = bounds.current;
-      const minX = b.left + 4, maxX = window.innerWidth - b.right - 4;
-      const minY = b.top + 4, maxY = window.innerHeight - b.bottom - 4;
-      type P = { n: Node; hx: number; hy: number; left: number; top: number; flipped: boolean; tailH: number };
-      const placed: P[] = [];
-      for (const [, n] of nodes) {
+      const area = {
+        minX: b.left + 4, maxX: window.innerWidth - b.right - 4,
+        minY: b.top + 4, maxY: window.innerHeight - b.bottom - 4
+      };
+      if (now - avoidAt > 500) {
+        avoidAt = now;
+        avoid = Array.from(document.querySelectorAll('[data-avoid]')).map((e) => {
+          const r = e.getBoundingClientRect();
+          return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+        }).filter((r) => r.r > r.l);
+      }
+
+      const items: BubbleIn[] = [];
+      const typedOut = new Map<string, boolean>();
+      for (const [id, n] of nodes) {
         if (n.dying) continue;
         const sp = n.sp;
         // typewriter
@@ -210,71 +240,46 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
           n.rev.textContent = sp.text.slice(0, count);
           n.rest.textContent = sp.text.slice(count);
         }
+        typedOut.set(id, count >= sp.text.length);
         const head = game.headOnScreen(sp.who);
-        if (!head.visible || head.x < minX - 20 || head.x > maxX + 20) { n.el.style.visibility = 'hidden'; continue; }
+        if (!head.visible || head.x < area.minX - 20 || head.x > area.maxX + 20) { n.el.style.visibility = 'hidden'; continue; }
         n.el.style.visibility = 'visible';
         const tailH = (sp.kind === 'think' ? PUFF_H : TAIL_H) + (sp.kind === 'shout' ? 4 : 0);
-        let top = head.y - GAP - tailH - n.h;
-        let flipped = false;
-        if (top < minY) { flipped = true; top = head.y + 40 * head.scale + tailH; }
-        const left = Math.max(minX, Math.min(maxX - n.w, head.x - n.w / 2));
-        placed.push({ n, hx: head.x, hy: head.y, left, top, flipped, tailH });
+        items.push({
+          id, hx: head.x, hy: head.y, w: n.w, h: n.h, tailH, below: 40 * Math.max(0.75, head.scale),
+          startedAt: sp.startedAt, holdTag: n.tag && now < n.tagUntil
+        });
       }
-      // Keep bubbles apart and off the HUD. Lowest bubble first; for each, try a handful of
-      // spots (where it wants to be, above or below each thing already placed, slid
-      // sideways) and take the one with the least overlap and the least travel. The tail
-      // must still reach the head, so the bubble always spans the head's x.
-      placed.sort((a, b2) => b2.top - a.top);
-      if (now - avoidAt > 500) {
-        avoidAt = now;
-        avoid = Array.from(document.querySelectorAll('[data-avoid]')).map((e) => {
-          const r = e.getBoundingClientRect();
-          return { l: r.left, t: r.top, r: r.right, b: r.bottom };
-        }).filter((r) => r.r > r.l);
-      }
-      const done: { l: number; t: number; r: number; b: number }[] = avoid.slice();
+
+      const placed = layoutBubbles(items, avoid as Box[], area);
+      // The newest full bubble reads at full strength; older ones that have finished typing step back.
+      let newest = -Infinity;
+      for (const p of placed) if (p.full) newest = Math.max(newest, nodes.get(p.id)?.sp.startedAt ?? -Infinity);
       for (const p of placed) {
-        const w = p.n.w, h = p.n.h;
-        const below = p.hy + 40 + p.tailH;
-        const tops = [p.top, below];
-        const lefts = [p.left];
-        for (const d of done) {
-          tops.push(d.t - h - 4, d.b + 4);
-          lefts.push(d.l - w - 4, d.r + 4);
+        const n = nodes.get(p.id);
+        if (!n) continue;
+        const wasTag = n.tag;
+        if (p.full === n.tag) {
+          n.tag = !p.full;
+          if (n.tag) n.tagUntil = now + TAG_HOLD_MS;
+          n.el.classList.toggle('is-tag', n.tag);
         }
-        let best = { l: p.left, t: p.top, score: Infinity };
-        for (const t0 of tops) {
-          const t = Math.max(minY, Math.min(maxY - h, t0));
-          // above the head or below it, never on top of it
-          if (t + h > p.hy - p.tailH + 2 && t < p.hy + 30) continue;
-          // and close enough that it still reads as theirs: better a small overlap than a stray bubble
-          if (t < p.hy ? p.hy - (t + h) > 100 : t - p.hy > 130) continue;
-          for (const l0 of lefts) {
-            const l = Math.max(minX, Math.min(maxX - w, Math.max(p.hx - w + 12, Math.min(p.hx - 12, l0))));
-            let overlap = 0;
-            for (const d of done) {
-              const ox = Math.min(l + w, d.r + 2) - Math.max(l, d.l - 2);
-              const oy = Math.min(t + h, d.b + 2) - Math.max(t, d.t - 2);
-              if (ox > 0 && oy > 0) overlap += ox * oy;
-            }
-            const score = overlap * 1.5 + Math.abs(t - p.top) + Math.abs(l - p.left) * 0.7 + (t > p.hy ? 30 : 0);
-            if (score < best.score) best = { l, t, score };
-          }
+        const dim = p.full && n.sp.startedAt < newest && !!typedOut.get(p.id);
+        if (dim !== n.dim) { n.dim = dim; n.el.classList.toggle('is-dim', dim); }
+        // Slide to the new spot (jump when it changes between tag and bubble).
+        const jump = wasTag !== n.tag || n.x < -900;
+        const x = jump ? p.left : n.x + (p.left - n.x) * 0.3;
+        const y = jump ? p.top : n.y + (p.top - n.y) * 0.3;
+        const rx = Math.abs(p.left - x) < 0.5 ? p.left : Math.round(x);
+        const ry = Math.abs(p.top - y) < 0.5 ? p.top : Math.round(y);
+        if (rx !== n.x || ry !== n.y) {
+          n.x = rx; n.y = ry;
+          n.el.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
         }
-        done.push({ l: best.l, t: best.t, r: best.l + w, b: best.t + h });
-        // Ease the nudge so bubbles slide rather than jump.
-        const wantY = best.t - p.top, wantX = best.l - p.left;
-        p.n.lift += (wantY - p.n.lift) * 0.3;
-        p.n.slide += (wantX - p.n.slide) * 0.3;
-        if (Math.abs(wantY - p.n.lift) < 0.5) p.n.lift = wantY;
-        if (Math.abs(wantX - p.n.slide) < 0.5) p.n.slide = wantX;
-        const top = Math.round(p.top + p.n.lift);
-        const x = Math.round(p.left + p.n.slide);
-        if (x !== p.n.x || top !== p.n.y) {
-          p.n.x = x; p.n.y = top;
-          p.n.el.style.transform = `translate3d(${x}px, ${top}px, 0)`;
+        if (p.full) {
+          const it = items.find((q) => q.id === p.id);
+          if (it) setTail(n, p.flipped, it.hx - rx);
         }
-        setTail(p.n, best.t > p.hy, p.hx - x);
       }
     }
     raf = requestAnimationFrame(frame);

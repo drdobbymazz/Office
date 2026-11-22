@@ -238,7 +238,7 @@ export class GameFloor {
     const s = this.camera.toScreen(h.x, h.y);
     out.x = s.x;
     out.y = s.y;
-    out.scale = 1;
+    out.scale = this.camera.zoom;
     out.visible = a.view.container.alpha > 0.3 && s.x > -30 && s.x < this.w + 30 && s.y > -30 && s.y < this.h + 40;
     return out;
   }

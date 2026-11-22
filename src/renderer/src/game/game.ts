@@ -662,6 +662,12 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     tapEmpty: () => select(null),
     pickUp: (who) => {
       if (get().phase !== 'playing') return false;
+      // In the story, carrying people about while the clock is stopped would make every deadline free:
+      // say so, and let the drag pan instead.
+      if (mode === 'story' && (get().paused || finishing)) {
+        if (get().paused) toast('Paused: tap the clock to carry on, then pick them up.', 'info', 'pause');
+        return false;
+      }
       const ok = sim.pickUp(who);
       if (ok) audio.sfx('pickup');
       return ok;

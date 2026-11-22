@@ -1,12 +1,14 @@
 // POWERS: four category sub-tabs, a two-column grid of cards, a target picker
-// in the same panel, a big confirm button, and the three text tools.
+// in the same panel, a big confirm button, and the three text tools. In the story
+// the text tools come first (the days are about what you say), with the day's
+// own suggestions at the top of each list.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CharId, ChaosCategory, ChaosId, ChaosTarget, TargetRoomId } from '@/game/core/types';
 import { CHAOS, CHAOS_CATEGORIES, CHAOS_LIST, type ChaosDef } from '@/game/core/chaos';
 import { ROOMS } from '@/game/core/world';
 import { GIcon } from './icons';
-import { Btn, Chip, CostPips, Head, Label, Pips, Refusal, Section, TextTool, usePress } from './kit';
+import { Btn, Chip, CostPips, Head, Label, Pips, Refusal, Section, TextTool, Warning, uiToast, usePress } from './kit';
 import { RoomMap, PersonGrid, PersonStrip } from './pickers';
 import { useContent, useGame, useNow, useUi, useViewport } from './ctx';
 import { useNav } from './Dock';
@@ -14,12 +16,24 @@ import { CONFIRM, fill } from './words';
 import { costOf, useCost, useStory } from './Story';
 
 const ROOM_NAME: Record<string, string> = Object.fromEntries(ROOMS.map((r) => [r.id, r.name]));
+/** A stable empty list (store selectors must not make a new array every time). */
+const NONE: string[] = [];
 const TARGET_WORD = { room: 'Pick a room', person: 'Pick a person', pair: 'Pick two people', none: '' } as const;
 const accentOf = (c: ChaosCategory) => CHAOS_CATEGORIES.find((x) => x.id === c)!.accent;
 
 // Remembered while the app runs, so the tab reopens where the player left it.
 let lastCat: ChaosCategory = 'disaster';
 let lastTool: 'whisper' | 'announce' | 'anything' = 'whisper';
+
+/** Open Powers on one of the three text tools next time it is shown (the story coach uses it). */
+export function showPowersTool(t: 'whisper' | 'announce' | 'anything'): void {
+  lastTool = t;
+}
+
+/** No cooldowns only in the sandbox: the story always keeps them, whatever the setting says. */
+function useNoCooldowns(): boolean {
+  return useUi((s) => s.settings.sandbox && s.mode !== 'story');
+}
 
 function CatTabs({ value, onChange }: { value: ChaosCategory; onChange: (c: ChaosCategory) => void }) {
   const game = useGame();
@@ -43,7 +57,7 @@ function CatTabs({ value, onChange }: { value: ChaosCategory; onChange: (c: Chao
 
 function Card({ def, now, onTap }: { def: ChaosDef; now: number; onTap: () => void }) {
   const cd = useUi((s) => s.cooldowns[def.id]);
-  const sandbox = useUi((s) => s.settings.sandbox);
+  const sandbox = useNoCooldowns();
   const price = useCost(def.id);
   const { pressed, handlers } = usePress();
   const left = !sandbox && cd && cd.readyAt > now ? cd.readyAt - now : 0;
@@ -74,7 +88,10 @@ function Card({ def, now, onTap }: { def: ChaosDef; now: number; onTap: () => vo
           )}
         </span>
       </div>
-      <span style={{ fontSize: 15, lineHeight: '17px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: dim ? 0.55 : 1 }}>{def.name}</span>
+      <span style={{
+        fontSize: 15, lineHeight: '17px', color: 'var(--cth-ink-900)', opacity: dim ? 0.55 : 1, overflowWrap: 'anywhere',
+        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+      }}>{def.name}</span>
       <span style={{
         fontSize: 12, lineHeight: '14px', color: locked ? 'var(--cth-ink-700)' : 'var(--cth-ink-500)', opacity: dim && !locked ? 0.55 : 1,
         display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
@@ -115,8 +132,9 @@ function Flow({ def, onDone }: { def: ChaosDef; onDone: (fired: boolean) => void
   const people = useUi((s) => s.people);
   const targeting = useUi((s) => s.targeting);
   const cd = useUi((s) => s.cooldowns[def.id]);
-  const sandbox = useUi((s) => s.settings.sandbox);
+  const sandbox = useNoCooldowns();
   const price = useCost(def.id);
+  const warn = useUi((s) => s.story?.warns?.[def.id] ?? null);
   const now = useNow(250, !!cd && cd.readyAt > performance.now());
   const [step, setStep] = useState<Step>(() => firstStep(def));
   const [target, setTarget] = useState<ChaosTarget>(() => (def.fixedRoom ? { room: def.fixedRoom } : {}));
@@ -174,7 +192,7 @@ function Flow({ def, onDone }: { def: ChaosDef; onDone: (fired: boolean) => void
 
   return (
     <Section title={def.name.toUpperCase()} accent={accent}
-      right={<Btn size="sm" variant="secondary" icon="x" label="Cancel" sound="close" onClick={() => onDone(false)} square />}>
+      right={<Btn size="md" variant="secondary" icon="x" label="Cancel" sound="close" onClick={() => onDone(false)} square style={{ margin: '-6px -8px -6px 0' }} />}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <GIcon name={def.id} px={32} />
         <span style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>{def.blurb}</span>
@@ -231,6 +249,7 @@ function Flow({ def, onDone }: { def: ChaosDef; onDone: (fired: boolean) => void
         </div>
       )}
       {!error && blocked && <Refusal text={blocked} />}
+      {!error && !blocked && warn && <Warning text={warn} />}
 
       <Btn variant="accent" accent={accent} size="lg" full disabled={!complete || left > 0 || !!blocked} onClick={confirm} sound={null}
         style={{ fontSize: 18 }}>
@@ -276,6 +295,8 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
   const game = useGame();
   const price = useCost('whisper');
   const { suggestions } = useContent();
+  const storyIdeas = useUi((s) => s.story?.suggest?.whisper ?? NONE);
+  const warn = useUi((s) => s.story?.warns?.whisper ?? null);
   const people = useUi((s) => s.people);
   const [who, setWho] = useState<CharId | null>(fixedWho ?? null);
   const [sent, setSent] = useState<string | null>(null);
@@ -284,7 +305,7 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
     const rest = people.filter((p) => p.id !== target?.id);
     return rest.length ? rest[(target?.name.length ?? 0) % rest.length].name : 'someone';
   }, [people, target?.id, target?.name.length]);
-  const list = useMemo(() => suggestions.whispers.map((s) => fill(s, target?.name ?? 'them', other)), [suggestions.whispers, target?.name, other]);
+  const list = useMemo(() => [...storyIdeas, ...suggestions.whispers].map((s) => fill(s, target?.name ?? 'them', other)), [storyIdeas, suggestions.whispers, target?.name, other]);
   return (
     <>
       {!fixedWho && (
@@ -296,7 +317,7 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
       <TextTool coach="whisper" autoFocus={autoFocus}
         hint="Only they hear it. They think it is their own idea."
         placeholder={target ? `A thought for ${target.name}...` : 'Pick someone above first'}
-        suggestions={target ? list : []} disabled={!target} sendLabel="Send whisper" cost={price?.cost} short={target ? price?.short : null}
+        suggestions={target ? list : []} disabled={!target} sendLabel="Send whisper" cost={price?.cost} short={target ? price?.short : null} warn={target ? warn : null}
         onSend={(t) => { if (!target) return; game.whisper(target.id, t); setSent(`Whispered to ${target.name}.`); }} />
       {sent && <Sent text={sent} />}
     </>
@@ -315,11 +336,14 @@ function AnnounceTool() {
   const game = useGame();
   const price = useCost('announce');
   const { suggestions } = useContent();
+  const storyIdeas = useUi((s) => s.story?.suggest?.announce ?? NONE);
+  const warn = useUi((s) => s.story?.warns?.announce ?? null);
+  const list = useMemo(() => [...storyIdeas, ...suggestions.announcements], [storyIdeas, suggestions.announcements]);
   const [sent, setSent] = useState<string | null>(null);
   return (
     <>
-      <TextTool hint="Everyone hears this over the loudspeaker." placeholder="Attention, everyone..." accent="peach"
-        suggestions={suggestions.announcements} sendLabel="Announce" cost={price?.cost} short={price?.short}
+      <TextTool coach="announce" hint="Everyone hears this over the loudspeaker. Name a room to send people there." placeholder="Attention, everyone..." accent="peach"
+        suggestions={list} sendLabel="Announce" cost={price?.cost} short={price?.short} warn={warn}
         onSend={(t) => { game.announce(t); setSent('Announced to the whole office.'); }} />
       {sent && <Sent text={sent} />}
     </>
@@ -330,11 +354,12 @@ function AnythingTool() {
   const game = useGame();
   const price = useCost('anything');
   const { suggestions } = useContent();
+  const warn = useUi((s) => s.story?.warns?.anything ?? null);
   const [sent, setSent] = useState<string | null>(null);
   return (
     <>
       <TextTool hint="Type anything. The office has to deal with it." placeholder="a horse walks into the office" accent="lemon"
-        suggestions={suggestions.customEvents} sendLabel="Make it happen" cost={price?.cost} short={price?.short}
+        suggestions={suggestions.customEvents} sendLabel="Make it happen" cost={price?.cost} short={price?.short} warn={warn}
         onSend={(t) => { game.customEvent(t); setSent('On its way. Watch the floor.'); }} />
       {sent && <Sent text={sent} />}
     </>
@@ -371,9 +396,8 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
   const game = useGame();
   const [cat, setCat] = useState<ChaosCategory>(initial?.chaos ? CHAOS[initial.chaos].category : lastCat);
   const [sel, setSel] = useState<ChaosId | null>(initial?.chaos ?? pendingChaos.take());
-  const [denied, setDenied] = useState<string | null>(null);
   const cooldowns = useUi((s) => s.cooldowns);
-  const sandbox = useUi((s) => s.settings.sandbox);
+  const sandbox = useNoCooldowns();
   const story = useStory();
   const anyCooling = !sandbox && Object.values(cooldowns).some((c) => c && c.readyAt > performance.now());
   const now = useNow(250, anyCooling);
@@ -384,54 +408,68 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
     return <Flow key={sel} def={CHAOS[sel]} onDone={() => setSel(null)} />;
   }
 
-  return (
+  const grid = (
     <>
-      {story && <InfluenceRow left={story.influence.left} max={story.influence.max} />}
-      <CatTabs value={cat} onChange={(c) => { setCat(c); setDenied(null); }} />
-      {denied && (
-        <div className="gu-drop" style={{ padding: '8px 10px', background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-coral)', fontSize: 14, paddingLeft: 14 }}>
-          {denied}
-        </div>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }} data-coach="cards">
+      <CatTabs value={cat} onChange={setCat} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }} data-coach="cards">
         {cards.map((d) => (
           <Card key={d.id} def={d} now={now} onTap={() => {
+            // A card that cannot be used today says why, where the player is looking: as a toast.
             const price = costOf(story, d.id);
-            const why = price ? price.locked ?? price.short : null;
-            if (why) {
+            if (price?.locked) {
               game.uiSound('deny');
-              setDenied(price?.locked ? `${d.name} is locked today. ${why}` : why);
+              uiToast(game, `${d.name} is locked today. ${price.locked}`, 'bad', 'lock');
+              return;
+            }
+            if (price?.short) {
+              game.uiSound('deny');
+              uiToast(game, `${d.name}: ${price.short}`, 'bad', 'influence');
               return;
             }
             const cd = cooldowns[d.id];
             if (!sandbox && cd && cd.readyAt > performance.now()) {
               game.uiSound('deny');
-              setDenied(`${d.name} is ready again in ${Math.ceil((cd.readyAt - performance.now()) / 1000)} seconds.`);
+              uiToast(game, `${d.name} is ready again in ${Math.ceil((cd.readyAt - performance.now()) / 1000)} seconds.`, 'bad', 'clock');
               return;
             }
             game.uiSound('card');
-            setDenied(null);
             setSel(d.id);
           }} />
         ))}
       </div>
+    </>
+  );
+
+  // The story is mostly about what you say, so the text tools come first there.
+  return story ? (
+    <>
+      <InfluenceRow left={story.influence.left} max={story.influence.max} />
+      <Tools />
+      <Label style={{ marginTop: 4 }}>Powers</Label>
+      {grid}
+    </>
+  ) : (
+    <>
+      {grid}
       <Tools />
     </>
   );
 }
 
-/** Story mode: what is left of today's influence, above the cards. */
+/** Story mode: what is left of today's influence, above the cards ("6/8", or "8/8 +2 bonus"). */
 function InfluenceRow({ left, max }: { left: number; max: number }) {
+  const bonus = Math.max(0, left - max);
   return (
     <div title="Influence: today's budget for powers and tools" style={{
       display: 'flex', alignItems: 'center', gap: 6, minHeight: 32, padding: '4px 8px', flexShrink: 0,
       background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
     }}>
       <GIcon name="influence" px={16} />
-      <Pips left={left} max={max} size={10} gap={2} style={{ flex: 1, minWidth: 0, overflow: 'hidden' }} />
+      <Pips left={Math.min(left, max)} max={max} size={10} gap={2} style={{ flex: 1, minWidth: 0, overflow: 'hidden' }} />
       <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '18px', color: 'var(--cth-ink-700)', whiteSpace: 'nowrap' }}>
-        {left}<span style={{ color: 'var(--cth-ink-500)' }}>/{max}</span>
+        {Math.min(left, max)}<span style={{ color: 'var(--cth-ink-500)' }}>/{max}</span>
       </span>
+      {bonus > 0 && <span style={{ fontSize: 13, lineHeight: '14px', color: '#2f8a45', whiteSpace: 'nowrap' }}>+{bonus} bonus</span>}
     </div>
   );
 }

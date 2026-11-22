@@ -59,9 +59,13 @@ function RailTab({ id, label, icon, accent, active, vertical, onTap }: {
         transform: pressed ? 'translateY(1px)' : 'none',
         touchAction: 'manipulation'
       }}>
-      <GIcon name={icon} px={vertical ? 16 * (active ? 1 : 2) : 16 * (active ? 1 : 2)} style={{ opacity: active ? 1 : 0.85 }} />
+      {/* The open tab keeps its full-size icon (the stripe marks it) and names itself underneath, inside the rail. */}
+      <GIcon name={icon} px={32} style={{ opacity: active ? 1 : 0.85 }} />
       {active && (
-        <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-900)' }}>{label}</span>
+        <span style={{
+          fontFamily: 'var(--cth-font-ui)', fontSize: 11, lineHeight: '12px', color: 'var(--cth-ink-900)',
+          maxWidth: vertical ? RAIL - 6 : undefined, overflow: 'hidden', whiteSpace: 'nowrap'
+        }}>{label}</span>
       )}
     </button>
   );

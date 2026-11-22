@@ -2,9 +2,10 @@
 // (PixelButton, PixelPanel title bars, PixelBadge) but press on pointer events,
 // so the hard-shadow press works with a finger as well as a mouse.
 
-import { CSSProperties, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccentColorName } from '@/design/tokens';
 import type { SfxId } from '@/game/audio/api';
+import type { GameApi, ToastUi } from '@/game/app/gameApi';
 import { PixelPanel } from '@/components/PixelPanel';
 import { PORTRAIT_H, PORTRAIT_W } from '@/scene/office/portraitArt';
 import { GIcon, type GIconName } from './icons';
@@ -222,7 +223,7 @@ export function Chip({ children, onClick, active, accent = 'lemon', icon, style,
     <button type="button" className="gu-hit" {...handlers}
       onClick={() => { if (sound) game.uiSound(sound); onClick?.(); }}
       style={{
-        minHeight: 36, padding: '6px 10px', marginBottom: 2,
+        minHeight: 40, padding: '6px 10px', marginBottom: 2,
         display: 'inline-flex', alignItems: 'center', gap: 6, textAlign: 'left',
         background: active ? `var(--cth-${accent}-light)` : 'var(--cth-cream-50)',
         border: 'none', borderRadius: 0,
@@ -259,7 +260,7 @@ export function Seg<T extends string | number>({ value, options, onChange, accen
           <button key={String(o.value)} type="button" className="gu-hit"
             onClick={() => { game.uiSound('tap'); onChange(o.value); }}
             style={{
-              flex: 1, minHeight: 36, border: 'none', borderRadius: 0, padding: '0 4px',
+              flex: 1, minHeight: 40, border: 'none', borderRadius: 0, padding: '0 4px',
               background: on ? `var(--cth-${accent})` : 'transparent',
               boxShadow: on ? 'inset 0 0 0 1px var(--cth-ink-900)' : 'none',
               fontFamily: 'var(--cth-font-ui)', fontSize: 14, color: 'var(--cth-ink-900)', cursor: 'pointer',
@@ -301,23 +302,44 @@ export function Toggle({ label, hint, on, onChange }: { label: string; hint?: st
 
 // ── Text tool: a box, tappable suggestions and a Send button ──
 
-export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = 'Send', disabled, accent = 'lilac', coach, autoFocus, cost, short }: {
+export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = 'Send', disabled, accent = 'lilac', coach, autoFocus, cost, short, warn }: {
   placeholder: string; hint?: string; suggestions: string[]; onSend: (text: string) => void; sendLabel?: string;
   disabled?: boolean; accent?: AccentColorName; coach?: string; autoFocus?: boolean;
   /** Story mode: what sending costs in influence (shown on the button). */
   cost?: number;
   /** Story mode: why it cannot be afforded right now ("Not enough influence: ..."), or null. */
   short?: string | null;
+  /** Story mode: a side effect to know about before sending ("Using this fails Quiet hands"). */
+  warn?: string | null;
 }) {
+  const game = useGame();
   const [text, setText] = useState('');
   const [page, setPage] = useState(0);
+  const [typingPause, setTypingPause] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  const pausedByUs = useRef(false);
   const shown = useMemo(() => {
     if (suggestions.length <= 3) return suggestions;
     const out: string[] = [];
     for (let i = 0; i < 3; i++) out.push(suggestions[(page * 3 + i) % suggestions.length]);
     return out;
   }, [suggestions, page]);
+  // Story mode: the day holds still while the player types (a phone keyboard is slow, and the story has deadlines).
+  const holdForTyping = useCallback(() => {
+    const st = game.store.getState();
+    if (st.mode !== 'story' || st.phase !== 'playing' || st.paused || st.finishing) return;
+    pausedByUs.current = true;
+    setTypingPause(true);
+    game.setPaused(true);
+  }, [game]);
+  const releaseTyping = useCallback(() => {
+    if (!pausedByUs.current) return;
+    pausedByUs.current = false;
+    setTypingPause(false);
+    // Only carry on if nothing else paused the day meanwhile.
+    if (game.store.getState().paused) game.setPaused(false);
+  }, [game]);
+  useEffect(() => releaseTyping, [releaseTyping]);
   const send = useCallback(() => {
     const t = text.trim();
     if (!t || disabled || short) return;
@@ -343,9 +365,16 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
         placeholder={placeholder}
         disabled={disabled}
         onChange={(e) => setText(e.target.value)}
+        onFocus={holdForTyping}
+        onBlur={releaseTyping}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
         style={{ minHeight: 64 }}
       />
+      {typingPause && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: -2 }}>
+          <GIcon name="pause" px={16} />The day waits while you type.
+        </div>
+      )}
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch' }}>
           {shown.map((s, i) => (
@@ -353,6 +382,7 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
           ))}
         </div>
       )}
+      {warn && !short && <Warning text={warn} />}
       <div style={{ display: 'flex', gap: 8, marginTop: cost ? 4 : 0 }}>
         {suggestions.length > 3 && (
           <Btn variant="ghost" size="md" icon="refresh" onClick={() => setPage((p) => p + 1)} label="More ideas">Ideas</Btn>
@@ -394,8 +424,11 @@ export function Pips({ left, max, size = 10, gap = 2, color = 'var(--cth-lilac)'
   );
 }
 
-/** What something costs in influence: one small lilac pip per point (coral when it cannot be afforded). */
-export function CostPips({ n, short, chip, style }: { n: number; short?: boolean; chip?: boolean; style?: CSSProperties }) {
+/**
+ * What something costs in influence: one small lilac pip per point, and the number beside them
+ * (both coral when it cannot be afforded).
+ */
+export function CostPips({ n, short, chip, num = true, style }: { n: number; short?: boolean; chip?: boolean; num?: boolean; style?: CSSProperties }) {
   const pips = (
     <span style={{ display: 'inline-flex', gap: 2 }}>
       {Array.from({ length: n }, (_, i) => (
@@ -408,16 +441,37 @@ export function CostPips({ n, short, chip, style }: { n: number; short?: boolean
   );
   return (
     <span title={`Costs ${n} influence`} style={{
-      display: 'inline-flex', alignItems: 'center', flexShrink: 0,
-      ...(chip ? { padding: 3, background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' } : null),
+      display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
+      ...(chip ? { padding: '1px 3px', background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' } : null),
       ...style
-    }}>{pips}</span>
+    }}>
+      {pips}
+      {num && (
+        <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 16, lineHeight: '10px', color: short ? '#c43c3c' : 'var(--cth-ink-700)' }}>{n}</span>
+      )}
+    </span>
   );
 }
 
-/** Thresholds for the end of the week: 65 or more keeps the branch open, under 40 closes it. */
-export const STANDING_SAFE = 65;
-export const STANDING_RISK = 40;
+let uiToastSeq = 0;
+
+/**
+ * A toast from the interface itself (a refusal the player caused by tapping something), in the same
+ * place and style as the game's own toasts. Goes away by itself.
+ */
+export function uiToast(game: GameApi, text: string, tone: ToastUi['tone'] = 'bad', icon?: string): void {
+  uiToastSeq += 1;
+  const id = `ui${uiToastSeq}`;
+  game.store.setState((s) => ({ toasts: [...s.toasts.slice(-2), { id, text, tone, icon }] }));
+  window.setTimeout(() => game.dismissToast(id), 3600);
+}
+
+/**
+ * Thresholds for the end of the week, as the lead set them for Branch Standing: 75 or more (with
+ * Friday won) keeps the branch open, under 45 closes it. Keep in step with story/rules.ts endingFor.
+ */
+export const STANDING_SAFE = 75;
+export const STANDING_RISK = 45;
 export function standingColor(v: number): string {
   return v >= STANDING_SAFE ? 'var(--cth-mint)' : v >= STANDING_RISK ? 'var(--cth-lemon)' : 'var(--cth-coral)';
 }
@@ -469,6 +523,19 @@ export function IconTile({ icon, size = 24, bg = 'var(--cth-cream-50)', style, t
       boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)', ...style
     }}>
       <GIcon name={icon} px={size >= 40 ? 32 : 16} />
+    </div>
+  );
+}
+
+/** A side effect to know about before confirming, with a lemon edge ("Using a power fails Quiet hands"). */
+export function Warning({ text, style }: { text: string; style?: CSSProperties }) {
+  return (
+    <div className="gu-drop" style={{
+      display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 10px 7px 14px', background: 'var(--cth-lemon-light)',
+      boxShadow: 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-lemon)', fontSize: 14, lineHeight: '18px', ...style
+    }}>
+      <GIcon name="warn" px={16} style={{ marginTop: 1 }} />
+      <span style={{ minWidth: 0 }}>{text}</span>
     </div>
   );
 }

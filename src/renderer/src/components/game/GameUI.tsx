@@ -13,7 +13,8 @@ import type { CharId, ChaosId } from '@/game/core/types';
 import type { Suggestions, Tips } from '@/game/core/content/types';
 import { GameCtx, useViewport, type UiCtx } from './ctx';
 import { BubbleLayer, type Bounds } from './Bubbles';
-import { CHIP_MAX_H, CHIP_TOP, EventsAndToasts, MissionChip, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
+import { EventsAndToasts, hudBottom, hudInset, MissionChip, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
+import { StoryCoach } from './coach';
 import { Dock, NavCtx, type Nav } from './Dock';
 import { ChapterCard, Coach, EndingCard, ReportCard, RotateCard, TitleCard } from './Dialogs';
 import { pendingChaos } from './PowersTab';
@@ -88,8 +89,8 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
     window.addEventListener('resize', measure);
     return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
   }, [measure, open, tab, portrait, blocked]);
-  // Story mode in portrait: the floor fits under the mission chip (the office is wide, so this costs little room).
-  const chipTopInset = portrait && phase === 'playing' && storyOn ? CHIP_TOP + CHIP_MAX_H : 0;
+  // The camera keeps the office below the HUD block (status strip and mission row), so nothing that matters hides under it.
+  const chipTopInset = phase !== 'title' ? hudInset(storyOn) : 0;
   useEffect(() => {
     game.setInsets({ left: 0, right: cover.right, top: chipTopInset, bottom: cover.bottom });
   }, [game, cover.right, cover.bottom, chipTopInset]);
@@ -99,7 +100,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   const eventsLeft = freeBeside >= 220 ? `calc(${SAFE_LEFT} + ${STRIP_W + 8}px)` : SAFE_LEFT;
   const playing = phase === 'playing';
   const chip = playing && storyOn;
-  const underHud = chip ? CHIP_TOP + CHIP_MAX_H + 8 : 76;
+  const underHud = hudBottom(storyOn) + 8;
 
   // Tapping the mission chip opens the Director tab at the mission.
   const openMission = useCallback(() => {
@@ -122,7 +123,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
                 <EventsAndToasts left={eventsLeft} right={cover.right} />
               </div>
               <Subtitle right={cover.right} bottom={cover.bottom} />
-              <OfflineBanner left={SAFE_LEFT} top={chip ? underHud : 80} onFix={() => nav.go('settings')} />
+              <OfflineBanner left={SAFE_LEFT} top={underHud} onFix={() => nav.go('settings')} />
             </>
           )}
           {!blocked && <Dock ref={dockRef} vp={vp} portrait={portrait} />}
@@ -130,9 +131,9 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
           {phase === 'briefing' && !blocked && <ChapterCard vp={vp} />}
           {phase === 'report' && !blocked && <ReportCard vp={vp} />}
           {phase === 'ending' && !blocked && <EndingCard vp={vp} />}
-          {playing && !tutorialDone && !blocked && (
-            <Coach onDone={() => game.updateSettings({ tutorialDone: true })} />
-          )}
+          {playing && !blocked && (storyOn
+            ? <StoryCoach />
+            : !tutorialDone && <Coach onDone={() => game.updateSettings({ tutorialDone: true })} />)}
           {blocked && <RotateCard onPlay={() => { game.uiSound('tap'); setPlayAnyway(true); }} />}
         </div>
       </NavCtx.Provider>

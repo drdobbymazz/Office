@@ -12,7 +12,7 @@ import { useContent, useGame, useUi } from './ctx';
 import { useNav } from './Dock';
 import { WhisperTool } from './PowersTab';
 import { useCost, useStory } from './Story';
-import { EMOTION_WORD, STATUS_WORD, ROOM_SHORT, cap, fill, readableOnCream } from './words';
+import { EMOTION_WORD, STATUS_WORD, ROOM_SHORT, cap, doingWhere, fill, readableOnCream } from './words';
 
 function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
   const { pressed, handlers } = usePress();
@@ -43,13 +43,14 @@ function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
 
 function ThoughtBox({ text }: { text: string }) {
   // The thought-cloud look of scene/office/ThoughtBubble: cream, 1 px ink, two trailing puffs.
+  if (!text.trim()) return null;
   return (
     <div style={{ position: 'relative', paddingBottom: 12 }}>
       <div style={{
         background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)', padding: '6px 10px',
-        fontSize: 15, lineHeight: '19px', fontStyle: 'italic', color: 'var(--cth-ink-700)',
+        fontSize: 15, lineHeight: '19px', color: 'var(--cth-ink-700)',
         clipPath: 'polygon(2px 0, calc(100% - 2px) 0, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 0 calc(100% - 2px), 0 2px)'
-      }}>{text || '...'}</div>
+      }}>{text}</div>
       <span style={{ position: 'absolute', left: 22, bottom: 4, width: 8, height: 6, background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' }} />
       <span style={{ position: 'absolute', left: 16, bottom: 0, width: 4, height: 4, background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' }} />
     </div>
@@ -59,7 +60,7 @@ function ThoughtBox({ text }: { text: string }) {
 /** The whispered idea they have held all day, marked in the whisper colour. */
 function ConvictionBox({ text, since }: { text: string; since: number }) {
   return (
-    <div style={{
+    <div data-coach="conviction" style={{
       display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px',
       background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 2px var(--cth-lilac), inset 4px 0 0 var(--cth-lilac)'
     }}>
@@ -77,7 +78,7 @@ function ConvictionBox({ text, since }: { text: string; since: number }) {
 function StatBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ width: 52, fontSize: 13, color: 'var(--cth-ink-700)' }}>{label}</span>
+      <span style={{ flex: '0 0 60px', minWidth: 60, fontSize: 13, color: 'var(--cth-ink-700)' }}>{label}</span>
       <Bar value={value} color={color} h={10} segments={10} />
     </div>
   );
@@ -86,6 +87,7 @@ function StatBar({ label, value, color }: { label: string; value: number; color:
 function CueTool({ who, name }: { who: CharId; name: string }) {
   const game = useGame();
   const price = useCost('cue');
+  const warn = useUi((s) => s.story?.warns?.cue ?? null);
   const { suggestions } = useContent();
   const people = useUi((s) => s.people);
   const [sent, setSent] = useState<string | null>(null);
@@ -93,7 +95,7 @@ function CueTool({ who, name }: { who: CharId; name: string }) {
   return (
     <>
       <TextTool hint={`${name} will try to do exactly this next.`} placeholder="go and apologise to Angela" accent="sky"
-        suggestions={suggestions.cues.map((c) => fill(c, name, other))} sendLabel={`Tell ${name}`} cost={price?.cost} short={price?.short}
+        suggestions={suggestions.cues.map((c) => fill(c, name, other))} sendLabel={`Tell ${name}`} cost={price?.cost} short={price?.short} warn={warn}
         onSend={(t) => { game.cue(who, t); setSent(`${name} has their orders.`); }} />
       {sent && <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14 }}><GIcon name="check" px={16} />{sent}</div>}
     </>
@@ -165,6 +167,19 @@ function Accuse({ who, name }: { who: CharId; name: string }) {
   );
 }
 
+/** Who someone is, what they want and fear (and a visitor's quirk). */
+function About({ d }: { d: PersonDetail }) {
+  return (
+    <>
+      <div style={{ fontSize: 14, lineHeight: '18px' }}>{d.summary}</div>
+      {d.wants && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Wants:</b> {d.wants}</div>}
+      {d.fears && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Fears:</b> {d.fears}</div>}
+      {/* Visitors (Mr Figgis, the inspector) carry a quirk worth knowing. */}
+      {!isCastId(d.id) && d.quirk && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Quirk:</b> {d.quirk}</div>}
+    </>
+  );
+}
+
 function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
   const game = useGame();
   const [d, setD] = useState<PersonDetail | null>(() => game.person(id));
@@ -174,13 +189,15 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
     const t = window.setInterval(() => setD(game.person(id)), 500);
     return () => window.clearInterval(t);
   }, [game, id]);
-  if (!d) return <Section title="NOT FOUND"><Btn onClick={onBack} icon="back">Back</Btn></Section>;
+  if (!d) return <Section title="NOT HERE"><div style={{ fontSize: 14, lineHeight: '18px' }}>They are not in the building right now.</div><Btn onClick={onBack} icon="back">Back to everyone</Btn></Section>;
   const big = game.avatar(d.id, d.emotion) || d.avatar;
   const moodPct = (d.mood + 1) / 2;
+  // Visitors are here for one thing: what they want, fear and like comes first, and they keep no secrets from you.
+  const visitor = !isCastId(d.id);
   return (
     <>
       <Section title={d.name.toUpperCase()} accent="sky"
-        right={<Btn size="sm" variant="secondary" icon="back" label="Back to everyone" sound="close" onClick={onBack} square />}>
+        right={<Btn size="md" variant="secondary" icon="back" label="Back to everyone" sound="close" onClick={onBack} square style={{ margin: '-6px -8px -6px 0' }} />}>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ padding: 4, background: 'var(--cth-cream-200)', boxShadow: `inset 0 0 0 2px var(--cth-ink-900), inset 0 -8px 0 ${d.color}` }}>
             <Portrait src={big} scale={3} />
@@ -193,10 +210,13 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
               <span style={{ fontSize: 15 }}>{cap(EMOTION_WORD[d.emotion])}</span>
             </div>
             <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
-              {d.present ? `${cap(d.doing)} in ${d.roomName}.` : 'Not in the building.'}
+              {d.present ? doingWhere(d.doing, d.roomName) : 'Not in the building.'}
             </div>
           </div>
         </div>
+        {/* Thursday: the day's key action sits right under the portrait. */}
+        <Accuse who={d.id} name={d.name} />
+        {visitor && <About d={d} />}
         {/* Right after a whisper the thought and the conviction are the same words: show them once. */}
         {(!d.conviction || d.thought.trim() !== d.conviction.text.trim()) && <ThoughtBox text={d.thought} />}
         {d.conviction && <ConvictionBox text={d.conviction.text} since={d.conviction.since} />}
@@ -212,7 +232,7 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
             ))}
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
           <Btn stack icon="whisper" variant={tool === 'whisper' ? 'accent' : 'secondary'} accent="lilac" full onClick={() => setTool(tool === 'whisper' ? null : 'whisper')}>Whisper</Btn>
           <Btn stack icon="tell" variant={tool === 'cue' ? 'accent' : 'secondary'} accent="sky" full onClick={() => setTool(tool === 'cue' ? null : 'cue')}>Tell them to...</Btn>
           <Btn stack icon="poke" variant="secondary" full disabled={!d.present} onClick={() => game.poke(d.id)}>Poke</Btn>
@@ -220,63 +240,66 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
         </div>
         {tool === 'whisper' && <WhisperTool fixedWho={d.id} />}
         {tool === 'cue' && <CueTool who={d.id} name={d.name} />}
-        <Accuse who={d.id} name={d.name} />
       </Section>
 
-      <Section title="FEELINGS">
-        {d.bonds.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>No strong feelings about anyone yet.</div>}
-        {d.bonds.slice(0, 6).map((b) => {
-          const score = Math.abs(b.score) > 1 ? b.score / 100 : b.score;
-          return (
-            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Head src={b.avatar} scale={2} box={14} ring={b.color} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 14, color: readableOnCream(b.color), flex: 1 }}>{b.name}</span>
-                  <LikeBar score={score} w={56} />
-                </div>
-                <div style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {b.label}: {b.note}
+      {(!visitor || d.bonds.length > 0) && (
+        <Section title="FEELINGS">
+          {d.bonds.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>No strong feelings about anyone yet.</div>}
+          {d.bonds.slice(0, 6).map((b) => {
+            const score = Math.abs(b.score) > 1 ? b.score / 100 : b.score;
+            return (
+              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Head src={b.avatar} scale={2} box={14} ring={b.color} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 14, color: readableOnCream(b.color), flex: 1 }}>{b.name}</span>
+                    <LikeBar score={score} w={56} />
+                  </div>
+                  <div style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {b.label}: {b.note}
+                  </div>
                 </div>
               </div>
+            );
+          })}
+        </Section>
+      )}
+
+      {(!visitor || d.memories.length > 0) && (
+        <Section title="MEMORIES">
+          {d.memories.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>Nothing yet.</div>}
+          {d.memories.slice(0, 6).map((m, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 14, lineHeight: '17px' }}>
+              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 16, color: 'var(--cth-ink-500)', flexShrink: 0 }}>D{m.day} {formatClock(m.clock)}</span>
+              <span>{m.text}</span>
             </div>
-          );
-        })}
-      </Section>
+          ))}
+        </Section>
+      )}
 
-      <Section title="MEMORIES">
-        {d.memories.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>Nothing yet.</div>}
-        {d.memories.slice(0, 6).map((m, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, fontSize: 14, lineHeight: '17px' }}>
-            <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 16, color: 'var(--cth-ink-500)', flexShrink: 0 }}>D{m.day} {formatClock(m.clock)}</span>
-            <span>{m.text}</span>
-          </div>
-        ))}
-      </Section>
+      {!visitor && (
+        <Section title="SECRET" accent={d.secret ? 'lemon' : undefined}>
+          {d.secret ? (
+            <div style={{ fontSize: 15, lineHeight: '19px' }}>{cap(d.secret)}.</div>
+          ) : (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: 10,
+              background: 'repeating-linear-gradient(45deg, var(--cth-cream-200) 0 4px, var(--cth-cream-300) 4px 8px)',
+              boxShadow: 'inset 0 0 0 2px var(--cth-ink-700)'
+            }}>
+              <GIcon name="lock" px={32} />
+              <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>Locked. Truth serum or a leak might bring it out.</span>
+            </div>
+          )}
+        </Section>
+      )}
 
-      <Section title="SECRET" accent={d.secret ? 'lemon' : undefined}>
-        {d.secret ? (
-          <div style={{ fontSize: 15, lineHeight: '19px' }}>{cap(d.secret)}.</div>
-        ) : (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, padding: 10,
-            background: 'repeating-linear-gradient(45deg, var(--cth-cream-200) 0 4px, var(--cth-cream-300) 4px 8px)',
-            boxShadow: 'inset 0 0 0 2px var(--cth-ink-700)'
-          }}>
-            <GIcon name="lock" px={32} />
-            <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>Locked. Truth serum or a leak might bring it out.</span>
-          </div>
-        )}
-      </Section>
-
-      <Section inset pad={10}>
-        <Label>About</Label>
-        <div style={{ fontSize: 14, lineHeight: '18px' }}>{d.summary}</div>
-        {d.wants && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Wants:</b> {d.wants}</div>}
-        {d.fears && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Fears:</b> {d.fears}</div>}
-        {/* Visitors (Mr Figgis, the inspector) carry a quirk worth knowing. */}
-        {!isCastId(d.id) && d.quirk && <div style={{ fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-700)' }}><b style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>Quirk:</b> {d.quirk}</div>}
-      </Section>
+      {!visitor && (
+        <Section inset pad={10}>
+          <Label>About</Label>
+          <About d={d} />
+        </Section>
+      )}
     </>
   );
 }
@@ -295,7 +318,8 @@ export function PeopleTab() {
       right={<span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14 }}>{here} in</span>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {people.map((p) => (
-          <Row key={p.id} p={p} onTap={() => { game.uiSound('select'); game.select(p.id); nav.openPerson(p.id); }} />
+          // Picking from the list marks them on the floor without flying the camera in: Follow does that.
+          <Row key={p.id} p={p} onTap={() => { game.uiSound('select'); game.select(p.id); game.resetCamera(); nav.openPerson(p.id); }} />
         ))}
       </div>
     </Section>

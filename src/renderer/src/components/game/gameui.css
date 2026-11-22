@@ -16,6 +16,13 @@
   z-index: 10;
 }
 .gu-root * { -webkit-tap-highlight-color: transparent; }
+/* Buttons and fields do not inherit the page's font settings (the browser's own `font` reset puts
+   ligatures back), so the switch-off from global.css is repeated for them: otherwise Pixelify's
+   fi / fl read as "A" on every chip and button ("First come, Arst served"). */
+.gu-root button, .gu-root input, .gu-root textarea, .gu-root select {
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "clig" 0;
+}
 .gu-hit { pointer-events: auto; }
 .gu-root input, .gu-root textarea, .gu-root select {
   -webkit-user-select: text;
@@ -171,6 +178,12 @@ select.gu-field {
   vertical-align: -1px;
 }
 
+/* A touch target taller than it looks: the pad belongs to the control, so a finger that lands
+   just under a slim HUD row still hits it (the row stays slim so the office fits below it). */
+.gu-pad { position: relative; }
+.gu-pad::after { content: ''; position: absolute; left: 0; right: 0; top: -5px; bottom: -7px; }
+.gu-pad-down::after { content: ''; position: absolute; left: 0; right: 0; top: -2px; bottom: -12px; }
+
 /* Cooldown step-wipe: the cover shrinks in 8 steps. */
 .gu-wipe {
   position: absolute;
@@ -225,7 +238,25 @@ select.gu-field {
   line-height: 16px;
   color: var(--cth-ink-500);
 }
-.gu-bubble.k-think .gu-bubble-box { font-style: italic; color: var(--cth-ink-500); }
+/* Thoughts: no faux italics (they smear the pixel steps); the colour and the puffs say "thinking". */
+.gu-bubble.k-think .gu-bubble-box { color: var(--cth-ink-500); }
+/* Older bubbles step back so the newest line reads first. */
+.gu-bubble { transition: opacity 240ms steps(3); }
+.gu-bubble.is-dim { opacity: 0.68; }
+/* No room for a full bubble: a small "..." over the speaker's head until there is. */
+.gu-bubble-tag {
+  display: none;
+  position: relative;
+  padding: 0 4px 2px;
+  background: var(--cth-cream-50);
+  box-shadow: inset 0 0 0 1px var(--cth-ink-900);
+  font-family: var(--cth-font-ui);
+  font-size: 14px;
+  line-height: 12px;
+  color: var(--cth-ink-700);
+}
+.gu-bubble.is-tag .gu-bubble-inner { display: none; }
+.gu-bubble.is-tag .gu-bubble-tag { display: block; }
 .gu-bubble.k-shout .gu-bubble-box {
   background: transparent;
   box-shadow: none;

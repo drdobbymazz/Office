@@ -42,8 +42,11 @@ const HANDS_OFF = 7;
 /** Smallest area the camera frames: about a room's worth of floor. */
 const MIN_FRAME_W = 11 * TILE;
 const MIN_FRAME_H = 7.5 * TILE;
-/** The whole office with a sliver of pavement, so the front door reads as a door. */
-const HOME: Rect = { x: 0, y: TILE, w: MAP_PX_W, h: MAP_PX_H - TILE + 10 };
+/**
+ * The whole office with a sliver of pavement, so the front door reads as a door. 344 px tall: on a
+ * 412 px phone that leaves exactly the HUD's 68 px above it at a crisp 1:1 zoom.
+ */
+const HOME: Rect = { x: 0, y: TILE, w: MAP_PX_W, h: MAP_PX_H - TILE + 8 };
 /** How far past the edge of the world the view may show. */
 const OVERSCAN = 20;
 

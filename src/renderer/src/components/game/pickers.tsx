@@ -8,7 +8,8 @@ import type { CharId, TargetRoomId } from '@/game/core/types';
 import { TARGET_ROOMS } from '@/game/core/types';
 import { ROOMS } from '@/game/core/world';
 import { Head, usePress } from './kit';
-import { useGame, useUi } from './ctx';
+import { useGame, useUi, useViewport } from './ctx';
+import { sheetWidth } from './Dock';
 import { ROOM_SHORT, readableOnCream } from './words';
 
 const PLAN = ROOMS.filter((r) => (TARGET_ROOMS as readonly string[]).includes(r.id));
@@ -19,8 +20,9 @@ const MAX_Y = Math.max(...PLAN.map((r) => r.rect.y + r.rect.h));
 const TOP = PLAN.filter((r) => r.rect.y < 11).sort((a, b) => a.rect.x - b.rect.x);
 const BOTTOM = PLAN.filter((r) => r.rect.y >= 11).sort((a, b) => a.rect.x - b.rect.x);
 const LAYOUT = new Map<string, { x: number; w: number }>();
-// The conference room gives a little width to the accounting corner so "Accounts" fits.
-const WEIGHT: Record<string, number> = { meeting: -2, accounts: 1 };
+// Each tile is wide enough for its name at 11 px on the narrowest phone panel (measured at 740 px wide):
+// the conference room gives a little width to the accounting corner (and every tile stays 40 px or wider).
+const WEIGHT: Record<string, number> = { meeting: -1, accounts: 1.5 };
 for (const band of [TOP, BOTTOM]) {
   const wOf = (r: (typeof PLAN)[number]) => r.rect.w + (WEIGHT[r.id] ?? 0);
   const total = band.reduce((n, r) => n + wOf(r), 0);
@@ -43,12 +45,12 @@ function RoomCell({ id, name, rect, people, selected, accent, onPick }: {
     <button type="button" className="gu-hit" aria-label={name} {...handlers} onClick={() => onPick(id)}
       style={{
         position: 'absolute', left: `calc(${left}% + 1px)`, top: `calc(${top}% + 1px)`, width: `calc(${w}% - 2px)`, height: `calc(${h}% - 2px)`,
-        border: 'none', padding: 4, margin: 0, cursor: 'pointer', touchAction: 'manipulation',
+        border: 'none', padding: 3, margin: 0, cursor: 'pointer', touchAction: 'manipulation',
         background: selected ? `var(--cth-${accent})` : pressed ? 'var(--cth-cream-200)' : 'var(--cth-cream-50)',
         boxShadow: selected ? 'inset 0 0 0 3px var(--cth-ink-900)' : 'inset 0 0 0 2px var(--cth-ink-900)',
         display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', overflow: 'hidden', textAlign: 'left'
       }}>
-      <span style={{ fontSize: 12, lineHeight: '13px', color: 'var(--cth-ink-900)', padding: '1px 1px 0' }}>{ROOM_SHORT[id]}</span>
+      <span style={{ fontSize: 11, lineHeight: '12px', color: 'var(--cth-ink-900)', padding: '1px 0 0', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden' }}>{ROOM_SHORT[id]}</span>
       <span style={{ display: 'flex', flexWrap: 'wrap', gap: 1, maxWidth: '100%' }}>
         {shown.map((p) => <Head key={p.id} src={p.avatar} scale={1} box={12} ring={p.color} />)}
         {people.length > shown.length && <span style={{ fontSize: 12, lineHeight: '10px' }}>+{people.length - shown.length}</span>}
@@ -84,7 +86,7 @@ function PersonCell({ p, selected, disabled, accent, onPick }: { p: PersonUi; se
   return (
     <button type="button" className="gu-hit" disabled={disabled} {...handlers} onClick={onPick} aria-label={p.name}
       style={{
-        minHeight: 64, padding: '6px 2px 4px', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', touchAction: 'manipulation',
+        minHeight: 56, minWidth: 0, padding: '5px 2px 4px', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', touchAction: 'manipulation',
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
         background: selected ? `var(--cth-${accent}-light)` : 'var(--cth-cream-50)',
         boxShadow: selected ? 'inset 0 0 0 3px var(--cth-ink-900)' : pressed ? 'inset 0 0 0 1px var(--cth-ink-900)' : 'inset 0 0 0 1px var(--cth-ink-900), 0 2px 0 var(--cth-ink-700)',
@@ -96,12 +98,15 @@ function PersonCell({ p, selected, disabled, accent, onPick }: { p: PersonUi; se
   );
 }
 
-export function PersonGrid({ value, onPick, exclude, accent = 'coral', cols = 4 }: {
+export function PersonGrid({ value, onPick, exclude, accent = 'coral', cols }: {
   value: CharId | null; onPick: (id: CharId) => void; exclude?: CharId | null; accent?: AccentColorName; cols?: number;
 }) {
   const people = useUi((s) => s.people);
+  const vp = useViewport();
+  // Three across on a phone's panel, so every name fits; four on a wide screen.
+  const n = cols ?? (sheetWidth(vp) < 300 ? 3 : 4);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 6 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 6 }}>
       {people.filter((p) => p.id !== exclude).map((p) => (
         <PersonCell key={p.id} p={p} selected={value === p.id} disabled={!p.present || p.busy} accent={accent} onPick={() => onPick(p.id)} />
       ))}
