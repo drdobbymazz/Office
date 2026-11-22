@@ -85,3 +85,47 @@ export function useDayBand(dayKey: number): boolean {
   }, [dayKey]);
   return on;
 }
+
+/**
+ * A list that lets its items leave: an item removed from `items` stays in the result for `ms`
+ * with `out: true` (so it can play an exit), in the place it had. New items join at the end.
+ */
+export function useLeaving<T>(items: readonly T[], keyOf: (t: T) => string, ms = 170): { item: T; key: string; out: boolean }[] {
+  const [, redraw] = useState(0);
+  const gone = useRef(new Map<string, { item: T; until: number }>());
+  const prev = useRef<readonly T[]>(items);
+  const order = useRef<string[]>(items.map(keyOf));
+  // Worked out while rendering, so a removed item never vanishes for a frame before it leaves.
+  if (prev.current !== items) {
+    const keys = new Set(items.map(keyOf));
+    if (!reducedMotion()) {
+      for (const t of prev.current) {
+        const k = keyOf(t);
+        if (!keys.has(k) && !gone.current.has(k)) gone.current.set(k, { item: t, until: performance.now() + ms });
+      }
+    }
+    for (const k of keys) gone.current.delete(k);
+    prev.current = items;
+  }
+  useEffect(() => {
+    if (!gone.current.size) return;
+    const soonest = Math.min(...Array.from(gone.current.values(), (g) => g.until));
+    const t = window.setTimeout(() => {
+      const now = performance.now();
+      for (const [k, g] of gone.current) if (g.until <= now + 4) gone.current.delete(k);
+      redraw((n) => n + 1);
+    }, Math.max(0, soonest - performance.now()) + 4);
+    return () => window.clearTimeout(t);
+  });
+  const live = new Map(items.map((t) => [keyOf(t), t] as const));
+  const out: { item: T; key: string; out: boolean }[] = [];
+  for (const k of order.current) {
+    const t = live.get(k);
+    if (t !== undefined) out.push({ item: t, key: k, out: false });
+    else { const g = gone.current.get(k); if (g) out.push({ item: g.item, key: k, out: true }); }
+  }
+  const placed = new Set(out.map((x) => x.key));
+  for (const [k, t] of live) if (!placed.has(k)) out.push({ item: t, key: k, out: false });
+  order.current = out.map((x) => x.key);
+  return out;
+}

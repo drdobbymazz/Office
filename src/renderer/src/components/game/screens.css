@@ -149,3 +149,8 @@
   .sc-chev > * { animation: none; }
   .sc-roll { animation: none; }
 }
+
+/* Toasts and chips on their way out: the reverse of gu-drop, four steps, no taps meanwhile. */
+@keyframes sc-leave { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
+.sc-leave { animation: sc-leave 160ms steps(4) forwards; pointer-events: none !important; }
+@media (prefers-reduced-motion: reduce) { .sc-leave { animation: none; opacity: 0; } }

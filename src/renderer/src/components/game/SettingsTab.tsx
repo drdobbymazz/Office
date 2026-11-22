@@ -198,9 +198,10 @@ function StoryAction({ icon, label, ask, go, onGo, danger }: {
         <GIcon name="warn" px={16} style={{ marginTop: 2 }} />
         <span style={{ fontSize: 14, lineHeight: '18px' }}>{ask}</span>
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Btn variant="secondary" size="md" full onClick={() => setSure(false)} sound="close">Keep playing</Btn>
+      {/* One above the other: the panel is narrow on a phone, and both labels must read in full. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <Btn variant={danger ? 'destructive' : 'primary'} size="md" full onClick={() => { setSure(false); onGo(); }} sound="confirm">{go}</Btn>
+        <Btn variant="secondary" size="md" full onClick={() => setSure(false)} sound="close">Keep playing</Btn>
       </div>
     </div>
   );

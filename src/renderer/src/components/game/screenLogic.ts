@@ -33,12 +33,12 @@ export function dayPicture(chapter: number): DayPicture {
 }
 
 /**
- * Page one of the report holds the result. On the shortest phones (under 380 px tall) only the
- * first sentence of what happened stays there; the rest opens page two, so page one never scrolls
- * past its standing changes.
+ * Page one of the report holds the result. On a phone (under 420 px tall) only the first paragraph
+ * of what happened stays there and the rest opens page two, so the standing changes, the bar and
+ * the week fit on page one without scrolling.
  */
 export function resultLines(text: readonly string[], height: number): { shown: string[]; moved: string[] } {
-  return height < 380 && text.length > 1 ? { shown: text.slice(0, 1), moved: text.slice(1) } : { shown: [...text], moved: [] };
+  return height < 420 && text.length > 1 ? { shown: text.slice(0, 1), moved: text.slice(1) } : { shown: [...text], moved: [] };
 }
 
 /** The report's two ways on, in the order they sit (the lead one last, on the right). */

@@ -12,6 +12,7 @@ import { PixelPanel } from '@/components/PixelPanel';
 import type { StoryUi } from '@/game/app/gameApi';
 import type { EmotionId } from '@/game/core/types';
 import { EXTRA_INFLUENCE, STANDING } from '@/game/story/rules';
+import { STORY_TITLE } from '@/game/story/text';
 import { GIcon } from './icons';
 import { Btn, Head, IconTile, Label, Light, Pips, Portrait, StandingBar, standingWord } from './kit';
 import { useContent, useGame, useNow, useUi, type Viewport } from './ctx';
@@ -35,14 +36,19 @@ function bodyType(vp: Viewport): { fontSize: number; lineHeight: string } {
  * The frame every full-screen card shares: the dialog panel, a coloured band on top, the body, and
  * a footer for the buttons. The body decides how it scrolls.
  */
-function Card({ vp, band, head, sub, children, footer, maxW = 880 }: {
+function Card({ vp, band, head, sub, children, footer, maxW = 880, fit = false }: {
   vp: Viewport; band: string; head: React.ReactNode; sub?: React.ReactNode; children: React.ReactNode; footer: React.ReactNode; maxW?: number;
+  /** Only as tall as its content (still never taller than the screen). */
+  fit?: boolean;
 }) {
   const two = !vp.portrait && vp.w >= 700;
   const short = vp.h < 420;
   return (
     <div style={backdrop}>
-      <div style={{ width: two ? `min(${maxW}px, 100%)` : 'min(460px, 100%)', height: '100%', maxHeight: two ? 640 : '100%', display: 'flex' }}>
+      <div style={{
+        width: two ? `min(${maxW}px, 100%)` : 'min(460px, 100%)', height: fit ? 'auto' : '100%',
+        maxHeight: two ? 'min(640px, 100%)' : '100%', display: 'flex'
+      }}>
         <PixelPanel variant="dialog" noPadding style={{ boxShadow: hardShadow, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: short ? '6px 12px 5px' : '8px 12px 6px', background: band,
@@ -240,7 +246,8 @@ const WEEKDAY_UPPER = (w: string) => w.toUpperCase();
  * the extras, the clues, and the budget, standing and week in one row beside Start.
  */
 export function ChapterCard({ vp }: { vp: Viewport }) {
-  const story = useStory();
+  // Held while the wipe covers it (going back to the title clears the story at once).
+  const story = useLast(useStory());
   // After a failed try the player has read the opening: go straight to the briefing, where the help is.
   const [beat, setBeat] = useState<'open' | 'brief'>(() => (story && story.help.length > 0 ? 'brief' : 'open'));
   if (!story) return null;
@@ -256,10 +263,14 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
   const type = bodyType(vp);
   const first = story.chapter === 1;
   const big = two && vp.h >= 380;
-  const scale = dayPicture(story.chapter).faces.length <= 2 && big ? 3 : 2;
+  const pic = dayPicture(story.chapter);
+  const n = pic.faces.length;
+  const scale = n <= 3 && big ? 3 : 2;
+  // The picture's column: wide enough for the faces side by side at their scale.
+  const col = Math.max(156, n * 18 * scale + (n - 1) * 4 + 16);
   const short = vp.h < 420;
   return (
-    <Card vp={vp} band="var(--cth-lemon)" head={`DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`} sub={`Chapter ${story.chapter} of ${story.chapters}`}
+    <Card fit vp={vp} band="var(--cth-lemon)" head={`DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`} sub={`Chapter ${story.chapter} of ${story.chapters}`}
       footer={
         <>
           <Btn variant="ghost" size={short ? 'md' : 'lg'} icon="back" label="Back to the title" onClick={() => game.toTitle()} sound="close">Title</Btn>
@@ -267,19 +278,20 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
           <Btn variant="primary" size={short ? 'md' : 'lg'} icon="arrow-right" onClick={onNext} sound="tap">Today's goal</Btn>
         </>
       }>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, padding: two ? '12px 0 0 16px' : '10px 0 0 12px' }}>
+      <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, padding: two ? '12px 0 0 16px' : '10px 0 0 12px', minWidth: 0 }}>
         {two && (
-          <div style={{ width: scale === 3 ? 172 : 156, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 12 }}>
+          <div style={{ width: col, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 12 }}>
             <DayFaces chapter={story.chapter} scale={scale} />
           </div>
         )}
-        <ScrollArea style={{ flex: 1 }} inner={{ gap: 10, padding: two ? '0 16px 14px 0' : '0 12px 14px 0' }}>
+        <ScrollArea style={{ flex: '1 1 auto' }} inner={{ gap: 10, padding: two ? '0 16px 14px 0' : '0 12px 14px 0' }}>
           {first && (
-            <div className="sc-drop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px', padding: '3px 5px 1px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
-                CLOSING TIME
+            // A new week starts here: the story's own title, before the day's.
+            <div className="sc-drop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '16px', padding: '4px 6px 2px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
+                {STORY_TITLE.toUpperCase()}
               </span>
-              <span style={{ fontSize: 13, color: 'var(--cth-ink-500)' }}>A story in five days</span>
+              <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>A story in five days, Monday to Friday</span>
             </div>
           )}
           <h2 className="sc-drop" style={{ margin: 0, fontFamily: 'var(--cth-font-display)', fontWeight: 400, fontSize: big ? 24 : 16, lineHeight: big ? '32px' : '24px', flexShrink: 0 }}>
@@ -464,11 +476,14 @@ function Stat({ label, value, sub, color }: { label: string; value: string; sub?
 }
 
 export function ReportCard({ vp }: { vp: Viewport }) {
-  // The card stays on screen while the wipe covers it, after the game has moved on.
+  // The card stays as it was while the wipe covers it, after the game has moved on to the next day.
   const r = useLast(useUi((s) => s.report));
-  const story = useLast(useStory());
+  const live = useStory();
+  const story = useLast(live?.result ? live : null);
+  const mode = useUi((s) => s.mode);
   if (!r) return null;
-  return story && story.result ? <StoryReport vp={vp} story={story} /> : <SandboxReport vp={vp} />;
+  if (mode === 'story') return story ? <StoryReport vp={vp} story={story} /> : null;
+  return <SandboxReport vp={vp} />;
 }
 
 /** The day's write-up: the headline, the typed story, the quotes, the awards and some numbers. */
@@ -670,7 +685,7 @@ function ResultPage({ vp, story }: { vp: Viewport; story: StoryUi }) {
   const won = result.won;
   const week = story.week.map((d) => (d.chapter === story.chapter && !flipped ? { ...d, result: null } : d));
   const left = (
-    <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: vp.h < 420 ? 6 : 8 }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px 6px 6px', minHeight: 44, flexShrink: 0,
         background: stamped ? (won ? 'var(--cth-mint)' : 'var(--cth-coral)') : 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
@@ -768,7 +783,9 @@ export function FinaleSkip() {
  */
 export function EndingCard({ vp }: { vp: Viewport }) {
   const game = useGame();
-  const story = useStory();
+  const live = useStory();
+  // Held while the wipe covers it ("Play again" starts the next week at once).
+  const story = useLast(live?.ending ? live : null);
   const [page, setPage] = useState(0);
   if (!story || !story.ending) return null;
   const e = story.ending;
@@ -889,7 +906,7 @@ function Credits({ style }: { style?: React.CSSProperties }) {
       <div ref={box} className={still ? 'sc-scroll' : undefined}
         style={{ position: 'relative', flex: 1, minHeight: 120, overflow: still ? undefined : 'hidden', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', background: 'var(--cth-cream-100)' }}>
         <div ref={list} className={still ? undefined : 'sc-roll'}
-          style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, ['--sc-roll' as string]: `-${roll}px`, ['--sc-roll-time' as string]: `${Math.max(6, roll / 22)}s`, ['--sc-roll-steps' as string]: steps } as React.CSSProperties}>
+          style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 12px', maxWidth: 300, margin: '0 auto', ['--sc-roll' as string]: `-${roll}px`, ['--sc-roll-time' as string]: `${Math.max(6, roll / 30)}s`, ['--sc-roll-steps' as string]: steps } as React.CSSProperties}>
           {people.map((p) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Head src={p.avatar} scale={2} box={14} ring={p.color} />
@@ -899,7 +916,7 @@ function Credits({ style }: { style?: React.CSSProperties }) {
               </div>
             </div>
           ))}
-          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px', color: 'var(--cth-ink-500)', padding: '8px 0 4px' }}>THANKS FOR PLAYING</div>
+          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px', color: 'var(--cth-ink-500)', padding: '8px 0 4px', textAlign: 'center' }}>THANKS FOR PLAYING</div>
         </div>
       </div>
     </div>

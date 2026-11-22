@@ -30,14 +30,16 @@ export function CeremonyBanner({ right, top }: { right: number; top: number }) {
       position: 'absolute', left: 0, right, top, display: 'flex', justifyContent: 'center',
       pointerEvents: 'none', zIndex: 16, padding: '0 8px'
     }}>
-      {main ? <MainStamp key={shown.id} c={shown} won={won} /> : <ExtraStamp key={shown.id} c={shown} won={won} />}
+      {main ? <MainStamp key={shown.id} c={shown} won={won} avail={Math.max(200, window.innerWidth - right - 24)} /> : <ExtraStamp key={shown.id} c={shown} won={won} />}
     </div>
   );
 }
 
 /** Today's goal: big words in Press Start 2P on mint or coral, inside a double ink edge. */
-function MainStamp({ c, won }: { c: CeremonyUi; won: boolean }) {
+function MainStamp({ c, won, avail }: { c: CeremonyUi; won: boolean; avail: number }) {
   const fill = won ? 'var(--cth-mint)' : 'var(--cth-coral)';
+  // Press Start 2P is square: the biggest size whose words still fit beside the icon.
+  const size = [24, 20, 16, 12].find((z) => c.title.length * z + 104 <= avail) ?? 12;
   return (
     <div className="sc-stamp" style={{ ['--sc-hold' as string]: `${HOLD_MAIN}ms`, maxWidth: '100%' } as React.CSSProperties}>
       <div style={{
@@ -51,7 +53,7 @@ function MainStamp({ c, won }: { c: CeremonyUi; won: boolean }) {
           <GIcon name={won ? 'trophy' : 'x'} px={32} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 24, lineHeight: '28px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: size, lineHeight: `${size + 4}px`, color: 'var(--cth-ink-900)', whiteSpace: 'nowrap' }}>
             {c.title}
           </span>
           {c.detail && (

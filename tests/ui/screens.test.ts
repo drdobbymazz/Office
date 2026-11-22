@@ -55,9 +55,10 @@ describe('report', () => {
     expect(a.nextLabel).toBe('Move on anyway');
   });
 
-  it('keeps page one to the first sentence only on the shortest phones', () => {
+  it('keeps page one to the first paragraph on phones, all of it on a tablet', () => {
     const text = ['Michael and ten others were in the room.', 'The vice president explained.'];
-    expect(resultLines(text, 412)).toEqual({ shown: text, moved: [] });
+    expect(resultLines(text, 800)).toEqual({ shown: text, moved: [] });
+    expect(resultLines(text, 412)).toEqual({ shown: [text[0]], moved: [text[1]] });
     expect(resultLines(text, 360)).toEqual({ shown: [text[0]], moved: [text[1]] });
     expect(resultLines([text[0]], 360)).toEqual({ shown: [text[0]], moved: [] });
   });
