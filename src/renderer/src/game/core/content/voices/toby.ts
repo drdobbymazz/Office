@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const toby: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's been in there all morning. Should I check on him? He hates when I check.",
+      "I knocked on Michael's door. He said HR isn't allowed to knock. I don't think that's a rule.",
+      "If Michael's hiding, there's probably a form for that. I should look."
+    ],
+    closure: [
+      "If they close us, someone has to tell everyone properly. That's... probably me.",
+      "I have the paperwork for a closure. I hoped I'd never need it.",
+      "Nobody tells HR anything. I heard about the closure from the vending machine guy."
+    ],
+    feud: [
+      "Angela and Oscar should really talk it through. I have a form for that.",
+      "I offered to help Angela and Oscar. They both told me to go away. Together, at least.",
+      "Workplace conflict is technically my area. Nobody ever lets me do my area."
+    ],
+    client: [
+      "Mr Figgis seems stressed. I could... no, nobody wants HR right now.",
+      "Please, someone stop Michael before he hugs the client.",
+      "If Mr Figgis complains, I'll have to file it. I'll file it nicely."
+    ],
+    leak: [
+      "Leaking to Corporate is a serious matter. I should probably file a report about it.",
+      "I'm not the leak. Corporate never reads my emails anyway.",
+      "Whoever it is, they should come to HR. We could talk about it. Confidentially."
+    ],
+    inspection: [
+      "The inspector asked where HR was. Nobody pointed at me.",
+      "I hope the inspector reads the safety forms. Somebody should.",
+      "Everyone, please follow procedure while the inspector is here. Please."
+    ],
+    waiting: [
+      "The inspection's done. I think it went... I don't actually know how it went.",
+      "Corporate decides tonight. I've prepared two letters. I hope we need the nice one.",
+      "Waiting is hard, I'm told. Nobody ever asks how I'm waiting."
+    ],
+    verdict: [
+      "Whatever happens, I want everyone to know my door was always open. Nobody came.",
+      "If this is the end, I'll do the exit interviews. Nobody will come to those either.",
+      "Open or closed, I'll file the paperwork. Someone has to."
+    ]
+  },
   barks: {
     scared: ["Oh. Oh no. Oh gosh.", "I should probably... run?", "This isn't... okay."],
     startled: ["Oh! Sorry.", "Oh, gosh.", "I didn't... sorry."],

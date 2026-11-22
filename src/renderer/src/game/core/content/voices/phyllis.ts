@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const phyllis: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's door has been shut all morning. Bob says that's never a good sign.",
+      "I made Michael a cup of tea. He wouldn't open the door. I drank it.",
+      "Something is going on with Michael. I'll find out. I always do."
+    ],
+    closure: [
+      "If they close us, Bob says I can work at his place. It's very cold there.",
+      "Closing the branch. Oh dear. I'll have to tell everyone. Gently. Everyone.",
+      "I've knitted through worse news than this. Not much worse, mind you."
+    ],
+    feud: [
+      "Angela and Oscar still aren't speaking. I give it until lunch. Maybe tea.",
+      "I heard what Angela said about Oscar. I'm not repeating it. Unless you ask.",
+      "Those two need a good talk. Bob and I talk things out. Mostly I talk."
+    ],
+    client: [
+      "Mr Figgis reminds me of Bob's uncle. Grumpy, but he loved a good dog.",
+      "I'll sell to Mr Figgis. Older men like me. They trust a cardigan.",
+      "Someone keep Michael away from that poor man. Please."
+    ],
+    leak: [
+      "Somebody's been telling Corporate things. I wouldn't know anything about that, dear.",
+      "A leak? Oh my. I'd never. I mean, I hear things. Everyone hears things.",
+      "Whoever it is, they're very well informed. Almost as well as me."
+    ],
+    inspection: [
+      "The inspector's here. Look sharp, everyone. Bob always says first impressions count.",
+      "That inspector hasn't smiled once. Bob could sell him a fridge.",
+      "I've put my knitting away for the inspector. My hands don't know what to do."
+    ],
+    waiting: [
+      "The inspector's gone. Now we wait. I'll knit something. Something long.",
+      "Corporate decides tonight. Bob's picking me up either way.",
+      "Michael keeps looking at the phone. Poor thing. I almost feel sorry for him."
+    ],
+    verdict: [
+      "Whatever they decide, I'll have the best story at dinner. Bob loves a story.",
+      "If this is goodbye, I want everyone to know I knew all your secrets.",
+      "Open or closed, I'm finishing this scarf."
+    ]
+  },
   barks: {
     scared: ["Oh dear. Oh dear.", "Bob! Where's Bob?", "Oh, I don't like this."],
     startled: ["Oh my goodness!", "Oh! You startled me.", "Goodness gracious."],

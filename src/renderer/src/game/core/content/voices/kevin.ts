@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const kevin: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's door is shut. He didn't even come out for the doughnuts. Weird.",
+      "If Michael's hiding, can I have his muffin? He's not using it.",
+      "Michael is acting weird. Weirder. I don't like it."
+    ],
+    closure: [
+      "If they close us, where will I keep my snacks?",
+      "The branch might close. I'm going to eat my emergency chocolate.",
+      "I don't want a new job. New jobs have new vending machines. I don't know those."
+    ],
+    feud: [
+      "Angela and Oscar aren't talking. I have to carry notes. My arms are tired.",
+      "I can't do the accounts alone. I tried. The numbers got mad at me.",
+      "Angela says Oscar's wrong. Oscar says Angela's wrong. I'm hungry."
+    ],
+    client: [
+      "Mr Figgis looks mean. I hid my snacks just in case.",
+      "If Mr Figgis signs, do we get a party? Parties have cake.",
+      "I said hi to Mr Figgis. He looked at me like I was a puddle."
+    ],
+    leak: [
+      "Someone's been telling Corporate stuff. I didn't. I don't know any stuff.",
+      "If the leak says I eat at my desk, that's true. But they shouldn't say it.",
+      "Is the leak a person or a pipe? Oh. A person. Okay."
+    ],
+    inspection: [
+      "The inspector is here. I put my snacks in a drawer. All of them. It's very full.",
+      "Act smart for the inspector. How do you act smart? Glasses?",
+      "The inspector looked at my desk and wrote something down. Probably snack."
+    ],
+    waiting: [
+      "Corporate decides tonight. I'm too nervous to eat. Just kidding. I'm eating.",
+      "Waiting is boring. Waiting with snacks is fine.",
+      "The inspector's gone. Can I take my snacks back out now?"
+    ],
+    verdict: [
+      "Whatever happens, this was the best vending machine I ever had.",
+      "If we close, I'm taking my big pot. Everyone knows which one.",
+      "I'll miss everybody. And the fridge. Mostly everybody."
+    ]
+  },
   barks: {
     scared: ["Uh oh.", "Nope. Nope.", "Somebody save the snacks."],
     startled: ["Whoa!", "Buh?", "Gah! I dropped my chip."],

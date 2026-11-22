@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const kelly: VoiceBank = {
+  story: {
+    hiding: [
+      "Oh my God, Michael is hiding? That's like, so dramatic. I love it.",
+      "Michael hasn't come out. Maybe he's getting married! Or fired! Or both!",
+      "Something is going on with Michael and I need to know first."
+    ],
+    closure: [
+      "Oh my God, they can't close us! Where will I see Ryan every day?",
+      "If the branch closes, my life is literally over. Like a show nobody renewed.",
+      "Closing? That's so unfair. I just got my desk exactly how I like it."
+    ],
+    feud: [
+      "Angela and Oscar aren't speaking? Oh my God, I need every detail.",
+      "This is like when two celebrities unfollow each other. So intense.",
+      "Somebody get those two in a room. I want to watch."
+    ],
+    client: [
+      "Mr Figgis is so grumpy. He looks like an actor who plays a grumpy guy.",
+      "If Mr Figgis signs, can we have a party? I have outfit ideas.",
+      "I said hi to Mr Figgis and he said nothing. Rude. But kind of iconic."
+    ],
+    leak: [
+      "Oh my God, a leak? It's not me! I only email Ryan. Like, a lot.",
+      "Whoever's emailing Corporate is so dead. Socially. I'll make sure.",
+      "I bet it's someone quiet. It's always someone quiet. Like on TV."
+    ],
+    inspection: [
+      "The inspector is here! Is my hair okay? Be honest. No, lie.",
+      "He looked at me! The inspector looked right at me! Was it good?",
+      "I'm going to act so professional for the inspector. Watch me. Watch."
+    ],
+    waiting: [
+      "I can't wait until tonight! I mean, I can. I have to. It's agony.",
+      "Corporate decides tonight? I need a snack and a cry.",
+      "The inspector's gone. Did he like us? He liked me, right?"
+    ],
+    verdict: [
+      "Whatever happens, this week was better than any reality show.",
+      "If this is goodbye, I'm going to cry so hard. Like, prettily.",
+      "Win or lose, I'm posting about this. Tasteful. Mostly about me."
+    ]
+  },
   barks: {
     scared: ["Oh my God, I'm literally dying!", "I'm too pretty to die!", "Ryan! Save me!"],
     startled: ["Oh my God!", "Literally what?", "Shut up! No way!"],

@@ -7,7 +7,7 @@ import { createSim } from '@/game/sim';
 import { CHAOS_SCRIPTS } from '@/game/sim/chaos';
 import { claudeAvailable, createBrain, createReflexes, probeOllama } from '@/game/brain';
 import { createAudio } from '@/game/audio';
-import { BANK, SUGGESTIONS, TIPS } from '@/game/core/content';
+import { VOICES, SUGGESTIONS, TIPS } from '@/game/core/content';
 import { colors } from '@/design/tokens';
 import './game.css';
 
@@ -39,7 +39,7 @@ export function App() {
     // Speech bubbles are measured as they are made, so the fonts must be in before the first line is spoken.
     fontsReady().then(() => createGame(host, {
       createActorView, createFxView, portraitUrl, createSim, chaosScripts: CHAOS_SCRIPTS,
-      createBrain, createReflexes, probeOllama, claudeAvailable, createAudio, bank: BANK
+      createBrain, createReflexes, probeOllama, claudeAvailable, createAudio, bank: VOICES
     }))
       .then((g) => {
         if (cancelled) {

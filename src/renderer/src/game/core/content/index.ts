@@ -1,6 +1,7 @@
 // All hand-written text in one place.
-export type { VoiceBank, InstinctBank, ChaosText, Suggestions, Tips } from './types';
-export { BANK } from './bank';
+export type { VoiceBank, InstinctBank, LooseVoiceBank, ChaosText, Suggestions, Tips, VisitorVoice } from './types';
+export { BANK, VOICES } from './bank';
+export { VISITOR_VOICES } from './voices/visitors';
 export { CHAOS_TEXT } from './chaosText';
 export { SUGGESTIONS } from './suggestions';
 export { TIPS } from './tips';

@@ -12,10 +12,16 @@
 //   hateful or gory.
 
 import type { CastId, ChaosId } from '@/game/core/types';
-import type { BarkKind, CustomVibe } from '@/game/brain/api';
+import type { BarkKind, CustomVibe, StoryTheme } from '@/game/brain/api';
 
 /** Everything one person can say without the model. */
 export interface VoiceBank {
+  /**
+   * Story mode: what they say about the week's story, by theme (brain/api.ts STORY_THEMES). Each
+   * line must work to open a chat or to answer one, so it is a statement or a question to anyone,
+   * never to a named person. At least 3 per theme.
+   */
+  story?: Partial<Record<StoryTheme, string[]>>;
   /** Instant exclamations by situation. At least 3 each. */
   barks: Record<BarkKind, string[]>;
   /** First reaction when an event starts (as it affects THEM). At least 2 each. */
@@ -35,6 +41,31 @@ export interface VoiceBank {
 }
 
 export type InstinctBank = Record<CastId, VoiceBank>;
+
+/** A bank where any part, and any key inside a part, may be missing: the generic voice fills the gaps. */
+export interface LooseVoiceBank {
+  story?: Partial<Record<StoryTheme, string[]>>;
+  barks?: Partial<Record<BarkKind, string[]>>;
+  chaos?: Partial<Record<ChaosId, string[]>>;
+  idle?: string[];
+  openers?: string[];
+  replies?: Partial<VoiceBank['replies']>;
+  whispered?: string[];
+  announced?: string[];
+  custom?: Partial<Record<CustomVibe, string[]>>;
+}
+
+/**
+ * A visitor's voice (Mr Figgis, the inspector): part of a bank for the no-model brain, and a line on
+ * how they talk plus examples for the model's prompt.
+ */
+export interface VisitorVoice {
+  /** How they talk, one plain sentence. */
+  speech: string;
+  /** Two or three short lines in their voice. */
+  examples: string[];
+  bank: LooseVoiceBank;
+}
 
 /**
  * Plain narration for each event. Placeholders: {room} (e.g. "the Break Room"),

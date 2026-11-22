@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const michael: VoiceBank = {
+  story: {
+    hiding: [
+      "I am not hiding. I am working from my office. With the door shut. On purpose.",
+      "Nobody come in! I'm in a very important meeting with myself.",
+      "Is everyone out there okay? Don't answer. Not because anything is wrong."
+    ],
+    closure: [
+      "Nobody is closing anything. I would know. I'm the manager. I'd be told, eventually.",
+      "If they close us, I am chaining myself to the copier. Who has a chain?",
+      "This branch is a family. You can't close a family. Can you? Someone check."
+    ],
+    feud: [
+      "Angela and Oscar are not speaking. Very sad. Should I do a skit about it?",
+      "Two of my children are fighting. I need to get them in a room. With snacks.",
+      "Accounting is at war. I'm calling it the Number Wars. No, the Sum Battle."
+    ],
+    client: [
+      "Mr Figgis wants a straight answer. I'm going to give him the straightest joke ever.",
+      "Leave Mr Figgis to me. I can close any deal. Mostly with charm.",
+      "Our biggest client is here. Everybody act like you love selling paper. I do."
+    ],
+    leak: [
+      "Someone is emailing Corporate behind my back? At least copy me in.",
+      "Whoever the leak is, I forgive you. Also you're fired. Also I forgive you.",
+      "A traitor in my own office. This is like a movie. I'm the hero, obviously."
+    ],
+    inspection: [
+      "The inspector is coming. Everyone be yourselves. No, wait. Be better than yourselves.",
+      "When the inspector walks in, laugh at my jokes. Not too hard. Natural laughing.",
+      "I've prepared a short speech for the inspector. Forty minutes. With slides."
+    ],
+    waiting: [
+      "Corporate decides tonight. I can't eat. I've only had four doughnuts.",
+      "Is the phone ringing? It's not ringing. Why isn't it ringing?",
+      "Whatever happens tonight, I want you all to know I was a great boss."
+    ],
+    verdict: [
+      "Whatever Corporate decides, this has been the best week of my life. And the worst.",
+      "Win or lose, I love this branch. Write that on my tombstone. Or my mug.",
+      "If this is goodbye, I'm not crying. My eyes are just leaving early."
+    ]
+  },
   barks: {
     scared: ["Somebody hold me!", "I'm too young and popular!", "Save the boss first!"],
     startled: ["Whoa! Is this a prank?", "Gah! Who's there?", "I didn't scream. That was Toby."],

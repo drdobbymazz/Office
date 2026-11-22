@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const andy: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's door is shut. Should I sing outside it? I'm going to sing outside it.",
+      "The boss is in lockdown. Something's up. I can feel it in my vocal cords.",
+      "Michael won't come out. Maybe he needs a pep talk. I give amazing pep talks."
+    ],
+    closure: [
+      "They can't close us! We're a team! A singing team, if anyone joins in.",
+      "If the branch closes, I'll go back to college. They loved me there.",
+      "Closing is just opening backwards. I read that somewhere. Or I made it up."
+    ],
+    feud: [
+      "Angela and Oscar need a duet. Harmony fixes everything. Trust me, I'm trained.",
+      "Accounting is fighting? Not on my watch. Well, it's not my watch. But still.",
+      "I tried to get Angela and Oscar to high five. Nobody high fived."
+    ],
+    client: [
+      "Leave Mr Figgis to me. I'll win him over with a song about hardware.",
+      "Mr Figgis hasn't laughed once. Tough crowd. I love a tough crowd.",
+      "I'm going to call Mr Figgis Big Fig. People love nicknames."
+    ],
+    leak: [
+      "A leak? Not me. I'd sign my emails. With a little drawing.",
+      "Whoever's emailing Corporate, I hope they mentioned my sales numbers.",
+      "Everyone's a suspect! Like a murder mystery! Except nobody's dead! Right?"
+    ],
+    inspection: [
+      "An inspector! I'll show him my firm handshake. Everybody loves a firm handshake.",
+      "Should I sing for the inspector? Just a little welcome song? No? Okay.",
+      "Smile, everybody! Corporate likes teeth!"
+    ],
+    waiting: [
+      "The inspection's over! I think we nailed it. Did we nail it? Somebody say yes.",
+      "Corporate decides tonight. I'm not nervous. I'm just humming a lot.",
+      "Waiting is the worst. Let's do a group chant. No? Group silence. Fine."
+    ],
+    verdict: [
+      "Whatever happens, this week deserves a song. A sad one. Or a happy one.",
+      "If we close, I'll sing at the goodbye party. Nobody stop me.",
+      "Win or lose, you guys are my best team. Except my old singing group."
+    ]
+  },
   barks: {
     scared: ["Mayday! Mayday!", "Not cool! Not cool!", "Somebody hold me. Kidding. Do it."],
     startled: ["Whoa, buddy!", "Holy moly!", "Jumping jellybeans!"],
