@@ -521,7 +521,7 @@ const FAX_GAPS = { busy: [66, 76], normal: [82, 94], quiet: [98, 112] } as const
 const FIRST_SEND = 48;
 const LEAK_STAY = 14;
 const BEEP_AFTER = 2;
-const HERRING_STAY = 34;
+const HERRING_STAY = 45;
 /** On an overlap trip the leak waits for the other person to reach the fax machine, at most this long. */
 const HERRING_WAIT = 30;
 const LEAK_THOUGHT_EVERY = 60;
@@ -540,6 +540,8 @@ interface FaxTrip {
   herring: CastId | null;
   herringThere: boolean;
   arrivedAt: number;
+  /** Everyone sent to keep the leak company on this trip. */
+  tried: CastId[];
 }
 
 class LeakRun implements ChapterRun {
@@ -655,41 +657,51 @@ class LeakRun implements ChapterRun {
     const s = this.c.sim;
     const leak = s.person(this.leak);
     const t = this.trip;
+    const leakFree = !!leak && leak.present && leak.available && !leak.sceneId;
     if (!t) {
       if (s.time < this.nextSend || s.time < this.quietUntil) return;
-      if (!leak || !leak.present || !leak.available || leak.plan || leak.sceneId) {
+      if (!leakFree || leak!.plan) {
         this.nextSend = s.time + 5;
         return;
       }
       const n = this.beeps.length + 1;
-      let herring: CastId | null = n <= 2 ? this.herrings[n - 1] ?? null : this.c.rng() < 0.35 ? this.c.rng.pick(this.herrings) : null;
-      if (herring) {
-        const h = s.person(herring);
-        if (!h || !h.present || !h.available || h.sceneId) {
-          // The first two pages wait a little for their company; after that the leak goes alone.
-          if (n <= 2 && this.postponed < 8) {
-            this.postponed += 1;
-            this.nextSend = s.time + 5;
-            return;
-          }
-          herring = null;
-        }
+      // The first two pages always have company at the fax machine (someone new for the second);
+      // later pages now and then.
+      const wanted = n <= 2 || this.c.rng() < 0.35;
+      const avoid = n === 2 ? (this.beeps[0]?.there ?? []) : [];
+      const herring = wanted ? this.companion(avoid, n <= 2 ? this.herrings[n - 1] : undefined) : null;
+      if (wanted && !herring && n <= 2 && this.postponed < 8) {
+        this.postponed += 1;
+        this.nextSend = s.time + 5;
+        return;
       }
       this.postponed = 0;
-      this.trip = { stage: herring ? 'herring' : 'leak', started: s.time, herring, herringThere: false, arrivedAt: -1 };
-      if (herring) {
-        const who = herring;
-        this.sendHerring(who, HERRING_STAY, () => {
-          if (this.trip?.herring === who) this.trip.herringThere = true;
-        });
-      } else this.leakGoes();
+      this.trip = { stage: herring ? 'herring' : 'leak', started: s.time, herring, herringThere: false, arrivedAt: -1, tried: herring ? [herring] : [] };
+      if (herring) this.sendCompany(herring);
+      else this.leakGoes();
       return;
     }
     if (t.stage === 'herring') {
-      const waited = s.time - t.started;
-      if (t.herringThere || waited > HERRING_WAIT) {
-        if (leak && leak.present && leak.available && !leak.sceneId) this.leakGoes();
-        else if (waited > HERRING_WAIT + 25) this.abandon();
+      const h = t.herring ? s.person(t.herring) : undefined;
+      const there = !!h && h.present && h.doing === LEAK.fax.stay;
+      if (there && leakFree) {
+        this.leakGoes();
+        return;
+      }
+      // Company that left again, or never got there: send someone else (twice at most), then go alone.
+      const gone = t.herringThere && !there;
+      if (gone || (!t.herringThere && s.time - t.started > HERRING_WAIT)) {
+        const n = this.beeps.length + 1;
+        const avoid = [...t.tried, ...(n === 2 ? (this.beeps[0]?.there ?? []) : [])];
+        const next = t.tried.length < 3 ? this.companion(avoid) : null;
+        if (next) {
+          t.herring = next;
+          t.herringThere = false;
+          t.started = s.time;
+          t.tried.push(next);
+          this.sendCompany(next);
+        } else if (leakFree) this.leakGoes();
+        else if (s.time - t.started > HERRING_WAIT + 25) this.abandon();
       }
       return;
     }
@@ -702,6 +714,26 @@ class LeakRun implements ChapterRun {
       if (leak && leak.present && leak.doing === LEAK.fax.stay) this.beep();
       else this.abandon();
     }
+  }
+
+  /** Someone innocent and free to run an errand to the fax machine now: `prefer` first, then the day's errand runners, then anyone. */
+  private companion(avoid: CharId[], prefer?: CastId): CastId | null {
+    const s = this.c.sim;
+    const free = (id: CastId): boolean => {
+      const p = s.person(id);
+      return !!p && p.present && p.available && !p.sceneId && !p.plan && !avoid.includes(id) && id !== this.leak;
+    };
+    if (prefer && free(prefer)) return prefer;
+    const runner = this.herrings.find(free);
+    if (runner) return runner;
+    const others = LEAK.candidates.filter((id) => !LEAK.witnesses.includes(id) && free(id));
+    return others.length ? this.c.rng.pick(others) : null;
+  }
+
+  private sendCompany(who: CastId): void {
+    this.sendHerring(who, HERRING_STAY, () => {
+      if (this.trip?.herring === who) this.trip.herringThere = true;
+    });
   }
 
   private leakGoes(): void {
