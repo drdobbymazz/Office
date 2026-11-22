@@ -44,6 +44,24 @@ export interface WeekNotes {
   figgis?: boolean;
   leakFound?: boolean;
   inspection?: number;
+  /** Thursday: when the fax machine beeped for the leak (clock minutes). */
+  leakTimes?: number[];
+  /** Thursday: people wrongly accused of leaking (they are still hurt on Friday). */
+  wronged?: CastId[];
+  /** Friday: what became of Michael's farewell speech. */
+  speech?: 'during' | 'after' | 'never';
+  /** Friday: problems on the inspector's tour, and how many were dealt with. */
+  tour?: { of: number; fixed: number };
+  /** The whole week, for the ending's epilogue: what the player used and who they carried. */
+  stats?: WeekStats;
+}
+
+export interface WeekStats {
+  whispers: number;
+  announcements: number;
+  powers: number;
+  /** How many times each person was picked up. */
+  carried: Partial<Record<CastId, number>>;
 }
 
 /** Something the player did with a tool or power (picking up and poking are seen on the bus). */
