@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { CharId } from '@/game/core/types';
 import { convictionLever, invitesPeople, keepsAway, stayedLine } from '@/game/director/summon';
 import { MEMO } from '@/game/story/text';
+import { STANDING } from '@/game/story';
 import { play, storyAt, type Played } from './harness';
 
 const othersInMeeting = (g: Played): number =>
@@ -78,8 +79,7 @@ describe('Monday: The Memo', () => {
       expect(g.story.state.notes.closureKnown).toBe(true);
       const r = g.story.finishDay(g.day, g.sim.serialize());
       expect(r.won).toBe(false);
-      expect(r.changes[0].text).toBe(MEMO.changeLost);
-      expect(r.changes[0].delta).toBeLessThan(0);
+      expect(r.changes[0]).toEqual({ text: MEMO.changeLost, delta: STANDING.lost });
       // No extra goal wins itself.
       expect(r.extras).toEqual([]);
     });
