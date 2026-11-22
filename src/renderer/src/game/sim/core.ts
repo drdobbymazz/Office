@@ -1180,11 +1180,13 @@ export class SimCore implements DirectorSimApi {
         if (a.room !== b.room || (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > 40 * 40) continue;
         if (this.time - a.nearSince < 4 || this.time - b.nearSince < 4) continue;
         const where = a.doing.match(/ (at|by|in) (.+)$/);
+        // "at his desk" is somebody's desk: say whose ("at Oscar's desk"), not "both at his desk".
+        const place = where ? `${where[1]} ${where[2].replace(/^(his|her|their) /, `${a.name}'s `)}` : `in ${this.roomName(a.room)}`;
         this.requestScene({
           people: [a.id, b.id],
           room: a.room,
           trigger: 'ambient',
-          why: `${a.name} and ${b.name} are both ${where ? `${where[1]} ${where[2]}` : `in ${this.roomName(a.room)}`}.`,
+          why: `${a.name} and ${b.name} run into each other ${place}.`,
           priority: 1,
           staleAfter: 15,
           minLines: 2,

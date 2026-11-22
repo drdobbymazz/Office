@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const pam: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael asked me to hold all his calls. All of them. Even his mother's.",
+      "He slid a note under his door. It just says busy. With three exclamation marks.",
+      "I've never seen Michael want to be alone. It's honestly a little scary."
+    ],
+    closure: [
+      "They can't close us. I just got the good stapler.",
+      "If the branch closes, I don't know what I'll do. Probably draw it. Then cry.",
+      "I keep looking around and thinking, this might be the last time. Oh my God."
+    ],
+    feud: [
+      "Angela and Oscar walked past each other like ships. Very angry ships.",
+      "Kevin had to pass a note from Angela to Oscar. It was just a frowning face.",
+      "Somebody needs to get those two talking before five. The accounts won't do themselves."
+    ],
+    client: [
+      "I've spoken to Mr Figgis on the phone. He has never once smiled. I could tell.",
+      "Last time I offered Mr Figgis a coffee, he asked how much it cost.",
+      "Please, nobody let Michael tell Mr Figgis a joke."
+    ],
+    leak: [
+      "Somebody's been emailing Corporate about us. That's so sad. And kind of interesting.",
+      "I keep wondering who it is. Then I feel bad for wondering. Then I wonder more.",
+      "Whoever it is, I hope they said nice things. Some nice things."
+    ],
+    inspection: [
+      "Apparently the inspector writes everything down. Everything. Kevin, please.",
+      "Okay, everybody smile. Not like that. Normal smiles.",
+      "I tidied reception three times for the inspector. It looks exactly the same."
+    ],
+    waiting: [
+      "The inspector's gone. I don't know whether to celebrate or throw up.",
+      "Michael's been staring at the phone for an hour. I don't think he's blinked.",
+      "Corporate decides tonight. Everyone's being so nice to each other. It's weird."
+    ],
+    verdict: [
+      "Whatever happens, I'm keeping my drawings of this week. Every single one.",
+      "We tried our best. Mostly. Some of us. Okay, Dwight tried his best.",
+      "Win or lose, this place was home. Weird, loud home."
+    ]
+  },
   barks: {
     scared: ["Oh my God. Oh my God.", "Okay, okay, okay.", "Jim? Jim!"],
     startled: ["Oh! Jeez.", "Oh my God. Okay. Hi.", "You scared me."],

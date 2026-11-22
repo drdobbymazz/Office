@@ -2,6 +2,48 @@
 import type { VoiceBank } from '../types';
 
 export const meredith: VoiceBank = {
+  story: {
+    hiding: [
+      "Michael's hiding? Good. More doughnuts for me.",
+      "Somebody check on Michael. Not me. I'm busy. With this muffin.",
+      "When a boss hides, there's bad news. Or a party. I'll get the party stuff."
+    ],
+    closure: [
+      "If they close us, we're having one big last day.",
+      "Closing the branch? I'll start a pool. When does Michael cry first?",
+      "No branch, no problem. I've been fired from better places."
+    ],
+    feud: [
+      "Angela and Oscar aren't speaking? I've got money on Angela.",
+      "Lock them in a room with snacks. Works every time.",
+      "Those two need a party. Or six. I'll host."
+    ],
+    client: [
+      "Mr Figgis needs to loosen up. I've got stuff in my desk that would help.",
+      "I'd sell to Figgis, but I already told him a story about my divorce.",
+      "Biggest client of the year and he's never been to a party. Shame."
+    ],
+    leak: [
+      "A leak? I'd have told Corporate everything to their face. Louder.",
+      "Whoever's emailing Corporate, I hope they told them about my birthday party.",
+      "I've got money on who the leak is. Want in?"
+    ],
+    inspection: [
+      "Inspector day. Hide the party stuff. Not all of it.",
+      "I'm going to be on my best manners. For about ten minutes.",
+      "That inspector needs a nap. Or a party. Or a party then a nap."
+    ],
+    waiting: [
+      "Corporate decides tonight. Either way, there's a party. I brought the cups.",
+      "Waiting is boring. Let's bet on it. The odds are good. Mostly.",
+      "The inspector's gone. Can we open the good snacks now?"
+    ],
+    verdict: [
+      "Open or closed, I'm throwing a party. I've got the balloons in my car.",
+      "Whatever happens, somebody's buying me lunch.",
+      "If this is goodbye, I'm taking the office chair. The comfy one."
+    ]
+  },
   barks: {
     scared: ["Whoa! Not like this!", "Nope! Meredith is leaving!", "That's it, I'm out!"],
     startled: ["Whoa! Hello!", "Ha! You scared me!", "Jeez! Warn a girl!"],
