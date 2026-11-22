@@ -143,6 +143,8 @@ export class Director {
     this.scenesSinceMinds = 0;
     this.pairAt.clear();
     this.knownFacts.clear();
+    // What is already true when the day starts is the background, not breaking news.
+    for (const f of this.sim.facts().slice(1)) this.knownFacts.add(f);
     this.breaking = null;
     this.drives.clear();
   }

@@ -90,32 +90,51 @@ describe('saving the story', () => {
 describe('Try the day again', () => {
   it('puts the office, the standing and the notes back exactly as they were that morning', async () => {
     const store = memoryStore();
-    const story = storyAt(2, 82, store);
+    const story = Story.create(store, 82);
     const g = play(story, store);
     const start = JSON.stringify(story.startSnapshot);
+    const where = (x: Played): string[] => x.sim.people().filter((p) => p.isCast).map((p) => `${p.id}@${p.x.toFixed(1)},${p.y.toFixed(1)}`);
     await g.toClock(10);
-    const at10 = g.sim.people().filter((p) => p.isCast).map((p) => `${p.id}@${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+    const at10 = where(g);
     await g.toEnd();
     const r = story.finishDay(g.day, g.sim.serialize());
     expect(r.won).toBe(false);
     expect(story.standing).toBe(r.standingAfter);
-    expect(story.state.notes.accounts).toBe(false);
+    expect(story.state.notes.closureKnown).toBe(true);
     expect(story.ui(null).result?.won).toBe(false);
+    expect(story.ui(null).week[0].result).toBe('lost');
     g.day.dispose();
 
     const save = story.retry();
     expect(JSON.stringify(save)).toBe(start);
     expect(story.standing).toBe(40);
     expect(story.result).toBeNull();
-    expect(story.state.notes.accounts).toBeUndefined();
+    expect(story.state.notes.closureKnown).toBeUndefined();
+    expect(story.ui(null).week[0].result).toBeNull();
     // Reload from storage too, as after closing the game.
     const again = play(Story.load(store)!, store);
     expect(JSON.stringify(again.story.startSnapshot)).toBe(start);
-    expect(again.sim.day).toBe(2);
-    expect(again.sim.bond('angela', 'oscar')).toBe(-40);
+    expect(again.sim.day).toBe(1);
+    expect(again.sim.person('michael')!.conviction?.text).toBe(MEMO.conviction);
     await again.toClock(10);
     // Same morning, same seed, same nothing done: the same office at ten.
-    expect(again.sim.people().filter((p) => p.isCast).map((p) => `${p.id}@${p.x.toFixed(1)},${p.y.toFixed(1)}`)).toEqual(at10);
+    expect(where(again)).toEqual(at10);
+  });
+
+  it('a day played after another starts from the end of the one before', async () => {
+    const store = memoryStore();
+    const story = Story.create(store, 85);
+    const g = play(story, store);
+    await g.toEnd();
+    story.finishDay(g.day, g.sim.serialize());
+    g.day.dispose();
+    expect(story.advance()).toBe('next');
+    const t = play(story, store);
+    expect(t.sim.day).toBe(2);
+    // Monday's memories came along.
+    expect(t.sim.memoriesFor('pam', []).length + t.sim.personDetail('pam')!.memories.length).toBeGreaterThan(0);
+    expect(t.sim.bond('angela', 'oscar')).toBe(-40);
+    expect(t.sim.facts()).toContain(MEMO.closure);
   });
 });
 
@@ -137,7 +156,7 @@ describe('the week', () => {
       g.day.dispose();
       expect(r.won).toBe(true);
       expect(r.changes[0].delta).toBe(15);
-      expect(r.standingAfter).toBeGreaterThan(r.standingBefore);
+      expect(r.standingAfter).toBeGreaterThanOrEqual(Math.min(100, r.standingBefore + 15 - 10));
       if (ch < 5) {
         expect(Story.peek(store)?.chapter).toBe(ch + 1);
         expect(story.advance()).toBe('next');

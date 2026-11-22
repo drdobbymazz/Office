@@ -37,6 +37,33 @@ The staff remember what happens, hold grudges, form plans and act on them. Each 
 memories, the share price and the day number carry over. If you close the game part-way through a
 day, that day starts again from the morning.
 
+### Story: Closing Time
+
+Choose **Play the story** on the title screen (or **Sandbox** for free play). Corporate is closing one
+of its branches on Friday, and this one is on the list. Each weekday is a chapter with one main job,
+two extra goals and a few hints:
+
+| Day | Chapter | The job |
+|---|---|---|
+| Monday | The Memo | Get Michael (hiding in his office) and at least 9 others into the conference room for Corporate's call between 14:00 and 15:00. |
+| Tuesday | Not Speaking | Get Angela and Oscar to like each other again before the accounts are due. Someone keeps stirring. |
+| Wednesday | The Client | Keep Mr Figgis's patience up and get him into a meeting with a salesperson. His card says what he likes. |
+| Thursday | The Leak | Work out who has been emailing Corporate and accuse them. Two tries. |
+| Friday | The Verdict | Pass the inspector's tour: people at their desks, no disasters, Michael in his office. |
+
+Two numbers run the week:
+
+- **Influence** is today's budget. Powers cost 2 to 4, whispers, announcements and "tell them to" cost 1,
+  Anything costs 3. Picking people up and poking are free. An extra goal gives 2 back.
+- **Branch Standing** (starts at 40) is how likely Corporate is to keep the branch open. A won day adds 15,
+  a lost one takes 10, each extra goal adds 5, each incident takes 2, and morale counts a little. The report
+  lists every change and why. After Friday: 65 or more and the branch stays open, 40 to 64 it survives with
+  cuts, under 40 it closes.
+
+Any day can be played again from its start ("Try the day again" on the report). The story saves itself
+separately from the sandbox. Announcements that name a room now send people there, and people you drop
+stay put for a while: both help in the story and work in the sandbox too.
+
 ### Touch controls
 
 | Gesture | What it does |
@@ -177,6 +204,7 @@ runs the logic tests (map, simulation, brain, written lines).
 | Floor | `src/renderer/src/scene/office/floor/`, `actor/`, `fx/` | The original map renderer plus expressive sprites, pixel effects, and a touch camera. |
 | Interface | `src/renderer/src/components/game/` | The phone-landscape UI in the original cream pixel style. |
 | Sound | `src/renderer/src/game/audio/` | Everything synthesized at runtime: effects, each person's talking blips, adaptive music. |
+| Story | `src/renderer/src/game/story/` | The five chapters, influence and standing, saving and retrying a day. |
 | Game | `src/renderer/src/game/game.ts` | Wires all of the above together behind one `GameApi`. |
 
 ### How the model is used at 7 tokens a second

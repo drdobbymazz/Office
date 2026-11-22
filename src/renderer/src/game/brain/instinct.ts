@@ -313,8 +313,15 @@ export class InstinctBrain implements Brain, Reflexes {
               feel = chaosFeel(chaos, this.index.nerve(sp.id));
             } else {
               const t = matchThing(text);
-              raw = fill(this.draw(sp.id, `custom:${t?.vibe ?? 'weird'}`, this.list(sp.id, (v) => v.custom?.[t?.vibe ?? 'weird'])), { thing: t?.noun ?? 'that' });
-              feel = VIBE_FEEL[t?.vibe ?? 'weird'];
+              if (t) {
+                raw = fill(this.draw(sp.id, `custom:${t.vibe}`, this.list(sp.id, (v) => v.custom?.[t.vibe])), { thing: t.noun });
+                feel = VIBE_FEEL[t.vibe];
+              } else {
+                // News that is not a thing to point at (someone arrived, something was decided):
+                // they bring it up the way they would start any conversation.
+                raw = fill(this.draw(sp.id, 'openers', this.list(sp.id, (v) => v.openers)), { other: listener ? names.name(listener.id) : 'everyone' });
+                feel = pick(['surprised', 'nervous', 'confused'] as const, rng);
+              }
             }
             break;
           }

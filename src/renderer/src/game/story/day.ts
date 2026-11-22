@@ -130,7 +130,7 @@ export class StoryDay {
     } catch (err) {
       console.error('[story] atFive failed', err);
     }
-    if (this.mainState === 'open') this.settleMain('lost', this.lines.length ? this.lines : []);
+    if (this.mainState === 'open') this.settleMain('lost', [`${this.def.change[1]}.`]);
     for (const x of this.def.extras) if (this.extras.get(x.id) === 'open') this.settleExtra(x.id, x.atFive);
     this.resolvedAt5 = true;
     this.timers = [];

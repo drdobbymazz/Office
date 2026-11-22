@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import type {
-  BrainUi, DayReport, GameApi, GameSettings, PersonDetail, PersonUi, ScreenPoint, TargetingUi, ToastUi, UiState
+  ActionId, BrainUi, DayReport, GameApi, GameMode, GameSettings, PersonDetail, PersonUi, ScreenPoint, StoryUi, TargetingUi, ToastUi, UiState
 } from '@/game/app/gameApi';
 import type { Meters, CooldownUi, ActiveChaosUi } from '@/game/app/gameApi';
 import type { Brain, BrainSettings, BrainStatus, Reflexes } from '@/game/brain/api';
@@ -25,6 +25,7 @@ import { GameFloor } from '@/scene/office/floor/GameFloor';
 import { FloorInput } from '@/scene/office/floor/input';
 import { Director } from '@/game/director/director';
 import type { Sim, SimOptions } from '@/game/sim';
+import { Story, StoryDay, browserStore, type PlayerAction } from '@/game/story';
 import { Objectives } from './objectives';
 import { loadSettings, saveSettings } from './settings';
 import { loadJson, removeKey, saveJson } from './storage';
@@ -48,6 +49,8 @@ export interface Game extends GameApi {
 }
 
 const SAVE_KEY = 'world.v2';
+/** Story days always run at the length they were balanced for. */
+const STORY_DAY_MINUTES = 10;
 const FEED_MAX = 300;
 const UI_TICK = 0.2;
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -64,8 +67,8 @@ function brainWorld(): BrainWorld {
         nerve: c.temperament.nerve, fixes: [...c.fixes]
       })),
       ...Object.values(VISITORS).map((v) => ({
-        id: v.id, name: v.name, role: v.role, summary: v.summary, speech: 'Brisk and businesslike.', wants: 'to get this over with',
-        fears: 'nothing here', quirk: '', secret: '', examples: [] as string[]
+        id: v.id, name: v.name, role: v.role, summary: v.summary, speech: 'Brisk and businesslike.', wants: v.wants ?? 'to get this over with',
+        fears: v.fears ?? 'nothing here', quirk: v.quirk ?? '', secret: '', examples: [] as string[]
       }))
     ],
     rooms: ROOMS.filter((r) => r.id !== 'outside').map((r) => ({ id: r.id, name: r.name }))
@@ -81,13 +84,23 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   audio.setVolumes(settings.volumes);
   audio.setMuted(settings.muted);
 
-  let sim = parts.createSim({
-    bus, reflexes, dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, save: loadJson<SimOptions['save']>(SAVE_KEY) ?? undefined,
-    now: () => performance.now()
-  });
-  for (const s of parts.chaosScripts) sim.registerChaos(s);
-  // Development only: a handle for poking at the world from the browser console.
-  if (import.meta.env.DEV) (window as unknown as { __sim?: unknown }).__sim = sim;
+  function buildSim(o: { save?: SimOptions['save']; dayMinutes: number; sandbox: boolean; seed?: number }): Sim {
+    const next = parts.createSim({ bus, reflexes, dayMinutes: o.dayMinutes, sandbox: o.sandbox, seed: o.seed, save: o.save ?? undefined, now: () => performance.now() });
+    for (const sc of parts.chaosScripts) next.registerChaos(sc);
+    // Development only: a handle for poking at the world from the browser console.
+    if (import.meta.env.DEV) (window as unknown as { __sim?: unknown }).__sim = next;
+    return next;
+  }
+  const sandboxSim = (): Sim => buildSim({ save: loadJson<SimOptions['save']>(SAVE_KEY), dayMinutes: settings.dayMinutes, sandbox: settings.sandbox });
+
+  let sim = sandboxSim();
+
+  // ── story mode ──
+  let mode: GameMode = 'sandbox';
+  let story: Story | null = null;
+  /** Today's story day (its goals, budget and logic), while one is set up. */
+  let day: StoryDay | null = null;
+  const today = (): StoryDay | null => day;
 
   const instinct = parts.createBrain({ ...settings.brain, provider: 'instinct' }, { bank: parts.bank, world });
   let brain: Brain = parts.createBrain(settings.brain, { bank: parts.bank, world });
@@ -115,7 +128,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     phase: 'title', paused: false, speed: 1, day: sim.day, weekday: sim.weekday, clock: sim.clock, dayProgress: sim.dayProgress,
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
-    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: null
+    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: Story.peek(browserStore)
   }));
   const set = store.setState;
   const get = store.getState;
@@ -130,8 +143,28 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       speed: () => store.getState().brain.tokPerSec ?? 0,
       onBusy: (b) => {
         brainBusy = { thinking: b.thinking, queued: b.queued };
-      }
+      },
+      // Someone today's chapter is holding where they are does not answer announcements.
+      pinned: (who) => day?.pinned(who) ?? false
     });
+  }
+
+  /** Put a different simulation on the floor (a story day, or back to the sandbox). */
+  function swapWorld(next: Sim): void {
+    input.cancel();
+    if (get().selectedId) select(null);
+    beginTargeting(null);
+    director.dispose();
+    floor.clearFx();
+    sim = next;
+    director = makeDirector();
+    objectives.dispose();
+    objectives = new Objectives(sim, bus, () => sim.meters(), () => sim.incidentsToday);
+    stockStart = sim.meters().stock;
+    linesToday = 0;
+    chaosPeak = 0;
+    set({ report: null, caption: null, holding: null });
+    floor.camera.goHome();
   }
 
   // ── feed, captions, toasts ─────────────────────────────────────────────────
@@ -305,6 +338,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
 
   async function endDay(): Promise<void> {
     if (get().phase === 'report') return;
+    const storyDay = today();
     const m = sim.meters();
     const day = sim.day;
     const stats = { incidents: sim.incidentsToday, stockStart, stockEnd: m.stock, morale: m.morale, chaosPeak: Math.round(chaosPeak) };
@@ -312,10 +346,16 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const todays = get().feed.filter((f) => f.day === day && f.kind === 'say' && f.who && f.text.length > 18);
     const quotes = pickSpread(todays, 3).map((f) => ({ who: f.who as CharId, name: displayName(f.who as CharId), avatar: avatar(f.who as CharId, f.emotion), text: f.text }));
     const base: DayReport = { day, headline: '', paragraphs: [], awards: [], quotes, stats: { ...stats, lines: linesToday }, writing: true };
+    // Story mode: settle the day, move Branch Standing and save, before the report shows.
+    if (mode === 'story' && story && storyDay) {
+      story.finishDay(storyDay, sim.serialize());
+      set({ storySaved: Story.peek(browserStore) });
+    }
     set({ phase: 'report', report: base, caption: null });
+    pushStory();
     audio.sfx('dayEnd');
     audio.setMusicMood({ menu: true });
-    saveJson(SAVE_KEY, sim.serialize());
+    saveWorld();
     const res = await director.writeReport(stats);
     if (get().report?.day !== day) return;
     set({
@@ -327,7 +367,97 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         writing: false
       }
     });
-    saveJson(SAVE_KEY, sim.serialize());
+    saveWorld();
+  }
+
+  /** The sandbox world saves itself; a story day always starts again from its morning instead. */
+  function saveWorld(): void {
+    if (mode === 'sandbox') saveJson(SAVE_KEY, sim.serialize());
+  }
+
+  // ── story mode ─────────────────────────────────────────────────────────────
+
+  let lastStoryKey = '';
+
+  /** Keep UiState.story in step (only a new object when something changed). */
+  function pushStory(): void {
+    const ui: StoryUi | null = mode === 'story' && story ? story.ui(day) : null;
+    const key = ui ? JSON.stringify(ui) : '';
+    if (key === lastStoryKey && (ui !== null) === (get().story !== null)) return;
+    lastStoryKey = key;
+    set({ story: ui, mode });
+  }
+
+  function goalNotice(g: { title: string; state: 'won' | 'lost'; main: boolean }): void {
+    if (g.state === 'won') {
+      toast(`Goal done: ${g.title}`, 'good', 'check');
+      audio.sfx('objective');
+    } else {
+      toast(`Goal failed: ${g.title}`, 'bad', 'x');
+      audio.sfx('powerDown');
+    }
+  }
+
+  /** Build the office for the story's current day (from its saved morning) and show the chapter card. */
+  function storyDayStart(): void {
+    if (!story) return;
+    day?.dispose();
+    day = null;
+    feedBuffer = [];
+    set({ feed: [] });
+    const next = buildSim({ save: story.daySave(), dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: story.simSeed() });
+    if (next.day !== story.chapter) next.beginDay(story.chapter);
+    story.recordStart(next.serialize());
+    mode = 'story';
+    swapWorld(next);
+    day = story.beginDay(sim, { onGoal: goalNotice });
+    set({ mode: 'story', phase: 'briefing', paused: false, report: null, storySaved: Story.peek(browserStore) });
+    audio.setMusicMood({ menu: true });
+    pushUi();
+  }
+
+  function showEnding(): void {
+    day?.dispose();
+    day = null;
+    mode = 'story';
+    set({ mode: 'story', phase: 'ending', paused: false, report: null, storySaved: Story.peek(browserStore) });
+    audio.setMusicMood({ menu: true });
+    pushUi();
+  }
+
+  /** Leave the story for the sandbox office (rebuilt from its own save). */
+  function enterSandbox(): void {
+    day?.dispose();
+    day = null;
+    story = null;
+    mode = 'sandbox';
+    feedBuffer = [];
+    set({ feed: [] });
+    swapWorld(sandboxSim());
+    set({ mode: 'sandbox', story: null, storySaved: Story.peek(browserStore) });
+    lastStoryKey = '';
+  }
+
+  /**
+   * Story mode: pay for an action, or refuse it with a toast and a 'deny' (locked today, or
+   * not enough influence). Returns the reason, or null when paid. The sandbox is free.
+   */
+  function pay(action: ActionId): string | null {
+    if (mode !== 'story' || !day) return null;
+    // Nothing can be done to an office that has not opened yet (or has closed for the day).
+    if (get().phase !== 'playing') return 'The day has not started.';
+    const reason = day.refusal(action);
+    if (reason) {
+      toast(reason, 'bad', 'influence');
+      audio.sfx('deny');
+      return reason;
+    }
+    day.spend(action);
+    return null;
+  }
+
+  function noteStory(a: PlayerAction): void {
+    if (mode === 'story' && day) day.note(a);
   }
 
   // ── the loop ───────────────────────────────────────────────────────────────
@@ -354,9 +484,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     if (selected && !people.some((p) => p.id === selected && p.present)) select(null);
     flushFeed();
     if (get().caption && performance.now() > captionUntil) set({ caption: null });
-    if (get().phase === 'playing') objectives.update();
+    if (get().phase === 'playing' && mode === 'sandbox') objectives.update();
+    pushStory();
     set((s) => ({
-      objectives: objectives.ui(),
+      objectives: mode === 'sandbox' ? objectives.ui() : [],
       day: sim.day, weekday: sim.weekday || WEEKDAYS[(sim.day - 1) % 5], clock: sim.clock, dayProgress: sim.dayProgress, meters: m,
       incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, people, cooldowns: sim.cooldowns(), activeChaos: sim.activeChaos(),
       holding: input.held,
@@ -380,11 +511,16 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const s = get();
     // Behind the start card the office idles through the first few minutes of the morning, then waits.
     const waiting = s.phase === 'title' && sim.dayProgress > 0.06;
-    const active = !s.paused && s.phase !== 'report' && !waiting;
+    // Behind a chapter card the office is held at its 08:50 start; behind the ending, nothing moves.
+    const held = s.phase === 'briefing' || s.phase === 'ending';
+    const active = !s.paused && s.phase !== 'report' && !held && !waiting;
     const simDt = active ? real * s.speed : 0;
     if (simDt > 0) {
       sim.update(simDt);
-      if (s.phase === 'playing') director.update(simDt);
+      if (s.phase === 'playing') {
+        director.update(simDt);
+        if (mode === 'story') day?.update(simDt);
+      }
     }
     input.update(real);
     floor.render(sim.frame(), simDt, real);
@@ -402,7 +538,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     saveClock += simDt;
     if (saveClock > 45) {
       saveClock = 0;
-      saveJson(SAVE_KEY, sim.serialize());
+      saveWorld();
     }
   }
 
@@ -417,11 +553,23 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   }
 
   function triggerChaos(id: ChaosId, target: ChaosTarget): string | null {
-    const reason = sim.startChaos(id, target);
+    if (mode === 'story' && day) {
+      if (get().phase !== 'playing') return 'The day has not started.';
+      // Locked today, or not enough influence: refused before anything happens.
+      const no = day.refusal(id);
+      if (no) {
+        toast(no, 'bad', day.lockedUi()[id] ? 'lock' : 'influence');
+        audio.sfx('deny');
+        return no;
+      }
+    }
+    // Paid for only if it happens: a power the office refuses (cooling down, nobody there) is free.
+    const reason = mode === 'story' && day ? day.attempt(id, () => sim.startChaos(id, target)) : sim.startChaos(id, target);
     if (reason) {
       audio.sfx('deny');
       return reason;
     }
+    noteStory({ kind: 'power', id, target });
     audio.sfx('confirm');
     return null;
   }
@@ -489,7 +637,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     if (hidden) {
       input.cancel();
       audio.suspend();
-      saveJson(SAVE_KEY, sim.serialize());
+      saveWorld();
     } else {
       last = performance.now();
       audio.resume();
@@ -498,7 +646,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   };
   document.addEventListener('visibilitychange', onVisibility);
   // Closing the tab or reloading: phones fire this more reliably than anything else.
-  const onPageHide = (): void => { saveJson(SAVE_KEY, sim.serialize()); };
+  const onPageHide = (): void => { saveWorld(); };
   window.addEventListener('pagehide', onPageHide);
 
   // ── the public surface ─────────────────────────────────────────────────────
@@ -525,38 +673,95 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     nextDay() {
       if (get().phase !== 'report') return;
       floor.clearFx();
+      if (mode === 'story' && story) {
+        // On to the next chapter's card, or the end of the week.
+        if (story.advance() === 'ending') showEnding();
+        else storyDayStart();
+        return;
+      }
       sim.beginDay(sim.day + 1);
       director.reset();
       set({ phase: 'playing', report: null, paused: false });
       audio.setMusicMood({ menu: false });
-      saveJson(SAVE_KEY, sim.serialize());
+      saveWorld();
     },
 
-    // Story mode: stubs until the story engine is wired in.
-    startStory() { game.begin(); },
-    startSandbox() { game.begin(); },
-    beginChapter() { game.begin(); },
-    retryDay() { /* story engine */ },
-    accuse() { /* story engine */ },
-    toTitle() { /* story engine */ },
+    startStory(fresh) {
+      void audio.unlock().then(() => audio.startMusic());
+      // Keep the sandbox office as it was before stepping into the story.
+      saveWorld();
+      let s = fresh ? null : Story.load(browserStore);
+      if (!s || s.stage === 'ended') s = Story.create(browserStore, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+      story = s;
+      lastStoryKey = '';
+      // A day that was finished but not moved on from carries on with the next one.
+      if (s.stage === 'done' && s.advance() === 'ending') {
+        showEnding();
+        return;
+      }
+      storyDayStart();
+    },
+    startSandbox() {
+      if (mode === 'story') {
+        enterSandbox();
+        set({ phase: 'title' });
+      }
+      game.begin();
+    },
+    beginChapter() {
+      void audio.unlock().then(() => audio.startMusic());
+      if (get().phase !== 'briefing' || mode !== 'story' || !day) return;
+      set({ phase: 'playing', paused: false });
+      director.reset();
+      audio.setMusicMood({ menu: false });
+      void keepAwake();
+      pushUi();
+    },
+    retryDay() {
+      if (mode !== 'story' || !story) return;
+      const phase = get().phase;
+      if (phase !== 'report' && phase !== 'playing' && phase !== 'briefing') return;
+      story.retry();
+      storyDayStart();
+    },
+    accuse(who) {
+      if (mode !== 'story' || !day || get().phase !== 'playing') return;
+      day.accuse(who);
+      pushUi();
+    },
+    toTitle() {
+      if (mode === 'story') enterSandbox();
+      else saveWorld();
+      set({ phase: 'title', paused: false, report: null, storySaved: Story.peek(browserStore) });
+      audio.setMusicMood({ menu: true });
+      pushUi();
+    },
 
     triggerChaos,
     customEvent(text) {
+      if (!text.trim() || pay('anything')) return;
       director.customEvent(text);
+      noteStory({ kind: 'anything', text });
       objectives.note('custom');
       audio.sfx('confirm');
     },
     whisper(who, text) {
+      if (!text.trim() || !sim.person(who)?.present || pay('whisper')) return;
       director.whisper(who, text);
+      noteStory({ kind: 'whisper', who, text });
       objectives.note('whisper', who);
       audio.sfx('whisperSend');
     },
     announce(text) {
+      if (!text.trim() || pay('announce')) return;
       director.announce(text);
+      noteStory({ kind: 'announce', text });
       objectives.note('announce');
     },
     cue(who, instruction) {
+      if (!instruction.trim() || !sim.person(who)?.present || pay('cue')) return;
       director.cue(who, instruction);
+      noteStory({ kind: 'cue', who, text: instruction });
       objectives.note('cue', who);
       audio.sfx('confirm');
     },
@@ -618,10 +823,14 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     },
     resetWorld() {
       removeKey(SAVE_KEY);
+      // In the story, only the sandbox's own office is wiped; the week carries on.
+      if (mode === 'story') {
+        toast('The sandbox office starts again from day 1.', 'info');
+        return;
+      }
       director.dispose();
       floor.clearFx();
-      sim = parts.createSim({ bus, reflexes, dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, now: () => performance.now() });
-      for (const s of parts.chaosScripts) sim.registerChaos(s);
+      sim = buildSim({ dayMinutes: settings.dayMinutes, sandbox: settings.sandbox });
       director = makeDirector();
       objectives.dispose();
       objectives = new Objectives(sim, bus, () => sim.meters(), () => sim.incidentsToday);
@@ -659,7 +868,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       window.removeEventListener('pagehide', onPageHide);
       for (const t of timers) clearTimeout(t);
       for (const off of offs) off();
-      saveJson(SAVE_KEY, sim.serialize());
+      saveWorld();
+      day?.dispose();
       void wakeLock?.release().catch(() => undefined);
       input.destroy();
       objectives.dispose();

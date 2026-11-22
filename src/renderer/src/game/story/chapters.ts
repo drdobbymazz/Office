@@ -88,11 +88,20 @@ class MemoRun implements ChapterRun {
         return;
       }
     }
-    if (s.clock >= DAY(15)) {
-      this.c.notes.call = false;
-      s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting' });
-      this.c.lose([MEMO.missed]);
-    }
+    if (s.clock >= DAY(15)) this.missed();
+  }
+
+  private missed(): void {
+    const s = this.c.sim;
+    this.c.notes.call = false;
+    this.c.notes.closureKnown = true;
+    s.setFact('story.closure', MEMO.closure);
+    s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting' });
+    this.c.lose([MEMO.missed]);
+  }
+
+  atFive(): void {
+    if (this.c.main() === 'open') this.missed();
   }
 
   private callHappens(): void {
@@ -621,8 +630,9 @@ class LeakRun implements ChapterRun {
     for (const p of s.people()) {
       if (!p.isCast || p.id === who) continue;
       s.shiftBond(p.id, who, -12, LEAK.wrongNote);
-      s.shiftBond(who, p.id, -6);
     }
+    s.bumpMood(who, -0.3);
+    s.feel(who, 'angry', 0.9, 20);
     s.remember('all', `${name} was accused of leaking to Corporate, and it was not true.`, 1.5);
     this.c.setExtra('firstTry', 'lost');
     if (this.triesLeft <= 0) {
