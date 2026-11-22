@@ -226,6 +226,9 @@ export const CHANGES = {
   moraleLow: 'Morale was low at five o\'clock'
 };
 
+/** How the week ends, in one plain sentence (for the standing meter and the ending card). */
+export const ENDING_RULE = 'After Friday: 75 or more and a passed inspection keeps the branch open. Under 45 closes it.';
+
 export const NOT_ENOUGH = (cost: number, left: number): string => `Not enough influence: this costs ${cost}, you have ${left}.`;
 export const LOCKED_TODAY = 'Not available today.';
 

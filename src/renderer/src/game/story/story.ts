@@ -104,8 +104,9 @@ function cleanState(raw: unknown): StoryState | null {
     seed,
     chapter,
     stage: r.stage === 'done' || r.stage === 'ended' ? r.stage : 'day',
-    standing: Math.max(0, Math.min(100, num(r.standing, STANDING_START))),
-    standingAtStart: Math.max(0, Math.min(100, num(r.standingAtStart, num(r.standing, STANDING_START)))),
+    // Standing is never capped (the report's arithmetic must add up); only absurd values are refused.
+    standing: Math.max(-200, Math.min(300, num(r.standing, STANDING_START))),
+    standingAtStart: Math.max(-200, Math.min(300, num(r.standingAtStart, num(r.standing, STANDING_START)))),
     notesAtStart: notes(r.notesAtStart) ?? clone(live),
     notes: live,
     results,
@@ -276,8 +277,13 @@ export class Story {
     return 'next';
   }
 
+  /** Friday's inspection passed (the best ending needs it). */
+  get fridayWon(): boolean {
+    return !!this.state.results[CHAPTERS - 1]?.won;
+  }
+
   endingId(): EndingId {
-    return endingFor(this.state.standing);
+    return endingFor(this.state.standing, this.fridayWon);
   }
 
   ending(): { id: EndingId; title: string; text: string[]; epilogue: string[] } {
