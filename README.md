@@ -5,7 +5,7 @@
 # Munder Difflin
 
 **Local multi-agent harness for [Claude Code](https://claude.com/claude-code).**
-Autonomous agents that message, route, and remember — coordinated by a **GOD** orchestrator
+Autonomous agents that message, route, and remember — coordinated by an orchestrator
 you talk to, and visualized as avatars at work on a shared office floor.
 
 <p>
