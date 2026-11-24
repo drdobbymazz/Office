@@ -39,6 +39,8 @@ export interface DirectorOptions {
   onBusy?: (state: { thinking: boolean; queued: number; source: 'model' | 'instinct' | null }) => void;
   /** People something else (a story chapter) is holding where they are: announcements do not move them. */
   pinned?: (who: CharId) => boolean;
+  /** Story mode: how long (sim seconds) people summoned to a room wait there today; undefined for the usual. */
+  summonStay?: (room: RoomId) => number | undefined;
   /** Story mode: what the office is talking about right now (plain sentences). Small talk may pick from these. */
   storyTopics?: () => string[];
   /** Story mode: today's chapter may replace a scene's change in feeling (return the delta to apply). */
@@ -440,7 +442,7 @@ export class Director {
     const send = (p: SimPerson): void => {
       this.api.goTo(p.id, { room }, {
         doing: `heading to ${roomName}`,
-        stay: SUMMON_STAY,
+        stay: Math.max(SUMMON_STAY, this.opts.summonStay?.(room) ?? 0),
         stayDoing: food ? `waiting for the food in ${roomName}` : `waiting in ${roomName} as asked`
       });
       went.push(p.id);
@@ -1568,7 +1570,12 @@ export class Director {
   // ── the end of the day ─────────────────────────────────────────────────────
 
   /** Ask for the day's write-up. Always resolves (the brain falls back to a plain summary). */
-  async writeReport(stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number }, story?: StoryReportInfo): Promise<ReportResult> {
+  async writeReport(
+    stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number },
+    story?: StoryReportInfo,
+    /** Called at once with the quick written summary, so the report never sits empty while a slow model writes. */
+    onDraft?: (draft: ReportResult) => void
+  ): Promise<ReportResult> {
     this.flushScripts();
     this.stopScene(false);
     this.queue.length = 0;
@@ -1582,6 +1589,15 @@ export class Director {
     };
     this.sideN += 1;
     this.report();
+    if (onDraft) {
+      void this.instinct.report(req).then((d) => {
+        try {
+          onDraft(d);
+        } catch (err) {
+          console.error('[director] report draft failed', err);
+        }
+      }, () => undefined);
+    }
     let res: ReportResult;
     try {
       // Ending the day is something the player's play led to, so the model may write it.

@@ -81,7 +81,7 @@ export function play(story: Story, store?: StoryStore): Played {
     script: (lines, o) => (director ? director.playScript(lines, o) : o.done?.())
   });
   director = new Director({
-    sim, brain, instinct: brain, pinned: (w) => day.pinned(w),
+    sim, brain, instinct: brain, pinned: (w) => day.pinned(w), summonStay: (r) => day.summonStay(r),
     storyTopics: () => day.topics(), vetoShift: (w, a, d) => day.vetoShift(w, a, d)
   });
   const dir: Director = director;

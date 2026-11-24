@@ -71,11 +71,17 @@ class MemoRun implements ChapterRun {
   private binTries = 0;
   private creedLeaves = false;
   private kellyAt = 0;
+  private callAt = 0;
+  /** Sim time and clock at set-up, to turn clock minutes into sim seconds. */
+  private t0 = 0;
+  private c0 = 0;
 
   constructor(private c: ChapterCtx) {}
 
   setup(): void {
     const s = this.c.sim;
+    this.t0 = s.time;
+    this.c0 = s.clock;
     s.convince('michael', MEMO.conviction);
     s.setHiddenNote('michael', MEMO.hidden);
     s.setFact('story.memo', MEMO.fact);
@@ -90,12 +96,31 @@ class MemoRun implements ChapterRun {
     return this.c.sim.person('michael')?.conviction?.text === MEMO.conviction;
   }
 
+  /** Sim seconds from now until a clock time today (the day's pace is measured, not assumed). */
+  private secondsUntil(clock: number): number {
+    const s = this.c.sim;
+    const dt = s.time - this.t0;
+    const rate = dt > 5 ? (s.clock - this.c0) / dt : 0.8;
+    return Math.max(0, (clock - s.clock) / Math.max(0.05, rate));
+  }
+
+  /**
+   * People called to the conference room from 12:30 on wait there until the call window closes
+   * (an announcement in the morning still wears off long before two).
+   */
+  summonStay(room: RoomId): number | undefined {
+    const s = this.c.sim;
+    if (room !== 'meeting' || this.c.main() !== 'open' || s.clock < DAY(12, 30) || s.clock >= DAY(15)) return undefined;
+    return this.secondsUntil(DAY(15, 5));
+  }
+
   private room(): { michael: boolean; others: number } {
     let michael = false;
     let others = 0;
     for (const p of this.c.sim.people()) {
       if (!p.isCast || p.room !== 'meeting' || !onFloorOrAsleep(this.c, p)) continue;
-      if (p.id === 'michael') michael = true;
+      // Once he is slipping back to his office he no longer counts, even while still crossing the room.
+      if (p.id === 'michael') michael = p.doing !== MEMO.toOffice;
       else others++;
     }
     return { michael, others };
@@ -118,7 +143,7 @@ class MemoRun implements ChapterRun {
     if (s.clock >= DAY(14, 45) && !this.said1445) {
       this.said1445 = true;
       const r = this.room();
-      s.narrate(MEMO.late(Math.min(OTHERS_NEEDED, r.others) + (r.michael ? 1 : 0), r.michael), { beat: true, icon: 'clock', room: 'meeting' });
+      s.narrate(MEMO.late(r.others, r.michael), { beat: true, icon: 'clock', room: 'meeting' });
     }
     if (s.clock >= DAY(14) && s.time >= this.checkAt) {
       this.checkAt = s.time + CALL_EVERY;
@@ -141,18 +166,29 @@ class MemoRun implements ChapterRun {
     const m = s.person('michael');
     if (!m || !m.present) return;
     if (!this.holds()) {
+      // An idea of his own that names the conference room: he means to be there for the call.
+      const forCall = !!m.conviction && roomNamedIn(m.conviction.text) === 'meeting';
       if (!this.freed) {
         // A whisper replaced what he was sure of: he stops hiding there and then.
         this.freed = true;
         this.unhide = true;
         s.setFact('story.memo', null);
         s.removeEffect(DIM_FX);
-        s.narrate(MEMO.freed, { beat: true, icon: 'whisper', room: m.room });
+        s.narrate(forCall ? MEMO.freedForCall : MEMO.freed, { beat: true, icon: 'whisper', room: m.room });
       }
       // He leaves his desk as soon as he is free to (the whisper's own conversation comes first).
       if (this.unhide && m.available && !m.sceneId && (m.doing === MEMO.hiding || m.doing === MEMO.toOffice)) {
         this.unhide = false;
         s.resume('michael');
+      }
+      // Just before two he goes to the room by himself and waits there; if something carries him
+      // off (a chat, an errand, the player's hand), he heads back.
+      if (forCall && s.clock >= DAY(13, 50) && s.time >= this.callAt) {
+        this.callAt = s.time + 3;
+        const busy = !m.available || !!m.sceneId || s.holding === 'michael' || s.isAirborne('michael') || s.isSeized('michael');
+        if (!busy && m.doing !== MEMO.toCall && m.doing !== MEMO.atCall && !s.isHazard('meeting')) {
+          s.goTo('michael', { room: 'meeting' }, { doing: MEMO.toCall, stay: this.secondsUntil(DAY(15, 5)) + 5, stayDoing: MEMO.atCall });
+        }
       }
       return;
     }
@@ -166,6 +202,8 @@ class MemoRun implements ChapterRun {
     }
     if (s.time < this.hideAt) return;
     this.hideAt = s.time + HIDE_EVERY;
+    // He is hiding bad news, and it shows on his face and on his card.
+    if (!m.sceneId && !m.speaking && m.doing === MEMO.hiding) s.feel('michael', 'nervous', 0.55, 3);
     if (this.lockedIn || m.room === 'boss') return;
     if (s.time - this.landedAt < GRACE) return;
     // Talking, asleep, frozen: he tries again in a moment.
@@ -299,9 +337,12 @@ class MemoRun implements ChapterRun {
     s.removeEffect(DIM_FX);
     s.removeEffect(LAMP_FX);
     for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
-    s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting', beat: true });
+    // Say what the vice president actually found: the player has just watched that room.
+    const r = this.room();
+    const line = MEMO.missed(r.others, r.michael);
+    s.narrate(line, { icon: 'phone', room: 'meeting', beat: true });
     for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'nervous', 0.6, 20);
-    this.c.lose([MEMO.missed]);
+    this.c.lose([line]);
   }
 
   atFive(): void {
@@ -360,15 +401,15 @@ class MemoRun implements ChapterRun {
 
   status(): { progress: number; status: string } {
     const st = this.c.main();
-    if (st === 'won') return { progress: 1, status: 'The call went ahead' };
-    if (st === 'lost') return { progress: 0, status: 'The call was missed' };
+    if (st === 'won') return { progress: 1, status: 'Call made' };
+    if (st === 'lost') return { progress: 0, status: 'Call missed' };
     const r = this.room();
     const here = r.others + (r.michael ? 1 : 0);
     if (this.c.sim.clock < DAY(14)) {
       return { progress: 0, status: here >= 3 ? `Corporate rings from 14:00. ${here} in the room so far` : MEMO.before };
     }
     const n = Math.min(OTHERS_NEEDED, r.others) + (r.michael ? 1 : 0);
-    return { progress: n / 10, status: `${n} of 10 in the room${r.michael ? '' : ', Michael not yet'}` };
+    return { progress: n / 10, status: MEMO.count(r.others, r.michael) };
   }
 
   onAction(a: PlayerAction): void {
@@ -781,8 +822,9 @@ class ClientRun implements ChapterRun {
     registerFiggis();
     this.c.sim.setFact('story.client', CLIENT.fact);
     if (this.c.notes.accounts === false) this.patience = PATIENCE_LATE;
-    // Michael's idea of a welcome: balloons by the front door.
+    // Michael's idea of a welcome: balloons by the front door (and a line saying whose idea they were).
     this.c.sim.addEffect({ id: BALLOONS_FX, kind: 'balloons', room: 'bullpen', count: 5 });
+    this.c.after(16, () => this.c.sim.narrate(CLIENT.balloons, { beat: true, icon: 'party', room: 'bullpen' }));
   }
 
   private figgis(): SimPerson | undefined {
@@ -1021,7 +1063,7 @@ class ClientRun implements ChapterRun {
 
   status(): { progress: number; status: string } {
     const st = this.c.main();
-    if (st === 'won') return { progress: 1, status: 'Signed for another year' };
+    if (st === 'won') return { progress: 1, status: 'Signed' };
     if (st === 'lost') return { progress: 0, status: 'Walked out' };
     if (!this.spawned) return { progress: this.patience / 100, status: CLIENT.before };
     const p = Math.round(this.patience);
@@ -1722,6 +1764,7 @@ class VerdictRun implements ChapterRun {
     const k = roomCentrePx('kitchen');
     s.addEffect({ id: 'story-farewell-cake', kind: 'item', item: 'cake', x: k.x + 8, y: k.y + 6 });
     s.addEffect({ id: 'story-farewell-balloons', kind: 'balloons', room: 'kitchen', count: 3 });
+    this.c.after(16, () => s.narrate(VERDICT.cake, { beat: true, icon: 'party', room: 'kitchen' }));
     // The week's leftovers.
     this.problems.push({ id: 'dwight', state: 'waiting', who: ['dwight'], startAt: DAY(12, 30) });
     if (n.accounts === false) this.problems.push({ id: 'row', state: 'waiting', who: ['angela', 'oscar'], startAt: DAY(12, 45) });

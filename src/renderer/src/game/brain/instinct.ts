@@ -1588,7 +1588,8 @@ export class InstinctBrain implements Brain, Reflexes {
     const story = req.story;
     const incidents = `${s.incidents} incident${s.incidents === 1 ? '' : 's'}`;
     // The lines that open and close every day say nothing about this one.
-    const log = req.log.map((l) => l.trim()).filter((l) => l && !ROUTINE_LOG.test(l));
+    // Nor do reminders of the time ("It is 14:00. ..."): they told the player what to do, not what happened.
+    const log = req.log.map((l) => l.trim()).filter((l) => l && !ROUTINE_LOG.test(l) && !/^It is \d{1,2}:\d{2}\b/.test(l));
     const events = log.filter((l) => !QUOTE_LINE.test(l));
     const quotes = log.filter((l) => QUOTE_LINE.test(l));
 

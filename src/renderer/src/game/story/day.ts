@@ -3,7 +3,7 @@
 // The game (or a test) calls update() every frame and asks before spending.
 
 import type { ActionId, StoryGoalUi } from '@/game/app/gameApi';
-import type { ChaosId, CharId } from '@/game/core/types';
+import type { ChaosId, CharId, RoomId } from '@/game/core/types';
 import type { Sim } from '@/game/sim';
 import { createRng } from '@/game/sim/rng';
 import { weekFacts } from './chapters';
@@ -143,7 +143,8 @@ export class StoryDay {
       console.error('[story] atFive failed', err);
     }
     if (this.mainState === 'open') this.settleMain('lost', [`${this.def.change[1]}.`]);
-    for (const x of this.def.extras) if (this.extras.get(x.id) === 'open') this.settleExtra(x.id, x.atFive);
+    // An extra that simply ran out of day is not announced as a failure: the report says what was done.
+    for (const x of this.def.extras) if (this.extras.get(x.id) === 'open') this.settleExtra(x.id, x.atFive, x.atFive === 'lost');
     this.resolvedAt5 = true;
     this.timers = [];
   }
@@ -155,10 +156,11 @@ export class StoryDay {
     this.opts.hooks?.onGoal?.({ id: this.def.goal.id, title: this.def.goal.title, state, main: true });
   }
 
-  private settleExtra(id: string, state: 'won' | 'lost'): void {
+  private settleExtra(id: string, state: 'won' | 'lost', quietly = false): void {
     if (this.extras.get(id) !== 'open') return;
     this.extras.set(id, state);
     if (state === 'won') this.influence.left += EXTRA_INFLUENCE;
+    if (quietly) return;
     const def = this.def.extras.find((x) => x.id === id);
     this.opts.hooks?.onGoal?.({ id, title: def?.title ?? id, state, main: false });
   }
@@ -308,6 +310,17 @@ export class StoryDay {
 
   pinned(who: CharId): boolean {
     return !!this.run.pinned?.(who);
+  }
+
+  /** How long people summoned to a room wait there today (sim seconds), or undefined for the usual. */
+  summonStay(room: RoomId): number | undefined {
+    if (this.disposed || this.resolvedAt5) return undefined;
+    try {
+      const v = this.run.summonStay?.(room);
+      return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   // ── for the UI and the report ──────────────────────────────────────────────

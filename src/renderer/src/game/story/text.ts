@@ -8,6 +8,12 @@ export const STORY_TITLE = 'Closing Time';
 
 // ── Monday: The Memo ─────────────────────────────────────────────────────────
 
+const MEMO_COUNT = (others: number, michael: boolean): string => {
+  if (!michael && others >= 9) return `${others} in the room. Only Michael is missing`;
+  if (!michael) return `${others} of 9 staff in the room, and no Michael yet`;
+  return `Michael and ${others} of 9 staff in the room`;
+};
+
 export const MEMO = {
   title: 'The Memo',
   intro: [
@@ -29,14 +35,14 @@ export const MEMO = {
   ],
   /** Recipes, shown only after a failed try or a retry. */
   help: [
-    'From about 13:30, announce "Everyone to the conference room, please." People wait there for over an hour.',
+    'From about 12:30, announce "Everyone to the conference room, please." People called that late wait there until the call.',
     'Carry Michael into the room last, once the others are there. Left alone, he slips back to his office.',
-    'Or whisper Michael a new idea that names the conference room, and he goes there by himself.',
+    'Or whisper Michael a new idea that names the conference room. He stops hiding, and just before two he goes there by himself and waits.',
     'At about 10:20 Creed goes through Michael\'s bin. Whisper him something else to think about, or carry him away, and the memo stays secret.',
     'If the memo gets out: Kevin comes for food, Ryan comes when asked by name, and Kelly goes wherever Ryan goes.'
   ],
   extras: [
-    { id: 'quiet', title: 'Quiet hands', icon: 'poke', detail: 'Win the call without a power, Anything or Tell them to. Whispers, announcements and your hand only.' },
+    { id: 'quiet', title: 'Quiet hands', icon: 'poke', detail: 'Win the call using only whispers, announcements and your own hand. No powers, no typed events and no orders.' },
     { id: 'full', title: 'Full room', icon: 'people', detail: 'Have at least 12 others in the room with Michael when the phone rings.' }
   ],
   locked: { meeting: 'Michael has cancelled every meeting today.' },
@@ -49,9 +55,14 @@ export const MEMO = {
   topicCancelled: 'Michael is not taking visitors and has cancelled every meeting today.',
   before: 'Corporate rings between 14:00 and 15:00',
   two: 'It is 14:00. The vice president rings as soon as Michael and 9 others are in the conference room.',
-  late: (n: number, michael: boolean) => `It is 14:45. ${n} of 10 in the room${michael ? '' : ', Michael not yet'}. At 15:00 the vice president gives up.`,
+  /** The live head count: how many are in the room, and who is still missing. */
+  count: MEMO_COUNT,
+  late: (others: number, michael: boolean) => `It is 14:45. ${MEMO_COUNT(others, michael)}. At 15:00 the vice president gives up.`,
   slipBack: 'Michael slips back to his office.',
   freed: 'Michael stops hiding and comes out of his office.',
+  freedForCall: 'Michael stops hiding. He means to be in the conference room for the call.',
+  toCall: 'heading to the conference room for the call',
+  atCall: 'waiting in the conference room for the call',
   ring: 'The phone rings in the conference room. Michael puts the vice president on speaker.',
   vp: 'The vice president',
   call: {
@@ -65,10 +76,18 @@ export const MEMO = {
   sceneWhy: 'The regional vice president has just told the office on the speakerphone that Corporate may close this branch on Friday.',
   closure: 'Everyone now knows Corporate may close this branch on Friday.',
   won: 'The call with Corporate went ahead, and the whole office heard it together.',
-  missed: 'At 15:00 the vice president phoned an almost empty conference room and hung up after a minute.',
+  /** What the vice president found at 15:00, from who was actually in the room. */
+  missed: (others: number, michael: boolean): string => {
+    const staff = others === 1 ? '1 of the staff' : `${others} of the staff`;
+    if (others >= 9 && !michael) return `At 15:00 the vice president phoned the conference room. ${others} of the staff were waiting, but Michael was not there, so he hung up after a minute.`;
+    if (michael && others > 0) return `At 15:00 the vice president phoned the conference room. He found Michael and only ${staff}, and hung up after a minute.`;
+    if (michael) return 'At 15:00 the vice president phoned the conference room. He found Michael on his own, and hung up after a minute.';
+    if (others > 0) return `At 15:00 the vice president phoned the conference room. He found only ${staff} and no Michael, and hung up after a minute.`;
+    return 'At 15:00 the vice president phoned an empty conference room and hung up after a minute.';
+  },
   lockedOut: 'After being shut in the conference room, Michael gives up on hiding. He stays there.',
   changeWon: 'The call with Corporate went ahead',
-  changeLost: 'Nobody was there for the call',
+  changeLost: 'The call with Corporate was missed',
   warnQuiet: 'Using this fails Quiet hands.',
   // The bin, and what happens if the memo gets out.
   bin: {
@@ -185,7 +204,7 @@ export const ROW = {
 export const CLIENT = {
   title: 'The Client',
   intro: [
-    "Mr Figgis of Figgis Hardware, the branch's biggest customer, comes at 10:30 to decide whether to sign for another year. Without him the branch has no chance on Friday.",
+    "Mr Figgis of Figgis Hardware, the branch's biggest customer, comes at 10:30 to decide whether to sign for another year. Losing him would count against the branch on Friday.",
     'He is easily annoyed, and his patience starts running out the moment he walks in. Get him into a meeting with the right salesperson while he is still willing to talk business.'
   ],
   goal: {
@@ -230,7 +249,8 @@ export const CLIENT = {
   statusPatience: (p: number) => `Patience ${p} (talks business from 50)`,
   statusPitch: (sales: string, s: number, of: number) => `${sales} pitching: ${s}s of ${of}`,
   meetingFact: (sales: string, room: string) => `Mr Figgis is in a meeting with ${sales} in ${room}, deciding whether to sign again.`,
-  sitsDown: (sales: string, room: string) => `${sales} sits down with Mr Figgis in ${room}.`,
+  sitsDown: (sales: string, room: string) => `${sales} starts the pitch to Mr Figgis in ${room}.`,
+  balloons: 'Michael has tied welcome balloons by the front door for Mr Figgis.',
   pitchWhy: (sales: string) => `Mr Figgis has sat down with ${sales} to decide whether Figgis Hardware signs for another year. He wants a straight answer and a fair price.`,
   rough: {
     andy: 'Andy opens with a joke. Mr Figgis does not laugh.',
@@ -595,6 +615,7 @@ export const VERDICT = {
   recall: 'Everyone hurries back to their desk.',
   recallDoing: 'hurrying back to the desk for the inspector',
   arrives: 'The inspector from Corporate arrives at the front door, right on time, with a clipboard.',
+  cake: 'Michael has put a farewell cake and balloons in the break room, in case today is the last day.',
   stop: (n: number) => `Stop ${n} of 3`,
   score: (n: number) => `Score ${n}`,
   bullpen: (n: number, of: number, pts: number) => `Bullpen: ${n} of ${of} at their desks. ${pts} of 30.`,
@@ -677,7 +698,7 @@ export const CHANGES = {
 };
 
 /** How the week ends, in one plain sentence (for the standing meter and the ending card). */
-export const ENDING_RULE = 'After Friday: 75 or more and a passed inspection keeps the branch open. Under 45 closes it.';
+export const ENDING_RULE = 'After Friday: 75 or more and a passed inspection keeps the branch open. Under 45 closes it. In between, it stays open with cuts.';
 
 export const NOT_ENOUGH = (cost: number, left: number): string => `Not enough influence: this costs ${cost}, you have ${left}.`;
 export const LOCKED_TODAY = 'Not available today.';
@@ -710,7 +731,7 @@ function weekParts(w: WeekRecap): { good: string[]; bad: string[] } {
     if (v === true) good.push(yes);
     else if (v === false) bad.push(no);
   };
-  add(w.call, "Monday's call with the whole office there", "Monday's empty conference room");
+  add(w.call, "Monday's call with the whole office there", "Monday's missed call");
   add(w.accounts, 'the accounts arriving on time', 'the late accounts');
   add(w.figgis, 'the Figgis Hardware order', 'losing Figgis Hardware');
   if (w.leakName) add(w.leakFound, `catching ${w.leakName} leaking`, `the leak nobody caught`);
@@ -737,7 +758,7 @@ function weekLine(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): string {
   }
   if (!good.length) return `${capFirst(b)} were too much for Corporate.`;
   if (!bad.length) return `${capFirst(g)} were not enough for Corporate.`;
-  return `Despite ${g}, ${b} ${bad.length > 1 ? 'were' : 'was'} too much for Corporate.`;
+  return `${capFirst(g)} ${good.length > 1 ? 'were' : 'was'} not enough: ${b} ${bad.length > 1 ? 'were' : 'was'} too much for Corporate.`;
 }
 
 export function endingText(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): { title: string; text: string[] } {
@@ -768,7 +789,7 @@ export function endingText(id: 'saved' | 'scraped' | 'closed', w: WeekRecap): { 
         text: [
           `Corporate is closing the Scranton branch. ${inspected}`.trim(),
           week,
-          'The staff packed their desks into boxes. Dwight took the stapler. Michael says this is not goodbye, it is see you later.'
+          'The staff packed their desks into boxes. Dwight took three staplers. Michael says this is not goodbye, it is see you later.'
         ]
       };
   }
@@ -796,7 +817,7 @@ export function epilogueLines(f: EpilogueFacts): string[] {
       : `${f.leakName} still sends Corporate a page now and then. Nobody knows, except you.`);
   }
   if (f.carried && f.carried.times >= 3) out.push(`${f.carried.name} was picked up ${f.carried.times} times this week, and now keeps one hand on the desk at all times.`);
-  if (f.wrongedName) out.push(`${f.wrongedName} has forgiven you for Thursday. Mostly.`);
+  if (f.wrongedName) out.push(`${f.wrongedName} has forgiven the office for Thursday's accusation. Mostly.`);
   if (f.speech === 'after') out.push("Michael's farewell speech got a standing ovation. He offers to give it again every Friday.");
   else if (f.speech === 'during') out.push("The inspector's report has a whole page on Michael's farewell speech.");
   else if (f.speech === 'never') out.push("Michael never gave his farewell speech. It is still in his desk drawer, just in case.");

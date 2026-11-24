@@ -131,6 +131,8 @@ export interface ChapterRun {
   accuseUi?(): { triesLeft: number; accused: CharId[]; label: string } | null;
   /** Held where they are by the story: announcements do not move them. */
   pinned?(who: CharId): boolean;
+  /** How long (sim seconds) people an announcement sends to this room wait there today; undefined for the usual. */
+  summonStay?(room: RoomId): number | undefined;
   /** What the office is talking about right now (plain sentences); small talk picks from these. */
   topics?(): string[];
   /** Side effects to warn about before the player confirms an action ("Using a power fails Quiet hands"). */

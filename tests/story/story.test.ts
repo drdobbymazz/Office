@@ -196,7 +196,7 @@ describe('the ending', () => {
     const saved = endingText('saved', mixed).text.join(' ');
     expect(saved).toContain("Thanks to Monday's call with the whole office there, the Figgis Hardware order and a good inspection, Corporate could overlook the late accounts and the leak nobody caught.");
     const closed = endingText('closed', { call: false, accounts: false, figgis: true, leakName: 'Kelly', leakFound: false, inspection: 30, fridayWon: false }).text.join(' ');
-    expect(closed).toContain("Despite the Figgis Hardware order, Monday's empty conference room, the late accounts, the leak nobody caught and a poor inspection were too much for Corporate.");
+    expect(closed).toContain("The Figgis Hardware order was not enough: Monday's missed call, the late accounts, the leak nobody caught and a poor inspection were too much for Corporate.");
     const friday = endingText('scraped', { call: true, accounts: true, figgis: true, leakName: 'Pam', leakFound: true, inspection: 41, fridayWon: false, lostOnFriday: true }).text.join(' ');
     expect(friday).toContain('but the inspection had not');
     const perfect = endingText('saved', { call: true, accounts: true, figgis: true, leakName: 'Pam', leakFound: true, inspection: 95, fridayWon: true }).text.join(' ');

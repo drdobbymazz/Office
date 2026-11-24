@@ -76,11 +76,14 @@ describe('Monday: The Memo', () => {
       const g = play(storyAt(1, seed));
       await g.toEnd();
       expect(g.day.main).toBe('lost');
-      expect(g.feed).toContain(MEMO.missed);
+      // The loss says what the vice president actually found in the room.
+      const found = g.feed.find((l) => l.startsWith('At 15:00 the vice president phoned'));
+      expect(found).toBeDefined();
       // Everyone hears about the closure either way.
       expect(g.story.state.notes.closureKnown).toBe(true);
       const r = g.story.finishDay(g.day, g.sim.serialize());
       expect(r.won).toBe(false);
+      expect(r.text).toEqual([found]);
       expect(r.changes[0]).toEqual({ text: MEMO.changeLost, delta: STANDING.lost });
       // No extra goal wins itself.
       expect(r.extras).toEqual([]);
@@ -96,6 +99,33 @@ describe('Monday: The Memo', () => {
       expect(g.feed.some((l) => /\bMichael\b.*\bstay/.test(l))).toBe(true);
       await settle(g);
       expect(g.day.main).toBe('lost');
+      // People called for the call wait until it is over, and the loss names who was missing.
+      expect(g.feed.some((l) => /of the staff were waiting, but Michael was not there/.test(l))).toBe(true);
+    });
+  }
+
+  it('says what the vice president found: the words follow the room', () => {
+    expect(MEMO.missed(0, false)).toMatch(/an empty conference room/);
+    expect(MEMO.missed(11, false)).toMatch(/11 of the staff were waiting, but Michael was not there/);
+    expect(MEMO.missed(4, true)).toMatch(/Michael and only 4 of the staff/);
+    expect(MEMO.missed(1, false)).toMatch(/only 1 of the staff and no Michael/);
+    expect(MEMO.missed(0, true)).toMatch(/Michael on his own/);
+  });
+
+  for (const seed of [21, 24, 27]) {
+    it(`a whisper that names the conference room wins without a hand on Michael (seed ${seed})`, async () => {
+      const g = play(storyAt(1, seed));
+      await g.toClock(9, 20);
+      expect(g.whisper('michael', 'I should be in the conference room at two.')).toBeNull();
+      await g.step(10);
+      expect(g.feed).toContain(MEMO.freedForCall);
+      // Called at half past twelve, people are still there when the call window opens.
+      await g.toClock(12, 35);
+      await fillTheRoom(g);
+      await g.toClock(13, 58);
+      expect(othersInMeeting(g)).toBeGreaterThanOrEqual(9);
+      // Just before two he walks there by himself.
+      expect(await g.until(() => g.day.main === 'won', 80)).toBe(true);
     });
   }
 
@@ -104,7 +134,7 @@ describe('Monday: The Memo', () => {
       const g = play(storyAt(1, seed));
       await g.toClock(14);
       expect(g.feed).toContain(MEMO.two);
-      expect(g.day.goalUi().status).toMatch(/of 10 in the room, Michael not yet/);
+      expect(g.day.goalUi().status).toMatch(/Only Michael is missing|of 9 staff in the room, and no Michael yet/);
       await fillTheRoom(g);
       expect(othersInMeeting(g)).toBeGreaterThanOrEqual(9);
       await g.drop('michael', MICHAEL_SPOT);
@@ -121,15 +151,20 @@ describe('Monday: The Memo', () => {
     });
   }
 
-  it('carrying Michael in first fails: he slips back before the room is full', async () => {
-    const g = play(storyAt(1, 22));
-    await g.toClock(14);
-    await g.drop('michael', MICHAEL_SPOT);
-    await fillTheRoom(g);
-    await settle(g);
-    expect(g.day.main).toBe('lost');
-    expect(g.feed).toContain(MEMO.slipBack);
-  });
+  for (const seed of [22, 25]) {
+    it(`carrying Michael in early fails: he slips back long before the room is full (seed ${seed})`, async () => {
+      const g = play(storyAt(1, seed));
+      await g.toClock(13, 30);
+      await g.drop('michael', MICHAEL_SPOT);
+      // Left alone in an empty room, he is back at his desk within half a minute, and the player is told.
+      expect(await g.until(() => g.sim.person('michael')!.room === 'boss', 45)).toBe(true);
+      expect(g.feed).toContain(MEMO.slipBack);
+      await g.toClock(14);
+      await fillTheRoom(g);
+      await settle(g);
+      expect(g.day.main).toBe('lost');
+    });
+  }
 
   for (const seed of [24, 26]) {
     it(`wins with a whisper that sends Michael to the call himself, and announcements (seed ${seed})`, async () => {
@@ -137,7 +172,7 @@ describe('Monday: The Memo', () => {
       await g.toClock(13, 40);
       expect(g.whisper('michael', 'I should be in the conference room when Corporate calls.')).toBeNull();
       await g.step(1);
-      expect(g.feed).toContain(MEMO.freed);
+      expect(g.feed).toContain(MEMO.freedForCall);
       expect(g.day.pinned('michael')).toBe(false);
       await g.toClock(14);
       await fillTheRoom(g);
@@ -213,7 +248,11 @@ describe('Monday: The Memo', () => {
       await g.toClock(10, 21);
       g.whisper('creed', 'I should water the plants today.');
       await g.toClock(14);
-      await fillTheRoom(g);
+      // Count heads and keep calling until twelve are in (the extra asks for it), then bring Michael in last.
+      for (let i = 0; i < 5 && othersInMeeting(g) < 12; i++) {
+        expect(g.announce('Everyone to the conference room, now!')).toBeNull();
+        await g.until(() => othersInMeeting(g) >= 12, 14);
+      }
       await g.drop('michael', MICHAEL_SPOT);
       await settle(g);
       expect(g.day.main).toBe('won');

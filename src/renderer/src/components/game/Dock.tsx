@@ -6,7 +6,7 @@
 import { createContext, forwardRef, ReactNode, useContext } from 'react';
 import type { CharId } from '@/game/core/types';
 import { GIcon } from './icons';
-import { useGame, type Viewport } from './ctx';
+import { useGame, useUi, type Viewport } from './ctx';
 import { TABS, type TabId } from './words';
 import { usePress } from './kit';
 import { DirectorTab } from './DirectorTab';
@@ -87,6 +87,35 @@ function CollapseTab({ open, vertical, onTap }: { open: boolean; vertical: boole
   );
 }
 
+/**
+ * Fast-forward, always in reach on the rail (the panel may be closed, or on another tab):
+ * a tap switches between normal speed and 2x.
+ */
+function SpeedTab({ vertical }: { vertical: boolean }) {
+  const game = useGame();
+  const s = useUi((st) => ({ speed: st.speed, finishing: st.finishing, phase: st.phase }));
+  const { pressed, handlers } = usePress();
+  if (s.phase !== 'playing') return null;
+  const fast = s.speed === 2;
+  const off = s.finishing;
+  return (
+    <button type="button" className="gu-tab gu-hit" disabled={off} {...handlers}
+      aria-label={fast ? 'Back to normal speed' : 'Fast-forward'} aria-pressed={fast} title={fast ? 'Normal speed' : 'Fast-forward'}
+      onClick={() => { game.uiSound('tap'); game.setSpeed(fast ? 1 : 2); }}
+      style={{
+        width: vertical ? RAIL - 8 : 52, height: 38, margin: vertical ? '0 4px 2px 4px' : '4px 4px 4px 0',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2,
+        background: fast ? 'var(--cth-sky)' : 'var(--cth-cream-50)', opacity: off ? 0.5 : 1,
+        boxShadow: pressed ? 'inset 0 0 0 2px var(--cth-ink-900)' : 'inset 0 0 0 2px var(--cth-ink-900), 0 2px 0 var(--cth-ink-700)',
+        transform: pressed ? 'translateY(2px)' : 'none', touchAction: 'manipulation',
+        fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px', color: 'var(--cth-ink-900)'
+      }}>
+      <GIcon name="ff" px={16} />
+      <span>{fast ? '2x' : '1x'}</span>
+    </button>
+  );
+}
+
 function TabBody({ tab }: { tab: TabId }) {
   switch (tab) {
     case 'director': return <DirectorTab />;
@@ -127,6 +156,7 @@ export const Dock = forwardRef<HTMLDivElement, { vp: Viewport; portrait: boolean
           active={nav.open && nav.tab === t.id} vertical={vertical} onTap={() => tapTab(t.id)} />
       ))}
       <div style={{ flex: 1 }} />
+      <SpeedTab vertical={vertical} />
       <CollapseTab open={nav.open} vertical={vertical} onTap={toggle} />
     </div>
   );

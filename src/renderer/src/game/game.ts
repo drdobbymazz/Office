@@ -161,6 +161,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       },
       // Someone today's chapter is holding where they are does not answer announcements (Classic Story only).
       pinned: (who) => (mode === 'story' ? day?.pinned(who) ?? false : false),
+      // Today's chapter may make summoned people wait longer (Monday: until the call).
+      summonStay: (room) => (mode === 'story' ? day?.summonStay(room) : undefined),
       // What the office is talking about in Story or Endless Saga right now (small talk picks it up).
       storyTopics: () => (mode === 'story' && day ? day.topics() : mode === 'saga' && sagaDay ? sagaDay.topics() : []),
       // Classic Story may adjust a scene's change in feeling while counting progress; Saga leaves shifts raw.
@@ -194,6 +196,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   let stockStart = sim.meters().stock;
   let captionUntil = 0;
   let toastSeq = 0;
+  /** When the world last made a sound of its own (so a story caption does not double it). */
+  let lastWorldSfxAt = -1e9;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const later = (fn: () => void, ms: number): void => {
     const t = setTimeout(() => {
@@ -226,10 +230,18 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       if (item.kind === 'say') linesToday += 1;
       // Story & Saga narration worth seeing on the floor, not only in the Log.
       // A story moment that needs the player (Mr Figgis walking in) brings the game back to normal speed.
-      if (item.slow && (mode === 'story' || mode === 'saga') && !finishing && get().speed > 1) set({ speed: 1 });
+      if (item.slow && (mode === 'story' || mode === 'saga') && !finishing && get().speed > 1) {
+        set({ speed: 1 });
+        toast('Back to normal speed: this needs you.', 'info', 'ff');
+      }
       if (item.beat && !finishing) {
         const words = item.text.split(/\s+/).length;
         set({ beat: { id: item.id, text: item.text, icon: item.icon, room: item.room, holdFor: Math.max(3.5, Math.min(9, 2 + words * 0.32)) } });
+        // A caption that comes with no sound of its own (a deadline, a clue) gets a soft cue, so it is never missed.
+        const at = performance.now();
+        later(() => {
+          if (Math.abs(lastWorldSfxAt - at) > 300 && !finishing) audio.sfx('toast', { volume: 0.7 });
+        }, 90);
       }
     }),
     bus.on('speech', (sp: Speech) => {
@@ -248,6 +260,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       // A story day's office is built behind its chapter card: its morning jingle plays on "Start the day" instead.
       if (e.id === 'dayStart' && holdDayStart) return;
       if (finishing && e.id !== 'dayEnd') return;
+      lastWorldSfxAt = performance.now();
       audio.sfx(e.id, { ...e.opts, pan: e.opts?.pan ?? pan(e.x) });
     }),
     bus.on('loop', (e) => audio.loop(e.id, e.on)),
@@ -413,15 +426,24 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         changes: storyResult.changes.map((c) => `${c.delta > 0 ? '+' : ''}${c.delta} ${c.text}`)
       }
       : undefined;
-    const res = await director.writeReport(stats, storyInfo);
+    const awardsOf = (r: { awards: { title: string; who: CharId; why: string }[] }): DayReport['awards'] =>
+      r.awards.filter((a) => a.who).map((a) => ({ title: a.title, who: a.who, name: displayName(a.who), avatar: avatar(a.who, 'proud'), why: a.why }));
+    // A slow model can take a minute over the write-up: the quick written summary shows at once,
+    // and the model's own version replaces it when it arrives.
+    const res = await director.writeReport(stats, storyInfo, (draft) => {
+      const cur = get().report;
+      if (!cur || cur.day !== day || !cur.writing) return;
+      set({ report: { ...base, headline: draft.headline, paragraphs: draft.paragraphs, awards: awardsOf(draft), writing: true, draft: true } });
+    });
     if (get().report?.day !== day) return;
     set({
       report: {
         ...base,
         headline: res.headline,
         paragraphs: res.paragraphs,
-        awards: res.awards.filter((a) => a.who).map((a) => ({ title: a.title, who: a.who, name: displayName(a.who), avatar: avatar(a.who, 'proud'), why: a.why })),
-        writing: false
+        awards: awardsOf(res),
+        writing: false,
+        draft: false
       }
     });
     saveWorld();
@@ -584,7 +606,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       swapWorld(next);
       set({ feed: [] });
       const scene = new FinaleScene(sim, ending, story.state.notes);
-      floor.camera.frame(roomRectPx(scene.room));
+      floor.camera.frame(scene.frame);
       return scene;
     } catch (err) {
       finishing = false;

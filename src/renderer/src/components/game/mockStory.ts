@@ -50,8 +50,8 @@ export const MOCK_CHAPTERS: MockChapter[] = [
     goal: {
       id: 'call', title: 'All hands for the call', icon: 'phone',
       detail: 'Get Michael and at least 9 others into the conference room at the same time, between 14:00 and 15:00.',
-      before: 'The call is at 15:00', during: '7 of 10 in the room, Michael not yet', progress: 0.6,
-      won: 'The call went ahead', lost: 'Nobody took the call'
+      before: 'Corporate rings between 14:00 and 15:00', during: '7 of 9 staff in the room, and no Michael yet', progress: 0.6,
+      won: 'Call made', lost: 'Call missed'
     },
     side: [
       { id: 'quiet', title: 'Quiet hands', detail: 'Win the main goal without using any power. Whispers, announcements and your hand only.', icon: 'poke' },
@@ -73,7 +73,7 @@ export const MOCK_CHAPTERS: MockChapter[] = [
     },
     lost: {
       text: [
-        'At 15:00 the vice president phoned an almost empty conference room and hung up after a minute.',
+        'At 15:00 the vice president phoned the conference room. He found only 3 of the staff and no Michael, and hung up after a minute.',
         'Everyone found out about the closure anyway. Kevin told them at 16:00.'
       ],
       changes: [

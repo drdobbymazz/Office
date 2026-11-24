@@ -571,9 +571,11 @@ function GoalCardTile({ story }: { story: StoryUi }) {
 
 // ── End of day report ──
 
-function useTyped(paragraphs: string[], writing: boolean): { text: string[]; typing: boolean } {
+function useTyped(paragraphs: string[], writing: boolean, version = ''): { text: string[]; typing: boolean } {
   const total = useMemo(() => paragraphs.reduce((n, p) => n + p.length, 0), [paragraphs]);
   const [shown, setShown] = useState(0);
+  // A different write-up (the model's version replacing the quick summary) types out from its start.
+  useEffect(() => { setShown(0); }, [version]);
   const typing = shown < total;
   const now = useNow(33, typing);
   useEffect(() => { if (shown < total) setShown((s) => Math.min(total, s + 4)); }, [now]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -606,7 +608,7 @@ export function ReportCard({ vp }: { vp: Viewport }) {
 /** The day's write-up: the headline, the typed story, the quotes, the awards and some numbers. */
 function DayWriteUp({ vp, story }: { vp: Viewport; story: StoryUi | null }) {
   const r = useLast(useUi((s) => s.report))!;
-  const typed = useTyped(r.paragraphs, r.writing);
+  const typed = useTyped(r.paragraphs, r.writing && !r.draft, r.draft ? 'draft' : 'final');
   const two = !vp.portrait && vp.w >= 700;
   const type = bodyType(vp);
   const up = r.stats.stockEnd >= r.stats.stockStart;
@@ -622,6 +624,11 @@ function DayWriteUp({ vp, story }: { vp: Viewport; story: StoryUi | null }) {
           style={{ margin: 0, ...type, color: 'var(--cth-ink-900)' }}>{p}</p>
       ))}
       {typed.text.length === 0 && <p className="gu-caret" style={{ margin: 0, fontSize: 16, color: 'var(--cth-ink-500)' }}>Writing up the day</p>}
+      {r.draft && !typed.typing && (
+        <p className="gu-caret" style={{ margin: 0, fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>
+          This is the short version. The model is writing a fuller one, and it will appear here
+        </p>
+      )}
       {r.quotes.length > 0 && (
         <>
           <Label style={{ marginTop: 4 }}>Quotes of the day</Label>
@@ -638,7 +645,9 @@ function DayWriteUp({ vp, story }: { vp: Viewport; story: StoryUi | null }) {
       )}
     </div>
   );
-  const used = story ? Math.max(0, story.influence.max - story.influence.left) : 0;
+  // What was spent: the budget, plus what extra goals gave back, less what is left.
+  const bonus = story ? story.side.filter((x) => x.state === 'won').length * EXTRA_INFLUENCE : 0;
+  const used = story ? Math.max(0, story.influence.max + bonus - story.influence.left) : 0;
   const numbers = (
     <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, width: two ? undefined : '100%' }}>
       {story ? (
@@ -646,7 +655,7 @@ function DayWriteUp({ vp, story }: { vp: Viewport; story: StoryUi | null }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
           {story.saga
             ? <Stat label="Peak chaos" value={`${Math.round(r.stats.chaosPeak)}%`} sub="today" />
-            : <Stat label="Influence" value={`${used}/${story.influence.max}`} sub="used today" />}
+            : <Stat label="Influence" value={String(used)} sub={`used, of ${story.influence.max + bonus}`} />}
           <Stat label="Incidents" value={String(r.stats.incidents)} sub={r.stats.incidents ? 'reported' : 'none'} />
           <Stat label="Morale" value={`${Math.round(r.stats.morale)}%`} sub="at five" />
         </div>

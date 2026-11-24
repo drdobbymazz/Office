@@ -272,6 +272,11 @@ export interface DayReport {
   stats: { incidents: number; stockStart: number; stockEnd: number; morale: number; chaosPeak: number; lines: number };
   /** True while the model is still writing the report (show the stats first, text streams in). */
   writing: boolean;
+  /**
+   * True while the text shown is the quick written summary and the model's own version is still
+   * on its way (it replaces this one when it arrives).
+   */
+  draft?: boolean;
 }
 
 export interface GameSettings {

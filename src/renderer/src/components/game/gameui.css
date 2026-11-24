@@ -242,7 +242,8 @@ select.gu-field {
 .gu-bubble.k-think .gu-bubble-box { color: var(--cth-ink-500); }
 /* Older bubbles step back so the newest line reads first. */
 .gu-bubble { transition: opacity 240ms steps(3); }
-.gu-bubble.is-dim { opacity: 0.68; }
+/* Dimmed, not see-through: desks showing through the words made older lines hard to read. */
+.gu-bubble.is-dim { filter: brightness(0.88) saturate(0.75); }
 /* No room for a full bubble: a small "..." over the speaker's head until there is. */
 .gu-bubble-tag {
   display: none;
