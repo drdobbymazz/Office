@@ -300,6 +300,8 @@ export interface DirectorSimApi extends SimApi {
   memoriesFor(who: CharId, about?: readonly CharId[]): string[];
   /** Long-term takeaways from the end-of-day report. */
   setTakeaways(list: readonly { who: CharId; text: string }[]): void;
+  /** Send someone out the front door for the rest of the day (e.g. quitting). */
+  leaveEarly(who: CharId, doing?: string): void;
 }
 
 // ── Chaos events plug into the sim like this ─────────────────────────────────

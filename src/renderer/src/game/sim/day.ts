@@ -152,7 +152,7 @@ function beginLeaving(core: SimCore): void {
         fallFrom(core, p);
       }
     }
-    for (const kind of ['asleep', 'frozen'] as const) if (p.has(kind)) core.removeStatus(p.id, kind);
+    for (const kind of ['asleep', 'frozen', 'knockedOut', 'eliminated'] as const) if (p.has(kind)) core.removeStatus(p.id, kind);
     p.leaveAt = core.time + Math.min(4, i * 0.25 + core.rng() * 1);
     i++;
   }

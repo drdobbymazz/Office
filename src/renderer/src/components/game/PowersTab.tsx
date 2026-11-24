@@ -440,10 +440,12 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
     </>
   );
 
-  // The story is mostly about what you say, so the text tools come first there.
+  // Story and Endless Saga put tools first; only Classic Story caps actions by influence.
   return story ? (
     <>
-      <InfluenceRow left={story.influence.left} max={story.influence.max} />
+      {story.saga
+        ? <SagaFreeRow season={story.saga.season} arcTitle={story.saga.arcTitle} />
+        : <InfluenceRow left={story.influence.left} max={story.influence.max} />}
       <Tools />
       <Label style={{ marginTop: 4 }}>Powers</Label>
       {grid}
@@ -453,6 +455,24 @@ export function PowersTab({ initial }: { initial?: { chaos?: ChaosId } } = {}) {
       {grid}
       <Tools />
     </>
+  );
+}
+
+/** Endless Saga: sleek banner showing all powers & tools are free to fire. */
+function SagaFreeRow({ season, arcTitle }: { season: number; arcTitle: string }) {
+  return (
+    <div title={`Season ${season} · ${arcTitle}: all powers and tools are free`} style={{
+      display: 'flex', alignItems: 'center', gap: 6, minHeight: 32, padding: '4px 8px', flexShrink: 0,
+      background: 'var(--cth-lilac-light)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)'
+    }}>
+      <GIcon name="powers" px={16} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--cth-ink-900)' }}>
+        S{season} · {arcTitle}
+      </span>
+      <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 16, lineHeight: '16px', color: '#2f8a45', whiteSpace: 'nowrap' }}>
+        ALL FREE
+      </span>
+    </div>
   );
 }
 

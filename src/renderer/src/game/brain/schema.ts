@@ -5,7 +5,7 @@
 
 import { EMOTIONS, LINE_ACTS, PLAN_KINDS, SHIFT_KINDS, TARGET_ROOMS } from '@/game/core/types';
 import type { PlanKind } from '@/game/core/types';
-import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES } from './api';
+import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, DIRECTIVE_VERBS, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES } from './api';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -46,7 +46,7 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
     lines: arr(
       obj({
         who: oneOf(speakers),
-        say: str(160),
+        say: str(360),
         feel: oneOf(EMOTIONS),
         to: oneOf([...speakers, 'all', 'none']),
         act: oneOf(LINE_ACTS)
@@ -82,7 +82,7 @@ export function mindsSchema(s: MindsSchemaInput): JsonSchema {
     minds: arr(
       obj({
         who: oneOf(s.people.length ? s.people : ['Someone']),
-        thought: str(120),
+        thought: str(220),
         feel: oneOf(EMOTIONS),
         plan: oneOf(s.allowed.length ? s.allowed : PLAN_KINDS),
         target: oneOf([...s.others, ...s.rooms, 'none']),
@@ -116,6 +116,17 @@ export function interpretSchema(rooms: readonly string[]): JsonSchema {
   });
 }
 
+export function directiveSchema(people: string[], rooms: readonly string[]): JsonSchema {
+  return obj({
+    verb: oneOf(DIRECTIVE_VERBS),
+    targetPerson: oneOf([...people, 'none']),
+    targetRoom: oneOf([...(rooms.length ? rooms : TARGET_ROOMS), 'none']),
+    power: oneOf(CUSTOM_POWERS),
+    item: str(32),
+    summary: str(120)
+  });
+}
+
 export function reportSchema(people: string[]): JsonSchema {
   const names = people.length ? people : ['Someone'];
   return obj({
@@ -123,5 +134,15 @@ export function reportSchema(people: string[]): JsonSchema {
     paragraphs: arr(str(500), 2, 3),
     awards: arr(obj({ title: str(40), who: oneOf(names), why: str(120) }), 1, 3),
     takeaways: arr(obj({ who: oneOf(names), text: str(120) }), 0, names.length)
+  });
+}
+
+export function sagaEpisodeSchema(): JsonSchema {
+  return obj({
+    title: str(44),
+    recap: str(220),
+    hook: str(260),
+    twistFact: str(180),
+    topics: arr(str(120), 2, 2)
   });
 }

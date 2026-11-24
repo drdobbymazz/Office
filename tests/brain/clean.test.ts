@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanAct, cleanEmotion, cleanLines, cleanPlans, cleanSay, cleanShifts, lineKey } from '@/game/brain/clean';
+import { cleanAct, cleanEmotion, cleanLine, cleanLines, cleanPlans, cleanSay, cleanShifts, lineKey } from '@/game/brain/clean';
 import { NameMap } from '@/game/brain/names';
 import { WorldIndex } from '@/game/brain/world';
 import { WORLD } from './fixtures';
@@ -63,6 +63,22 @@ describe('cleanLines', () => {
     expect(cleanEmotion('furious')).toBe('neutral');
     expect(cleanAct('step-closer')).toBe('step_closer');
     expect(cleanAct(undefined)).toBe('none');
+  });
+
+  it('preserves a 35-word natural speech line without "..." cutoff while keeping explicit cleanSay limits', () => {
+    const line35 =
+      'Look at this disaster on the floor right now because nobody bothered to lock the annex door before lunch and now the entire quarterly shipment of paper reams is completely soaking wet.';
+    expect(line35.split(' ').length).toBeGreaterThanOrEqual(30);
+    const cleaned = cleanLine(
+      { who: 'Fern', say: line35, feel: 'angry', to: 'none', act: 'none' },
+      { speakers, maxLines: 2, seen: new Set([lineKey('other')]) }
+    );
+    expect(cleaned?.say).toBe(line35);
+    expect(cleaned?.say.endsWith('...')).toBe(false);
+
+    // Explicit default maxWords=22 on cleanSay still bounds callers expecting 22-word cut.
+    const fortyWords = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ');
+    expect(cleanSay(fortyWords).endsWith('...')).toBe(true);
   });
 });
 

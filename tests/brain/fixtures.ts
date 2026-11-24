@@ -159,7 +159,6 @@ export interface MockServer {
 }
 
 export async function startMock(o: { port?: number; tps?: number; load?: number; apiKey?: string } = {}): Promise<MockServer> {
-  const url = new URL('../../tools/mock-ollama.mjs', import.meta.url).href;
-  const mod = (await import(/* @vite-ignore */ url)) as { startMockOllama: (o: object) => Promise<MockServer> };
+  const mod = (await import('../../tools/mock-ollama.mjs')) as { startMockOllama: (o: object) => Promise<MockServer> };
   return mod.startMockOllama({ port: 0, tps: 4000, load: 0, ...o });
 }

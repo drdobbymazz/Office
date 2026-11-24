@@ -38,8 +38,21 @@ const OLLAMA = arg('ollama', process.env.MD_OLLAMA ?? 'http://MSI.lan:11434,http
 const skipWeb = argv.includes('--skip-web');
 const isWin = process.platform === 'win32';
 
+function quoteWinArg(s) {
+  return /[\s"&|<>()^]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function run(cmd, args, opts = {}) {
   try {
+    if (isWin && /\.(bat|cmd)$/i.test(cmd)) {
+      const line = `""${cmd.replace(/"/g, '""')}" ${args.map(quoteWinArg).join(' ')}"`;
+      return execFileSync('cmd.exe', ['/d', '/s', '/c', line], {
+        stdio: opts.quiet ? 'pipe' : 'inherit',
+        encoding: 'utf8',
+        windowsVerbatimArguments: true,
+        ...opts
+      });
+    }
     return execFileSync(cmd, args, { stdio: opts.quiet ? 'pipe' : 'inherit', encoding: 'utf8', ...opts });
   } catch (e) {
     const out = [e.stdout, e.stderr].filter(Boolean).join('\n');
@@ -58,7 +71,12 @@ function onPath(name) {
   return null;
 }
 
-const sdkRoots = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, '/usr/lib/android-sdk'].filter(Boolean);
+const sdkRoots = [
+  process.env.ANDROID_HOME,
+  process.env.ANDROID_SDK_ROOT,
+  isWin && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk') : null,
+  '/usr/lib/android-sdk'
+].filter(Boolean);
 const byVersion = (a, b) => b.localeCompare(a, undefined, { numeric: true });
 
 function inBuildTools(name) {

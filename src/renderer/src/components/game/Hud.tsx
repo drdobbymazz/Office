@@ -48,7 +48,10 @@ export function StatusStrip({ left }: { left: string }) {
     day: st.day, weekday: st.weekday, clock: Math.floor(st.clock), chaos: st.meters.chaos, morale: st.meters.morale,
     stock: st.meters.stock, delta: st.meters.stockDelta, free: st.incidentFreeDays, paused: st.paused, speed: st.speed,
     finishing: st.finishing, phase: st.phase,
-    story: st.story ? { left: st.story.influence.left, max: st.story.influence.max, standing: Math.round(st.story.standing) } : null
+    story: st.story ? {
+      left: st.story.influence.left, max: st.story.influence.max, standing: Math.round(st.story.standing),
+      saga: st.story.saga ? { season: st.story.saga.season } : null
+    } : null
   }));
   const costs = useUi((st) => st.story?.costs ?? null);
   const [explain, setExplain] = useState(false);
@@ -60,7 +63,7 @@ export function StatusStrip({ left }: { left: string }) {
   const up = s.delta >= 0;
   const canPause = s.phase === 'playing' && !s.finishing;
   const story = s.story;
-  const badge = story ? s.weekday.slice(0, 3).toUpperCase() : `DAY ${s.day}`;
+  const badge = story?.saga ? `S${story.saga.season} ${s.weekday.slice(0, 2).toUpperCase()}` : story ? s.weekday.slice(0, 3).toUpperCase() : `DAY ${s.day}`;
 
   const togglePause = () => {
     if (!canPause) return;
@@ -100,7 +103,18 @@ export function StatusStrip({ left }: { left: string }) {
           background: explain ? 'var(--cth-cream-200)' : 'transparent', cursor: 'pointer', touchAction: 'manipulation',
           fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink-900)'
         }}>
-        {story ? (
+        {story ? story.saga ? (
+          <>
+            <GIcon name="chaos" px={16} />
+            <Bar value={s.chaos / 100} w={18} h={10} color="var(--cth-coral)" segments={4} />
+            <GIcon name="morale" px={16} />
+            <Bar value={s.morale / 100} w={18} h={10} color="var(--cth-mint)" segments={4} />
+            <span style={{ flex: 1 }} />
+            <GIcon name="branch" px={16} />
+            <StandingBar value={story.standing} w={24} h={10} marks={false} />
+            <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px', minWidth: 18, textAlign: 'right' }}>{story.standing}</span>
+          </>
+        ) : (
           <>
             <GIcon name="influence" px={16} />
             <Pips left={Math.min(story.left, story.max)} max={story.max} size={6} gap={2} />
@@ -136,12 +150,17 @@ export function StatusStrip({ left }: { left: string }) {
 
 /** What the numbers on the strip mean, in plain words, under the HUD block. */
 function Explain({ story, costs, free, chaos, morale, stock, up, delta, paused, onClose }: {
-  story: { left: number; max: number; standing: number } | null; costs: StoryUi['costs'] | null;
+  story: { left: number; max: number; standing: number; saga: { season: number } | null } | null; costs: StoryUi['costs'] | null;
   free: number; chaos: number; morale: number; stock: number; up: boolean; delta: number; paused: boolean; onClose: () => void;
 }) {
   const game = useGame();
   const rows: { icon: string; text: string }[] = [];
-  if (story) {
+  if (story?.saga) {
+    rows.push({ icon: 'chaos', text: `Chaos ${Math.round(chaos)}%: how wild the office is right now.` });
+    rows.push({ icon: 'morale', text: `Morale ${Math.round(morale)}%: how happy everyone is.` });
+    rows.push({ icon: 'branch', text: `Season ${story.saga.season} standing: ${story.standing}. Winning days and chaos shape corporate fallout.` });
+    rows.push({ icon: 'powers', text: 'All 34 powers, Whispers, Loudspeaker and Anything are unlocked and free.' });
+  } else if (story) {
     const words = costs ? costRange(costs, ['whisper', 'announce', 'cue']) : '';
     const any = costs ? costRange(costs, ['anything']) : '';
     const powers = costs ? costRange(costs, ['fire', 'flood', 'puppy', 'lockIn', 'love', 'meeting']) : '';
@@ -256,7 +275,7 @@ function EventChip({ id, label, endsAt, room }: { id: string; label: string; end
           ? `inset 0 0 0 2px var(--cth-ink-900), inset 4px 0 0 var(--cth-coral)`
           : `inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-${def ? catAccent(def.category) : 'coral'}), 2px 2px 0 rgba(26,19,32,0.25)`,
         transform: pressed ? 'translateY(2px)' : 'none', fontFamily: 'var(--cth-font-ui)', fontSize: 14, color: 'var(--cth-ink-900)',
-        whiteSpace: 'nowrap', maxWidth: 260
+        whiteSpace: 'nowrap', maxWidth: 'min(340px, 85vw)'
       }}>
       <span style={{ width: 2 }} />
       <GIcon name={id} px={16} />

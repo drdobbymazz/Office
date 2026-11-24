@@ -38,7 +38,8 @@ export const STATUS_WORD: Record<StatusKind, string> = {
   love: 'in love', rage: 'furious', truth: 'cannot lie', paranoid: 'paranoid', caffeinated: 'wired',
   sleepy: 'sleepy', asleep: 'asleep', tiny: 'tiny', giant: 'huge', swapped: 'swapped', crowned: 'boss',
   party: 'birthday', rich: 'rich', spooked: 'spooked', abducted: 'abducted', stung: 'stung', dizzy: 'dizzy',
-  wet: 'soaked', sooty: 'sooty', frizzy: 'frizzy', frozen: 'frozen'
+  wet: 'soaked', sooty: 'sooty', frizzy: 'frizzy', frozen: 'frozen',
+  knockedOut: 'knocked out', eliminated: 'eliminated', guilty: 'wanted', quit: 'quit'
 };
 
 export const FEED_ICON: Record<FeedKind, GIconName> = {

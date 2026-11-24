@@ -206,7 +206,7 @@ export function Head({ src, scale = 2, box = 14, ring, style }: {
       <img src={src} alt="" draggable={false} style={{
         position: 'absolute', imageRendering: 'pixelated',
         width: PORTRAIT_W * scale, height: PORTRAIT_H * scale,
-        left: -Math.round(((PORTRAIT_W - box) / 2) * scale), top: Math.round(1 * scale)
+        left: -Math.round(((PORTRAIT_W - box) / 2) * scale), top: Math.round(-1 * scale)
       }} />
     </div>
   );
@@ -325,10 +325,10 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
     for (let i = 0; i < 3; i++) out.push(suggestions[(page * 3 + i) % suggestions.length]);
     return out;
   }, [suggestions, page]);
-  // Story mode: the day holds still while the player types (a phone keyboard is slow, and the story has deadlines).
+  // Story & Saga modes: hold the clock while typing (a phone keyboard is slow, and days move quickly).
   const holdForTyping = useCallback(() => {
     const st = game.store.getState();
-    if (st.mode !== 'story' || st.phase !== 'playing' || st.paused || st.finishing) return;
+    if ((st.mode !== 'story' && st.mode !== 'saga') || st.phase !== 'playing' || st.paused || st.finishing) return;
     pausedByUs.current = true;
     setTypingPause(true);
     game.setPaused(true);

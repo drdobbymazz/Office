@@ -344,12 +344,12 @@ export class SimCore implements DirectorSimApi {
 
   say(who: CharId, text: string, opts: SayOptions = {}): Speech {
     const p = this.map.get(who);
-    const clean = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 280);
+    const clean = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 420);
     const voice = voiceOf(who);
     const fast = p && p.has('caffeinated') ? 1.5 : 1;
     const cps = clamp(26 * voice.speed * fast, 12, 60);
     const typing = clean.length / cps;
-    const durationMs = Math.round(clamp(typing + 1.4, 1.4, 12) * 1000);
+    const durationMs = Math.round(clamp(typing + 1.4, 1.4, 18) * 1000);
     const kind = opts.kind ?? 'say';
     const speech: Speech = { id: this.nextId('s'), who, kind, text: clean, startedAt: this.now(), durationMs, cps };
     if (!p || !p.onFloor || !clean) {
@@ -519,11 +519,27 @@ export class SimCore implements DirectorSimApi {
     const p = this.map.get(who);
     if (!this.directable(p)) return;
     this.scenes.breakFor(p, 'evacuated');
+    const face = this.rng() < 0.6 ? 'down' : this.rng() < 0.5 ? 'left' : 'right';
     setJob(this, p, makeJob('evacuate', { kind: 'outside' }, {
       style: 'run',
       braveHazard: true,
       doing: 'leaving the building',
-      act: idleAct('waiting outside on the pavement', 120, 'up')
+      act: idleAct('waiting outside on the pavement', 120, face)
+    }));
+  }
+
+  leaveEarly(who: CharId, doing = 'walking out'): void {
+    const p = this.map.get(who);
+    if (!p || !p.present || p.goingHome) return;
+    this.scenes.breakFor(p, 'left');
+    p.plan = null;
+    p.goingHome = true;
+    if (p.air || p.seized) return;
+    setJob(this, p, makeJob('home', { kind: 'anchor', id: 'exit.street' }, {
+      style: 'brisk',
+      braveHazard: true,
+      doing,
+      then: () => goneHome(this, p)
     }));
   }
 
@@ -618,7 +634,7 @@ export class SimCore implements DirectorSimApi {
     } else {
       p.statuses.push({ kind, until, target });
     }
-    if (kind === 'asleep' || kind === 'frozen') {
+    if (kind === 'asleep' || kind === 'frozen' || kind === 'knockedOut' || kind === 'eliminated') {
       this.scenes.breakFor(p, kind);
       p.reaction = null;
     }
@@ -1045,8 +1061,15 @@ export class SimCore implements DirectorSimApi {
       for (const s of p.statuses) if (s.until <= this.time) changed = true;
       if (!changed) continue;
       const wasAsleep = p.has('asleep');
+      const wasKo = p.has('knockedOut');
       p.statuses = p.statuses.filter((s) => s.until > this.time);
       if (wasAsleep && !p.has('asleep') && p.onFloor) this.emote(p.id, 'alert');
+      if (wasKo && !p.has('knockedOut') && p.onFloor) {
+        this.emote(p.id, 'alert');
+        this.addStatus(p.id, 'dizzy', 6);
+        this.feel(p.id, 'confused', 0.7, 6);
+        if (p.job?.kind === 'settle' || !p.job) p.doing = 'getting up';
+      }
     }
   }
 
@@ -1116,12 +1139,13 @@ export class SimCore implements DirectorSimApi {
       settleSeized(this, p, dt);
       return;
     }
-    if (p.asleep) {
+    if (p.asleep || p.has('knockedOut')) {
       if (p.walk || p.waiting) {
         p.walk = null;
         p.waiting = false;
         if (p.job) p.job.tile = null;
       }
+      if (p.has('knockedOut')) p.doing = 'knocked out';
       settleSeized(this, p, dt);
       return;
     }

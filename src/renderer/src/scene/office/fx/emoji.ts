@@ -5,7 +5,7 @@
 import type { Texture } from 'pixi.js';
 import { INK, Pix, cachedTex } from './pix';
 
-const SRC = 14; // font size in px: small enough to turn into honest pixels
+const SRC = 18; // font size in px: crisp pixel fallback when custom sprites are absent
 
 export function emojiTex(emoji: string): { texture: Texture } {
   const texture = cachedTex('emoji:' + emoji, () => {

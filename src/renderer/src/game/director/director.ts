@@ -12,7 +12,7 @@
 // The sim keeps the office moving by itself in between. The director only
 // ever asks the sim to do things through its public surface.
 
-import type { Brain, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo, StoryTheme } from '@/game/brain/api';
+import type { Brain, DirectiveRequest, DirectiveResult, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo, StoryTheme } from '@/game/brain/api';
 import { detectChaos, storyThemeOf } from '@/game/brain/instinctRules';
 import type { ScriptLine } from '@/game/story/types';
 import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
@@ -20,6 +20,7 @@ import type { CharId, LineAct, Plan, RoomId, ShiftKind, Speech, TargetRoomId } f
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
 import { TILE, room as roomDef } from '@/game/core/world';
 import { Guests } from './guests';
+import { Directives } from './directives';
 import { convictionLever, invitesPeople, keepsAway, mentionsFood, roomNamedIn, speaksToEveryone, stayedLine, summonChance, summonLine, withoutRooms } from './summon';
 
 export interface DirectorOptions {
@@ -151,12 +152,13 @@ export class Director {
   private storySaid = new Set<string>();
   private factsAt = 0;
   /** People holding a whispered idea: when they next act on it, and how often they have. */
-  private drives = new Map<CharId, { nextAt: number; acts: number }>();
+  private drives = new Map<CharId, { nextAt: number; acts: number; directive?: DirectiveResult }>();
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   /** Free-text events currently on the floor, to be cleared when their time is up. */
   /** What the Anything power put on the floor: guests, creatures, things (director/guests.ts). */
   private guests: Guests;
+  private directives: Directives;
   private disposed = false;
   /** Hand-written story scenes, played in order. While one plays no other scene starts. */
   private scripts: ScriptRun[] = [];
@@ -168,6 +170,7 @@ export class Director {
     this.brain = opts.brain;
     this.instinct = opts.instinct;
     this.guests = new Guests({ sim: opts.sim, scene: (ask, fromPlayer) => this.enqueue(ask, fromPlayer), slow: () => this.slow });
+    this.directives = new Directives({ sim: opts.sim, scene: (ask, fromPlayer) => this.enqueue(ask, fromPlayer) });
   }
 
   setBrain(brain: Brain): void {
@@ -181,6 +184,7 @@ export class Director {
     this.stopScene(false);
     this.queue.length = 0;
     this.guests.clear();
+    this.directives.clear();
   }
 
   /**
@@ -199,6 +203,7 @@ export class Director {
     this.stopScene(false);
     this.queue.length = 0;
     this.guests.clear();
+    this.directives.clear();
     this.ambientAt = this.api.time + 8;
     this.mindsAt = this.api.time + (this.slow ? 45 : 22);
     this.musingAt = this.api.time + 10;
@@ -265,15 +270,18 @@ export class Director {
     this.api.remember([who], `A thought came into your head from nowhere, and it feels like your own: "${thought}"`, 2.5);
     this.api.narrate(`You whisper to ${p.name}: "${thought}"`, { kind: 'overseer', icon: 'whisper', room: p.room });
     const near = this.companions(p, 1);
-    this.enqueue({
-      people: [who, ...near],
-      trigger: 'whisper',
-      why: `${p.name} has just had a sudden thought that feels like ${possessive(p.name)} own idea: "${thought}". ${p.name} believes it and acts on it.`,
-      priority: 10,
-      minLines: near.length ? 2 : 1,
-      maxLines: near.length ? 3 : 2,
-      staleAfter: 40
-    }, true);
+    const fallbackScene = () => {
+      this.enqueue({
+        people: [who, ...near],
+        trigger: 'whisper',
+        why: `${p.name} has just had a sudden thought that feels like ${possessive(p.name)} own idea: "${thought}". ${p.name} believes it and acts on it.`,
+        priority: 10,
+        minLines: near.length ? 2 : 1,
+        maxLines: near.length ? 3 : 2,
+        staleAfter: 40
+      }, true);
+    };
+    this.dispatchDirective(who, thought, 'whisper', fallbackScene);
   }
 
   /** Speak to everyone over the loudspeaker. */
@@ -346,7 +354,7 @@ export class Director {
     };
     for (const p of pool) {
       if (!p.present || this.api.isSeized(p.id) || this.api.isAirborne(p.id)) continue;
-      if (p.statuses.some((st) => st.kind === 'asleep' || st.kind === 'frozen')) continue;
+      if (p.statuses.some((st) => st.kind === 'asleep' || st.kind === 'frozen' || st.kind === 'knockedOut' || st.kind === 'eliminated' || st.kind === 'quit')) continue;
       if (!p.available && !p.sceneId) continue;
       if (this.opts.pinned?.(p.id)) {
         stayed.push(p.name);
@@ -391,19 +399,68 @@ export class Director {
     if (!p || !what) return;
     this.clearTheWay();
     this.api.emote(who, 'alert');
+    this.api.feel(who, 'determined', 0.75, 5);
+    this.api.setThought(who, what);
     this.api.narrate(`You nudge ${p.name}: ${what}`, { kind: 'overseer', icon: 'tell', room: p.room });
     // If the instruction names someone else, bring them into it.
     const named = this.api.people().filter((o) => o.id !== who && o.present && mentions(what, o.name)).map((o) => o.id).slice(0, 2);
     const people = [who, ...(named.length ? named : this.companions(p, 1))];
-    this.enqueue({
-      people,
-      trigger: 'cue',
-      why: `${p.name} feels an urge ${p.name} cannot explain to do exactly this, right now: ${what}`,
-      priority: 10,
-      minLines: people.length > 1 ? 2 : 1,
-      maxLines: people.length > 1 ? 4 : 2,
-      staleAfter: 45
-    }, true);
+    const fallbackScene = () => {
+      this.enqueue({
+        people,
+        trigger: 'cue',
+        why: `${p.name} feels an urge ${p.name} cannot explain to do exactly this, right now: ${what}`,
+        priority: 10,
+        minLines: people.length > 1 ? 2 : 1,
+        maxLines: people.length > 1 ? 4 : 2,
+        staleAfter: 45
+      }, true);
+    };
+    this.dispatchDirective(who, what, 'cue', fallbackScene);
+  }
+
+  private dispatchDirective(who: CharId, text: string, kind: 'whisper' | 'cue', fallbackScene: () => void): void {
+    const actor = this.api.person(who);
+    if (!actor || !actor.present) return;
+    const req: DirectiveRequest = {
+      id: nextId('directive'),
+      actor: { id: actor.id, name: actor.name, room: actor.room },
+      kind,
+      text,
+      people: this.api
+        .people()
+        .filter((o) => o.present && !this.api.hasStatus(o.id, 'eliminated') && !this.api.hasStatus(o.id, 'quit'))
+        .map((o) => ({ id: o.id, name: o.name, room: o.room })),
+      rooms: TARGET_ROOMS.map((id) => ({ id: id as string, name: roomDef(id).name }))
+    };
+    const apply = (res: DirectiveResult): void => {
+      if (this.disposed) return;
+      if (kind === 'whisper') {
+        const d = this.drives.get(who);
+        if (d) d.directive = res;
+      }
+      if (res.verb !== 'social' && this.directives.start(who, res, text, kind)) return;
+      fallbackScene();
+    };
+    const fallback = (): DirectiveResult => (
+      this.instinct.interpretDirectiveNow
+        ? this.instinct.interpretDirectiveNow(req)
+        : { verb: 'social', targetPerson: null, targetRoom: null, power: 'none', item: '', summary: text.slice(0, 120), source: 'instinct' }
+    );
+    if (this.brain === this.instinct || !this.brain.interpretDirective) {
+      apply(fallback());
+      return;
+    }
+    this.sideN += 1;
+    this.report();
+    void this.brain
+      .interpretDirective(req)
+      .catch(() => fallback())
+      .then((res) => apply(res))
+      .finally(() => {
+        this.sideN = Math.max(0, this.sideN - 1);
+        this.report();
+      });
   }
 
   /** Something the player typed: "a horse walks into the office". */
@@ -445,6 +502,7 @@ export class Director {
     if (this.scripts.length) for (const q of this.queue) q.at = Math.min(now, q.at + dt);
     this.pruneQueue(now);
     this.guests.update(dt);
+    this.directives.update(dt);
 
     if (now >= this.factsAt) {
       this.factsAt = now + 1;
@@ -613,7 +671,7 @@ export class Director {
     const kind: Plan['kind'] =
       /\b(love|loves|fancy|fancies|crush|kiss|marry|date|dating|attractive|soulmate|adore)\b/.test(t) ? 'flirt'
         : /\b(prank|trick)\b/.test(t) ? 'prank'
-          : /\b(hate|hates|steal|stole|stolen|lie|lies|lying|liar|cheat|cheating|betray|blame|sabotag\w*|fire|fired|replace|enemy|plot|plotting|against|took|hid|hidden|ruin|spy|spying|fake|wrong|owes?)\b/.test(t) ? 'confront'
+          : /\b(kill|murder|assassinate|knock\s*out|punch|hit|shove|push|fight|attack|hate|hates|steal|stole|stolen|lie|lies|lying|liar|cheat|cheating|betray|blame|sabotag\w*|smash|wreck|fire|fired|replace|enemy|plot|plotting|against|took|hid|hidden|ruin|spy|spying|fake|wrong|owes?)\b/.test(t) ? 'confront'
             : /\b(secret|rumou?r|heard|affair|pregnant|quitting|leaving)\b/.test(t) ? 'gossip'
               : 'talk';
     // Every second turn they spread the word to someone the idea is not about.
@@ -1290,7 +1348,7 @@ export class Director {
 
   private canSpeak(id: CharId): boolean {
     const p = this.api.person(id);
-    return !!p && p.present && !p.sceneId && !p.statuses.some((s) => s.kind === 'asleep' || s.kind === 'frozen' || s.kind === 'abducted');
+    return !!p && p.present && !p.sceneId && !p.statuses.some((s) => s.kind === 'asleep' || s.kind === 'frozen' || s.kind === 'abducted' || s.kind === 'knockedOut' || s.kind === 'eliminated' || s.kind === 'quit');
   }
 
   /** People close enough to be drawn into whatever `p` is doing. */

@@ -111,7 +111,10 @@ function RotatingTip() {
 function ModelLine() {
   const game = useGame();
   const b = useUi((s) => ({ state: s.brain.state, provider: s.brain.provider, model: s.brain.model, thinking: s.brain.thinking }));
+  const baseUrl = useUi((s) => s.settings.brain.baseUrl);
   const [testing, setTesting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(baseUrl);
   const claude = b.provider === 'claude' && b.state === 'online';
   const line = b.state === 'online'
     ? (claude ? 'Claude answers what you do' : `Model online · ${b.model}`)
@@ -119,13 +122,40 @@ function ModelLine() {
     : b.state === 'instinct' ? 'No model: the staff use written lines'
     : 'Model offline: the staff use written lines. You can still play.';
   const color = b.state === 'online' ? 'var(--cth-mint)' : b.state === 'connecting' ? 'var(--cth-lemon)' : b.state === 'instinct' ? 'var(--cth-lilac)' : 'var(--cth-coral)';
+  const connect = () => {
+    const clean = draft.trim().replace(/\/+$/, '');
+    if (!clean) return;
+    game.updateBrain({ provider: 'ollama', baseUrl: clean });
+    setEditing(false);
+  };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32 }}>
-      <Light color={color} blink={b.state === 'connecting' || b.thinking} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>{line}</span>
-      {b.provider !== 'instinct' && (
-        <Btn variant="ghost" size="sm" icon="refresh" label="Check the model again" disabled={testing} square
-          onClick={() => { setTesting(true); game.testBrain().finally(() => setTesting(false)); }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 32 }}>
+        <Light color={color} blink={b.state === 'connecting' || b.thinking} />
+        <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>{line}</span>
+        {!claude && (
+          <Btn variant="ghost" size="sm" onClick={() => { setDraft(baseUrl); setEditing((v) => !v); }} sound="tap">Server</Btn>
+        )}
+        {b.provider !== 'instinct' && (
+          <Btn variant="ghost" size="sm" icon="refresh" label="Check the model again" disabled={testing} square
+            onClick={() => { setTesting(true); game.testBrain().finally(() => setTesting(false)); }} />
+        )}
+      </div>
+      {editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') connect(); }}
+            placeholder="http://192.168.1.124:11434"
+            style={{
+              flex: 1, minWidth: 0, height: 28, padding: '0 8px',
+              fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink-900)',
+              background: 'var(--cth-cream-50)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)'
+            }}
+          />
+          <Btn variant="secondary" size="sm" onClick={connect} sound="confirm">Connect</Btn>
+        </div>
       )}
     </div>
   );
@@ -138,7 +168,9 @@ export function TitleCard({ vp }: { vp: Viewport }) {
   const day = useUi((s) => s.day);
   const mode = useUi((s) => s.mode);
   const saved = useUi((s) => s.storySaved);
+  const sagaSaved = useUi((s) => s.sagaSaved);
   const [askNew, setAskNew] = useState(false);
+  const [askNewSaga, setAskNewSaga] = useState(false);
   const side = !vp.portrait && vp.w >= 640;
   // The plate is 132 x 84 art pixels: twice that where there is room, else once.
   const logoScale = side && vp.h >= 340 ? 2 : 1;
@@ -147,9 +179,9 @@ export function TitleCard({ vp }: { vp: Viewport }) {
   const rise = (i: number): React.CSSProperties => ({ animationDelay: `${120 + i * 60}ms` });
   return (
     <div style={{ ...backdrop, background: 'rgba(26, 19, 32, 0.45)' }}>
-      <div className="gu-scroll" style={{ width: side ? 'min(660px, 100%)' : 'min(420px, 100%)', maxHeight: '100%' }}>
+      <div className="gu-scroll" style={{ width: side ? 'min(680px, 100%)' : 'min(420px, 100%)', maxHeight: '100%' }}>
         <PixelPanel variant="dialog" noPadding style={{ boxShadow: hardShadow }}>
-          <div style={{ display: 'flex', flexDirection: side ? 'row' : 'column', gap: side ? 20 : 12, padding: vp.h < 380 ? 12 : 16, alignItems: side ? 'center' : 'stretch' }}>
+          <div style={{ display: 'flex', flexDirection: side ? 'row' : 'column', gap: side ? 18 : 10, padding: vp.h < 380 ? 12 : 16, alignItems: side ? 'center' : 'stretch' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               <img src={gameLogo} alt="Munder Difflin, Inc. The living office" draggable={false} className="sc-drop"
                 width={132 * logoScale} height={84 * logoScale}
@@ -162,28 +194,28 @@ export function TitleCard({ vp }: { vp: Viewport }) {
                 ))}
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 0 }}>
-              <p className="sc-rise" style={{ margin: 0, fontSize: 17, lineHeight: '22px', ...rise(0) }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+              <p className="sc-rise" style={{ margin: 0, fontSize: 16, lineHeight: '20px', ...rise(0) }}>
                 Fifteen office workers with minds of their own. You are the unseen force that makes their day strange.
               </p>
-              <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 6, ...rise(1) }}>
-                <Btn variant="primary" size="lg" full icon="play" sound="confirm" style={{ height: 'auto', minHeight: 56, padding: '6px 16px' }}
+              <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5, ...rise(1) }}>
+                <Btn variant="primary" size="lg" full icon="play" sound="confirm" style={{ height: 'auto', minHeight: 50, padding: '6px 14px' }}
                   onClick={() => go(() => game.startStory())}>
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
-                    <span style={{ fontSize: 18, lineHeight: '21px' }}>{saved ? `Continue: Day ${saved.chapter}, ${saved.title}` : 'Play the story'}</span>
-                    <span style={{ fontSize: 13, lineHeight: '15px', color: 'var(--cth-cream-300)' }}>
-                      {saved ? `Closing Time. ${saved.weekday} starts again from the morning.` : 'Closing Time: one week to save the branch'}
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
+                    <span style={{ fontSize: 17, lineHeight: '20px' }}>{saved ? `Continue Story: Day ${saved.chapter}, ${saved.title}` : 'Play the story'}</span>
+                    <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-cream-300)' }}>
+                      {saved ? `Closing Time · ${saved.weekday} starts from the morning` : 'Closing Time: one curated week to save the branch'}
                     </span>
                   </span>
                 </Btn>
                 {saved && !askNew && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 40 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34 }}>
                     <GIcon name="branch" px={16} title="Branch standing" />
-                    <StandingBar value={saved.standing} w={64} h={10} marks={false} />
-                    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px' }}>{Math.round(saved.standing)}</span>
+                    <StandingBar value={saved.standing} w={56} h={9} marks={false} />
+                    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px' }}>{Math.round(saved.standing)}</span>
                     <span className="gu-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>Standing</span>
                     <span style={{ flex: 1 }} />
-                    <Btn variant="ghost" size="md" icon="refresh" onClick={() => setAskNew(true)} sound="open">New story</Btn>
+                    <Btn variant="ghost" size="sm" icon="refresh" onClick={() => setAskNew(true)} sound="open">New story</Btn>
                   </div>
                 )}
                 {saved && askNew && (
@@ -191,14 +223,41 @@ export function TitleCard({ vp }: { vp: Viewport }) {
                     keep="Keep it" go="New week" onKeep={() => setAskNew(false)} onGo={() => { setAskNew(false); go(() => game.startStory(true)); }} />
                 )}
               </div>
+              <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5, ...rise(2) }}>
+                <Btn variant="accent" accent="lilac" size="lg" full icon="branch" sound="confirm" style={{ height: 'auto', minHeight: 50, padding: '6px 14px' }}
+                  onClick={() => go(() => game.startSaga())}>
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
+                    <span style={{ fontSize: 17, lineHeight: '20px' }}>
+                      {sagaSaved ? `Continue Saga: S${sagaSaved.season} · ${sagaSaved.title}` : 'Endless Saga'}
+                    </span>
+                    <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-700)' }}>
+                      {sagaSaved ? `${sagaSaved.arcTitle} · ${sagaSaved.weekday}` : 'Overarching weekly arcs + full sandbox freedom'}
+                    </span>
+                  </span>
+                </Btn>
+                {sagaSaved && !askNewSaga && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34 }}>
+                    <GIcon name="branch" px={16} title="Saga branch standing" />
+                    <StandingBar value={sagaSaved.standing} w={56} h={9} marks={false} />
+                    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px' }}>{Math.round(sagaSaved.standing)}</span>
+                    <span className="gu-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>S{sagaSaved.season}</span>
+                    <span style={{ flex: 1 }} />
+                    <Btn variant="ghost" size="sm" icon="refresh" onClick={() => setAskNewSaga(true)} sound="open">New saga</Btn>
+                  </div>
+                )}
+                {sagaSaved && askNewSaga && (
+                  <Confirm text={`Start a new Endless Saga from Season 1? Current progress (Season ${sagaSaved.season}, standing ${Math.round(sagaSaved.standing)}) is reset.`}
+                    keep="Keep it" go="New saga" onKeep={() => setAskNewSaga(false)} onGo={() => { setAskNewSaga(false); go(() => game.startSaga(true)); }} />
+                )}
+              </div>
               <div className="sc-rise" style={rise(2)}>
                 <Btn variant="secondary" size="md" full icon="powers" onClick={() => go(() => game.startSandbox())}>
                   Sandbox
-                  <span style={{ color: 'var(--cth-ink-500)' }}>{mode === 'sandbox' && day > 1 ? `· day ${day}` : '· free play'}</span>
+                  <span style={{ color: 'var(--cth-ink-500)' }}>{mode === 'sandbox' && day > 1 ? `· day ${day}` : '· pure free play'}</span>
                 </Btn>
               </div>
               {/* On a short screen the tip makes way for the choices. */}
-              {vp.h >= 400 && <div className="sc-rise" style={rise(3)}><RotatingTip /></div>}
+              {vp.h >= 420 && <div className="sc-rise" style={rise(3)}><RotatingTip /></div>}
               <div className="sc-rise" style={rise(3)}><ModelLine /></div>
             </div>
           </div>
@@ -208,11 +267,13 @@ export function TitleCard({ vp }: { vp: Viewport }) {
   );
 }
 
-// ── Story: the chapter card ──
+// ── Story & Saga: the chapter card ──
 
-function DayFaces({ chapter, scale }: { chapter: number; scale: number }) {
+function DayFaces({ chapter, saga, scale }: { chapter: number; saga?: StoryUi['saga']; scale: number }) {
   const game = useGame();
-  const pic = dayPicture(chapter);
+  const pic = saga
+    ? (saga.icon ? { faces: [] as { id: string; face: EmotionId }[], icon: saga.icon } : { faces: saga.faces })
+    : dayPicture(chapter);
   if (pic.icon) {
     return (
       <div className="sc-hop" style={{ animationDelay: '120ms' }}>
@@ -241,9 +302,8 @@ function DayFaces({ chapter, scale }: { chapter: number; scale: number }) {
 const WEEKDAY_UPPER = (w: string) => w.toUpperCase();
 
 /**
- * Before each day of the story, in two beats. First the opening: the day, the chapter's name, the
- * people it is about, what happened before, and what is going on. Then the briefing: today's goal,
- * the extras, the clues, and the budget, standing and week in one row beside Start.
+ * Before each day of Story or Endless Saga, in two beats. First the opening: the day, chapter's name,
+ * who is featured, what happened before, and what is going on. Then the briefing: goal, extras, clues.
  */
 export function ChapterCard({ vp }: { vp: Viewport }) {
   // Held while the wipe covers it (going back to the title clears the story at once).
@@ -261,16 +321,19 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
   const two = !vp.portrait && vp.w >= 700;
   const { hook, rest } = splitHook(story.intro);
   const type = bodyType(vp);
-  const first = story.chapter === 1;
+  const saga = story.saga;
+  const first = !saga && story.chapter === 1;
   const big = two && vp.h >= 380;
-  const pic = dayPicture(story.chapter);
-  const n = pic.faces.length;
+  const picCount = saga ? saga.faces.length : dayPicture(story.chapter).faces.length;
+  const n = Math.max(1, picCount);
   const scale = n <= 3 && big ? 3 : 2;
   // The picture's column: wide enough for the faces side by side at their scale.
   const col = Math.max(156, n * 18 * scale + (n - 1) * 4 + 16);
   const short = vp.h < 420;
   return (
-    <Card fit vp={vp} band="var(--cth-lemon)" head={`DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`} sub={`Chapter ${story.chapter} of ${story.chapters}`}
+    <Card fit vp={vp} band={saga ? 'var(--cth-lilac)' : 'var(--cth-lemon)'}
+      head={saga ? `S${saga.season} DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}` : `DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`}
+      sub={saga ? saga.arcTitle : `Chapter ${story.chapter} of ${story.chapters}`}
       footer={
         <>
           <Btn variant="ghost" size={short ? 'md' : 'lg'} icon="back" label="Back to the title" onClick={() => game.toTitle()} sound="close">Title</Btn>
@@ -281,7 +344,7 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
       <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, padding: two ? '12px 0 0 16px' : '10px 0 0 12px', minWidth: 0 }}>
         {two && (
           <div style={{ width: col, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 12 }}>
-            <DayFaces chapter={story.chapter} scale={scale} />
+            <DayFaces chapter={story.chapter} saga={saga} scale={scale} />
           </div>
         )}
         <ScrollArea style={{ flex: '1 1 auto' }} inner={{ gap: 10, padding: two ? '0 16px 14px 0' : '0 12px 14px 0' }}>
@@ -294,10 +357,23 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
               <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>A story in five days, Monday to Friday</span>
             </div>
           )}
+          {saga && (
+            <div className="sc-drop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px', padding: '4px 6px 2px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
+                SEASON {saga.season} · {saga.arcTitle.toUpperCase()}
+              </span>
+              <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>Endless Saga · all powers free</span>
+              {saga.aiCrafted && (
+                <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px', padding: '2px 5px 1px', background: 'var(--cth-mint)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' }}>
+                  AI SHOWRUNNER
+                </span>
+              )}
+            </div>
+          )}
           <h2 className="sc-drop" style={{ margin: 0, fontFamily: 'var(--cth-font-display)', fontWeight: 400, fontSize: big ? 24 : 16, lineHeight: big ? '32px' : '24px', flexShrink: 0 }}>
             {story.title.toUpperCase()}
           </h2>
-          {!two && <div style={{ flexShrink: 0 }}><DayFaces chapter={story.chapter} scale={2} /></div>}
+          {!two && <div style={{ flexShrink: 0 }}><DayFaces chapter={story.chapter} saga={saga} scale={2} /></div>}
           {story.recap && (
             <div className="sc-rise" style={{
               display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 10px 6px 12px', background: 'var(--cth-cream-100)', flexShrink: 0,
@@ -323,6 +399,7 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
   const two = !vp.portrait && vp.w >= 700;
   const short = vp.h < 420;
   const [stuck, setStuck] = useState(true);
+  const [howOpen, setHowOpen] = useState(story.chapter === 1);
   const goal = (
     <>
       <GoalCardTile story={story} />
@@ -350,21 +427,48 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
           ))}
         </div>
       )}
-      <Label style={{ marginTop: 4 }}>How the week works</Label>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <GIcon name="influence" px={16} style={{ marginTop: 1 }} />
-        <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>Influence is today's budget. {INFLUENCE_NOTE}</span>
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <GIcon name="branch" px={16} style={{ marginTop: 1 }} />
-        <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
-          Standing is {STANDING_NOTE.charAt(0).toLowerCase() + STANDING_NOTE.slice(1)}. {MARKS_NOTE}
-        </span>
-      </div>
+      <button type="button" onClick={() => setHowOpen((v) => !v)} style={{
+        display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: 0,
+        border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left'
+      }}>
+        <Label style={{ cursor: 'pointer' }}>How the week works {howOpen ? '▾' : '▸'}</Label>
+      </button>
+      {howOpen && (
+        story.saga ? (
+          <>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <GIcon name="powers" px={16} style={{ marginTop: 1 }} />
+              <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>All 34 powers, Whispers, Loudspeaker, and Anything are free and unlocked every day.</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <GIcon name="branch" px={16} style={{ marginTop: 1 }} />
+              <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+                Bonus goals (+3 standing) and your chaos twist Standing and tomorrow's episode. After Friday's finale, continue directly into Season {story.saga.season + 1}.
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <GIcon name="influence" px={16} style={{ marginTop: 1 }} />
+              <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>Influence is today's budget. {INFLUENCE_NOTE}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <GIcon name="branch" px={16} style={{ marginTop: 1 }} />
+              <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+                Standing is {STANDING_NOTE.charAt(0).toLowerCase() + STANDING_NOTE.slice(1)}. {MARKS_NOTE}
+              </span>
+            </div>
+          </>
+        )
+      )}
     </>
   );
+  const saga = story.saga;
   return (
-    <Card vp={vp} band="var(--cth-lemon)" head={`DAY ${story.chapter} · ${story.title.toUpperCase()}`} sub={`Chapter ${story.chapter} of ${story.chapters}`}
+    <Card vp={vp} band={saga ? 'var(--cth-lilac)' : 'var(--cth-lemon)'}
+      head={saga ? `S${saga.season} · ${story.title.toUpperCase()}` : `DAY ${story.chapter} · ${story.title.toUpperCase()}`}
+      sub={saga ? `${saga.arcTitle} · Day ${story.chapter}` : `Chapter ${story.chapter} of ${story.chapters}`}
       footer={
         <>
           <FooterMeters story={story} vp={vp} />
@@ -389,18 +493,28 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
   );
 }
 
-/** Influence, standing and the week in one row, each with its small label. */
+/** Influence (or Free Play badge in Saga), standing and the week in one row. */
 function FooterMeters({ story, vp }: { story: StoryUi; vp: Viewport }) {
   const narrow = vp.w < 520;
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, minWidth: 0, flexWrap: narrow ? 'wrap' : 'nowrap' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} title={`Influence: ${story.influence.left} of ${story.influence.max}`}>
-        <Label>Influence</Label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 20 }}>
-          <GIcon name="influence" px={16} />
-          <Pips left={story.influence.left} max={story.influence.max} size={8} gap={2} />
+      {story.saga ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} title="All powers, Whispers, Loudspeaker and Anything are free">
+          <Label>Powers</Label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 20 }}>
+            <GIcon name="powers" px={16} />
+            <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px', color: '#2f8a45' }}>FREE</span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} title={`Influence: ${story.influence.left} of ${story.influence.max}`}>
+          <Label>Influence</Label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 20 }}>
+            <GIcon name="influence" px={16} />
+            <Pips left={story.influence.left} max={story.influence.max} size={8} gap={2} />
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} title={`Branch standing ${Math.round(story.standing)} of 100`}>
         <Label>Standing</Label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 20 }}>
@@ -419,10 +533,13 @@ function FooterMeters({ story, vp }: { story: StoryUi; vp: Viewport }) {
 
 function Extras({ story }: { story: StoryUi }) {
   if (!story.side.length) return null;
+  const saga = !!story.saga;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <Label style={{ marginTop: 4 }}>Extra goals: +{STANDING.extra} standing and +{EXTRA_INFLUENCE} influence each</Label>
-      {story.side.map((x) => <ExtraRow key={x.id} goal={x} live={false} />)}
+      <Label style={{ marginTop: 4 }}>
+        {saga ? 'Bonus goals: +3 standing each (everything stays free)' : `Extra goals: +${STANDING.extra} standing and +${EXTRA_INFLUENCE} influence each`}
+      </Label>
+      {story.side.map((x) => <ExtraRow key={x.id} goal={x} live={false} worth={saga ? 3 : undefined} />)}
     </div>
   );
 }
@@ -482,7 +599,7 @@ export function ReportCard({ vp }: { vp: Viewport }) {
   const story = useLast(live?.result ? live : null);
   const mode = useUi((s) => s.mode);
   if (!r) return null;
-  if (mode === 'story') return story ? <StoryReport vp={vp} story={story} /> : null;
+  if (mode === 'story' || mode === 'saga') return story ? <StoryReport vp={vp} story={story} /> : null;
   return <SandboxReport vp={vp} />;
 }
 
@@ -525,9 +642,11 @@ function DayWriteUp({ vp, story }: { vp: Viewport; story: StoryUi | null }) {
   const numbers = (
     <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, width: two ? undefined : '100%' }}>
       {story ? (
-        // Story mode: the numbers that move the standing, not the sandbox's share price.
+        // Story & Saga modes: the numbers that move Branch Standing, not sandbox share price.
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
-          <Stat label="Influence" value={`${used}/${story.influence.max}`} sub="used today" />
+          {story.saga
+            ? <Stat label="Peak chaos" value={`${Math.round(r.stats.chaosPeak)}%`} sub="today" />
+            : <Stat label="Influence" value={`${used}/${story.influence.max}`} sub="used today" />}
           <Stat label="Incidents" value={String(r.stats.incidents)} sub={r.stats.incidents ? 'reported' : 'none'} />
           <Stat label="Morale" value={`${Math.round(r.stats.morale)}%`} sub="at five" />
         </div>
@@ -599,6 +718,7 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
   const delta = Math.round(result.standingAfter - result.standingBefore);
   const go = (p: number) => { if (p !== page) { game.uiSound('card'); setPage(p); } };
   const act = reportActions(won, lastDay);
+  const nextLabel = story.saga && lastDay ? 'See season finale' : act.nextLabel;
   const retry = () => {
     if (act.confirmRetry) { setAskRetry(true); return; }
     game.retryDay();
@@ -615,13 +735,13 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
           <Btn variant="secondary" size={size} icon="refresh" onClick={retry} style={{ flexShrink: 1, minWidth: 0 }}>
             {vp.w < 560 ? 'Again' : 'Try the day again'}
           </Btn>
-          <Btn variant="primary" size={size} icon="arrow-right" sound="confirm" onClick={() => game.nextDay()} style={{ flexShrink: 1, minWidth: 0 }}>{act.nextLabel}</Btn>
+          <Btn variant="primary" size={size} icon="arrow-right" sound="confirm" onClick={() => game.nextDay()} style={{ flexShrink: 1, minWidth: 0 }}>{nextLabel}</Btn>
         </>
       ) : (
         // A lost day: trying again is the main way on; moving on is still there.
         <>
           <Btn variant="secondary" size={size} icon="arrow-right" onClick={() => game.nextDay()} style={{ flexShrink: 1, minWidth: 0 }}>
-            {vp.w < 560 && !lastDay ? 'Move on' : act.nextLabel}
+            {vp.w < 560 && !lastDay ? 'Move on' : nextLabel}
           </Btn>
           <Btn variant="primary" size={size} icon="play" sound="confirm" onClick={retry} style={{ flexShrink: 1, minWidth: 0 }}>Try the day again</Btn>
         </>
@@ -629,7 +749,9 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
     </span>
   );
   return (
-    <Card vp={vp} band="var(--cth-lemon)" head={`DAY ${r.day} · ${story.weekday.toUpperCase()}`} sub="End of day report"
+    <Card vp={vp} band={story.saga ? 'var(--cth-lilac)' : 'var(--cth-lemon)'}
+      head={story.saga ? `S${story.saga.season} · DAY ${story.chapter} · ${story.weekday.toUpperCase()}` : `DAY ${r.day} · ${story.weekday.toUpperCase()}`}
+      sub={story.saga ? story.saga.arcTitle : 'End of day report'}
       footer={
         <>
           {!askRetry && (
@@ -789,6 +911,7 @@ export function EndingCard({ vp }: { vp: Viewport }) {
   const [page, setPage] = useState(0);
   if (!story || !story.ending) return null;
   const e = story.ending;
+  const saga = story.saga;
   const two = !vp.portrait && vp.w >= 700;
   const short = vp.h < 420;
   const type = bodyType(vp);
@@ -826,14 +949,28 @@ export function EndingCard({ vp }: { vp: Viewport }) {
         {STANDING_NOTE}. {MARKS_NOTE}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-        <Label style={{ flex: 1 }}>The week</Label>
+        <Label style={{ flex: 1 }}>{saga ? `Season ${saga.season}` : 'The week'}</Label>
         <span style={{ fontSize: 13, color: 'var(--cth-ink-700)' }}>{won} of {story.week.length} days won</span>
       </div>
       <WeekStrip week={story.week} titles />
+      {saga && saga.history.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+          {saga.history.slice(-4).map((h) => (
+            <span key={h.season} style={{
+              fontSize: 12, lineHeight: '15px', padding: '2px 6px', background: 'var(--cth-cream-100)',
+              boxShadow: 'inset 0 0 0 1px var(--cth-ink-700)', color: 'var(--cth-ink-700)'
+            }}>
+              S{h.season}: {h.arcTitle} ({Math.round(h.standing)})
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
   return (
-    <Card vp={vp} band={ENDING_ACCENT[e.id]} head="FRIDAY, 17:00" sub="The week is over"
+    <Card vp={vp} band={ENDING_ACCENT[e.id]}
+      head={saga ? `SEASON ${saga.season} FINALE` : 'FRIDAY, 17:00'}
+      sub={saga ? saga.arcTitle : 'The week is over'}
       footer={
         <>
           <Btn variant="secondary" size={short ? 'md' : 'lg'} icon="back" onClick={() => game.toTitle()} sound="close" style={{ flexShrink: 1, minWidth: 0 }}>
@@ -845,7 +982,15 @@ export function EndingCard({ vp }: { vp: Viewport }) {
               {page === 0 ? 'The people' : 'The verdict'}
             </Btn>
           </span>
-          <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.startStory(true)} style={{ flexShrink: 1, minWidth: 0 }}>Play again</Btn>
+          {saga ? (
+            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.nextSeason()} style={{ flexShrink: 1, minWidth: 0 }}>
+              Start Season {saga.season + 1}
+            </Btn>
+          ) : (
+            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.startStory(true)} style={{ flexShrink: 1, minWidth: 0 }}>
+              Play again
+            </Btn>
+          )}
         </>
       }>
       {page === 0 ? (
@@ -870,7 +1015,7 @@ function People({ vp, story }: { vp: Viewport; story: StoryUi }) {
   const epilogue = story.ending?.epilogue ?? [];
   const lines = epilogue.length > 0 && (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <Label>How the week left them</Label>
+      <Label>{story.saga ? 'Season highlights' : 'How the week left them'}</Label>
       {epilogue.map((l, i) => (
         <div key={i} className="sc-rise" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', animationDelay: `${i * 90}ms` }}>
           <span style={{ width: 8, height: 8, marginTop: 6, flexShrink: 0, background: 'var(--cth-ink-700)' }} />

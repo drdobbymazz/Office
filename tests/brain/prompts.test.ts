@@ -59,6 +59,8 @@ describe('prompts', () => {
     const b1 = createBrain(settings(), { bank: BANK, world: WORLD }) as LlmBrain;
     const b2 = createBrain(settings({ temperature: 1.2 }), { bank: BANK, world: WORLD }) as LlmBrain;
     expect(b1.prompts.system('scene')).toBe(b2.prompts.system('scene'));
+    expect(book.system('scene')).toContain('Uncensored dark adult workplace comedy');
+    expect(book.system('directive')).toContain('seduce');
   });
 
   it('describes the world it is given, not a hard-coded one', () => {

@@ -29,7 +29,7 @@ function pickAnim(core: SimCore, p: Person): { anim: AnimId; seated: boolean; va
     const s = p.seizes[p.seizes.length - 1];
     return { anim: s.anim, seated: s.seated, variant: s.variant };
   }
-  if (p.asleep) return { anim: 'sleep', seated: !!(p.job && p.job.phase === 'act' && p.job.act?.seated), variant: 0 };
+  if (p.asleep || p.has('knockedOut')) return { anim: p.has('knockedOut') ? 'lie' : 'sleep', seated: !p.has('knockedOut') && !!(p.job && p.job.phase === 'act' && p.job.act?.seated), variant: 0 };
   const job = p.job;
   const seatedAct = !!(job && job.phase === 'act' && job.act && job.act.seated && !p.walk);
   if (p.reaction && core.time < p.reaction.until) return { anim: p.reaction.anim, seated: seatedAct, variant: 0 };
@@ -118,6 +118,24 @@ export function buildFrame(core: SimCore): RenderFrame {
 
 export function personUi(core: SimCore, p: Person): PersonUi {
   const room = p.present ? p.room : 'outside';
+  const anim = p.present && !p.hidden ? pickAnim(core, p).anim : 'idle';
+  let emotion = p.emotion;
+  if ((anim === 'cower' || anim === 'panic') && (emotion === 'neutral' || emotion === 'happy' || emotion === 'amused' || emotion === 'proud' || emotion === 'bored')) {
+    emotion = 'scared';
+  } else if (anim === 'cry' && emotion !== 'sad') {
+    emotion = 'sad';
+  }
+  const doing = p.has('eliminated')
+    ? 'eliminated'
+    : p.has('quit')
+      ? 'quit for the day'
+      : p.has('knockedOut')
+        ? 'knocked out'
+        : p.present
+          ? (p.seized ? p.seizes[p.seizes.length - 1].doing : p.doing)
+          : p.wentHome
+            ? 'gone home'
+            : 'not in yet';
   return {
     id: p.id,
     name: p.name,
@@ -126,10 +144,10 @@ export function personUi(core: SimCore, p: Person): PersonUi {
     avatar: '',
     room,
     roomName: core.roomName(room),
-    emotion: p.emotion,
+    emotion,
     intensity: p.intensity,
     statuses: p.statuses.map((s) => s.kind),
-    doing: p.present ? (p.seized ? p.seizes[p.seizes.length - 1].doing : p.doing) : p.wentHome ? 'gone home' : 'not in yet',
+    doing,
     speaking: p.speaking,
     present: p.present && !p.hidden,
     busy: !p.available

@@ -67,7 +67,9 @@ export class DarkLayer {
     const perTile = TILE / CELL;
     for (let ty = 0; ty < GRID_H; ty++) {
       for (let tx = 0; tx < GRID_W; tx++) {
-        const r = ty >= MAP_H ? 6 : ROOM_IDS.indexOf(roomAt({ x: tx, y: ty }));
+        // Perimeter outer walls count as outside (6) so darkness overlays never spill past brick walls.
+        const perimeter = tx === 0 || tx === GRID_W - 1 || ty === 0 || ty === MAP_H - 1;
+        const r = ty >= MAP_H || perimeter ? 6 : ROOM_IDS.indexOf(roomAt({ x: tx, y: ty }));
         for (let cy = 0; cy < perTile; cy++) for (let cx = 0; cx < perTile; cx++) {
           this.cellRoom[(ty * perTile + cy) * CW + tx * perTile + cx] = r < 0 ? 4 : r;
         }

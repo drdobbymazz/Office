@@ -95,7 +95,11 @@ export type StatusKind =
   | 'stung'
   | 'dizzy'
   | 'wet' | 'sooty' | 'frizzy'
-  | 'frozen';     // time is stopped for them
+  | 'frozen'      // time is stopped for them
+  | 'knockedOut'  // out cold on the floor
+  | 'eliminated'  // taken out for the day
+  | 'guilty'      // took someone out and everyone saw
+  | 'quit';       // walked out for the day
 
 export interface StatusEffect {
   kind: StatusKind;

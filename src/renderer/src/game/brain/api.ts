@@ -318,6 +318,67 @@ export interface ReportResult {
   source: 'model' | 'instinct';
 }
 
+/** "Write the opening beat for the next episode of Endless Saga." */
+export interface SagaEpisodeRequest {
+  id: string;
+  season: number;
+  day: number;
+  weekday: string;
+  arcTitle: string;
+  arcPremise: string;
+  standing: number;
+  yesterday: {
+    title: string;
+    won: boolean;
+    chaosPeak: number;
+    incidents: number;
+    morale: number;
+    events: string[];
+    log: string[];
+  };
+  tomorrow: {
+    title: string;
+    goalTitle: string;
+    goalDetail: string;
+    featured: string[];
+  };
+}
+
+export interface SagaEpisodeResult {
+  title: string;
+  recap: string;
+  hook: string;
+  twistFact: string;
+  topics: string[];
+  source: 'model' | 'instinct';
+}
+
+export const DIRECTIVE_VERBS = [
+  'eliminate', 'knockout', 'shove', 'chase', 'drag', 'lock_in',
+  'sabotage', 'trigger_power', 'walk_out', 'steal', 'romance',
+  'follow', 'guard', 'go_to', 'social'
+] as const;
+export type DirectiveVerb = (typeof DIRECTIVE_VERBS)[number];
+
+export interface DirectiveRequest {
+  id: string;
+  actor: { id: CharId; name: string; room: RoomId };
+  kind: 'whisper' | 'cue';
+  text: string;
+  people: { id: CharId; name: string; room: RoomId }[];
+  rooms: { id: string; name: string }[];
+}
+
+export interface DirectiveResult {
+  verb: DirectiveVerb;
+  targetPerson: CharId | null;
+  targetRoom: TargetRoomId | null;
+  power: CustomPower;
+  item: string;
+  summary: string;
+  source: 'model' | 'instinct';
+}
+
 // ── The brain itself ─────────────────────────────────────────────────────────
 
 export interface BrainStatus {
@@ -360,7 +421,10 @@ export interface Brain {
   scene(req: SceneRequest, cb?: SceneCallbacks): Promise<SceneResult>;
   minds(req: MindsRequest, signal?: AbortSignal): Promise<MindResult[]>;
   interpret(req: InterpretRequest, signal?: AbortSignal): Promise<InterpretResult>;
+  interpretDirective?(req: DirectiveRequest, signal?: AbortSignal): Promise<DirectiveResult>;
+  interpretDirectiveNow?(req: DirectiveRequest): DirectiveResult;
   report(req: ReportRequest, signal?: AbortSignal): Promise<ReportResult>;
+  sagaEpisode?(req: SagaEpisodeRequest, signal?: AbortSignal): Promise<SagaEpisodeResult>;
 }
 
 /** Instant, no-model lines for reflexes ("FIRE!"). Implemented by InstinctBrain. */

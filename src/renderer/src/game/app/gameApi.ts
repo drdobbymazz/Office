@@ -21,7 +21,7 @@ export type GamePhase =
   | 'report'    // end-of-day report is showing
   | 'ending';   // story mode: the week is over, the ending card is showing
 
-export type GameMode = 'sandbox' | 'story';
+export type GameMode = 'sandbox' | 'saga' | 'story';
 
 // ── Story mode ("Closing Time": five days, one main job a day) ──────────────
 
@@ -108,6 +108,18 @@ export interface StoryUi {
   suggest: { whisper: string[]; announce: string[] };
   /** Today's main goal is settled and nothing left today changes the result: the player may finish the day now. */
   canFinish: boolean;
+  /** Endless Saga metadata when running in `mode === 'saga'`; undefined in Classic Story mode. */
+  saga?: {
+    season: number;
+    arcId: string;
+    arcTitle: string;
+    arcTagline: string;
+    faces: { id: string; face: EmotionId }[];
+    icon?: string;
+    aiCrafted?: boolean;
+    twist?: string | null;
+    history: { season: number; arcTitle: string; ending: 'saved' | 'scraped' | 'closed'; standing: number }[];
+  };
 }
 
 /** A line of story narration to show on the floor as a caption (newest wins). */
@@ -319,10 +331,12 @@ export interface UiState {
   /** Running inside a claude.ai Artifact (no network: only Claude or instinct can be the brain). */
   inArtifact: boolean;
   mode: GameMode;
-  /** Story mode state; null in the sandbox. */
+  /** Story mode state; null in the sandbox (used for both Classic Story and Endless Saga). */
   story: StoryUi | null;
   /** A story in progress that can be continued from the title screen, or null. */
   storySaved: { chapter: number; chapters: number; title: string; weekday: string; standing: number } | null;
+  /** An Endless Saga in progress that can be continued from the title screen, or null. */
+  sagaSaved: { season: number; chapter: number; chapters: number; arcTitle: string; title: string; weekday: string; standing: number } | null;
   /** The newest story narration worth showing on the floor (story mode), or null. */
   beat: BeatUi | null;
   /** The newest big moment to stamp on screen, or null. Replaced by the next one. */
@@ -368,6 +382,10 @@ export interface GameApi {
   // ── story mode ──
   /** From the title screen: play the story. fresh = start a new week even if one is saved. */
   startStory(fresh?: boolean): void;
+  /** From the title screen: play Endless Saga (weekly arcs with full sandbox freedom). fresh = start Season 1 anew. */
+  startSaga(fresh?: boolean): void;
+  /** Endless Saga, from a Friday season ending card: carry bonds & standing momentum into Season N+1. */
+  nextSeason(): void;
   /** From the title screen: free play with no goals or budget. */
   startSandbox(): void;
   /** From the chapter card: start the day. Call from a tap (unlocks audio). */

@@ -138,8 +138,17 @@ export type EffectInstance =
   | { id: string; kind: 'ufo'; x: number; y: number; height: number; beam: number }
   /** A ghost. alpha 0..1. */
   | { id: string; kind: 'ghost'; x: number; y: number; facing: Dir; alpha: number; mood: 'drift' | 'boo' | 'sad' }
-  /** A small animal. */
-  | { id: string; kind: 'creature'; species: 'raccoon' | 'puppy' | 'pigeon'; x: number; y: number; facing: Dir; anim: 'idle' | 'run' | 'sit' | 'eat' | 'jump' | 'fly' | 'happy'; carrying: boolean }
+  /** A small animal or custom wandering creature. */
+  | {
+      id: string;
+      kind: 'creature';
+      species: 'raccoon' | 'puppy' | 'pigeon' | 'bear' | 'horse' | 'dragon' | 'cat' | 'dino' | 'robot' | 'alien' | 'shark';
+      x: number;
+      y: number;
+      facing: Dir;
+      anim: 'idle' | 'run' | 'sit' | 'eat' | 'jump' | 'fly' | 'happy';
+      carrying: boolean;
+    }
   /** A swarm of bees around a point. */
   | { id: string; kind: 'bees'; x: number; y: number; spread: number; count: number }
   /** Mirror-ball spots sweeping the whole floor, coloured floor lights, a darker wash. level 0..1. */
@@ -149,7 +158,7 @@ export type EffectInstance =
   /** Balloons bobbing about a room. */
   | { id: string; kind: 'balloons'; room: RoomId; count: number }
   /** A thing that has appeared on the floor. */
-  | { id: string; kind: 'item'; item: 'pizzaBoxes' | 'cake' | 'gift' | 'cashPile' | 'puddle' | 'scorch' | 'paperPile' | 'wetFloorSign' | 'foam' | 'snackPile'; x: number; y: number }
+  | { id: string; kind: 'item'; item: 'pizzaBoxes' | 'cake' | 'gift' | 'cashPile' | 'puddle' | 'scorch' | 'paperPile' | 'wetFloorSign' | 'foam' | 'snackPile' | 'chalkOutline' | 'scuffle' | 'brokenParts'; x: number; y: number }
   /** Something summoned by a free-text event, drawn as a big emoji standing on the floor. */
   | { id: string; kind: 'emoji'; emoji: string; x: number; y: number; size: number; bob: boolean; /** Pixels above the ground (no shadow): a badge over someone's head. */ lift?: number }
   /** Time is stopped: a cool tint and hanging sparkles. level 0..1. */

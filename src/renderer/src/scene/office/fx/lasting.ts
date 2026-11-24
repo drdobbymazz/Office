@@ -664,7 +664,7 @@ export class Item extends Lasting<Of<'item'>> {
     const { inst, env } = this;
     this.t += dt;
     const s = this.sprite;
-    if (this.frames.length > 1) s.texture = this.frames[Math.floor(this.t * (inst.item === 'foam' ? 2 : 5)) % this.frames.length];
+    if (this.frames.length > 1) s.texture = this.frames[Math.floor(this.t * (inst.item === 'foam' ? 2 : inst.item === 'scuffle' ? 9 : 5)) % this.frames.length];
     s.x = Math.round(inst.x);
     if (this.flat) {
       s.y = Math.round(inst.y - 2);

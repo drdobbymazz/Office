@@ -231,7 +231,19 @@ export class Person implements SimPerson {
   }
 
   get available(): boolean {
-    return this.present && !this.hidden && !this.air && !this.seized && !this.frozen && !this.asleep && this.sceneId === null && !this.goingHome;
+    return (
+      this.present &&
+      !this.hidden &&
+      !this.air &&
+      !this.seized &&
+      !this.frozen &&
+      !this.asleep &&
+      !this.has('knockedOut') &&
+      !this.has('eliminated') &&
+      !this.has('quit') &&
+      this.sceneId === null &&
+      !this.goingHome
+    );
   }
 
   get speaking(): boolean {

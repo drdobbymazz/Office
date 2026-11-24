@@ -51,7 +51,8 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   const finale = game.store((s) => s.phase === 'ending' && s.finale);
   const tutorialDone = game.store((s) => s.settings.tutorialDone);
   const selectedId = game.store((s) => s.selectedId);
-  const storyOn = game.store((s) => s.mode === 'story' && !!s.story);
+  const mode = game.store((s) => s.mode);
+  const storyOn = game.store((s) => (s.mode === 'story' || s.mode === 'saga') && !!s.story);
 
   const nav = useMemo<Nav>(() => ({
     tab, open, personId,
@@ -70,7 +71,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   }, [selectedId, personId]);
 
   const portrait = vp.portrait;
-  const blocked = portrait && !playAnyway;
+  const blocked = portrait && (vp.coarse || vp.w < 600) && !playAnyway;
 
   // What is on screen trails the game's phase by half a wipe: the paper sheet covers the old screen
   // before the new one is shown (transitions.tsx). The week's last scene counts as its own screen.
@@ -157,7 +158,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
           {screen === 'ending' && !blocked && <EndingCard vp={vp} />}
           {screen === 'finale' && !blocked && <FinaleSkip />}
           {screen === 'playing' && !blocked && (storyOn
-            ? <StoryCoach />
+            ? (mode === 'story' && <StoryCoach />)
             : !tutorialDone && <Coach onDone={() => game.updateSettings({ tutorialDone: true })} />)}
           {blocked && <RotateCard onPlay={() => { game.uiSound('tap'); setPlayAnyway(true); }} />}
           {wipe}

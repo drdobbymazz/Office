@@ -50,6 +50,7 @@ const BIN_AT = DAY(10, 20);
 const SEARCH_FOR = 25;
 const BIN_FX = 'story.memo.bin';
 const DIM_FX = 'story.memo.dim';
+const LAMP_FX = 'story.memo.lamp';
 
 type BinState = 'waiting' | 'going' | 'searching' | 'stopped' | 'found';
 
@@ -81,6 +82,8 @@ class MemoRun implements ChapterRun {
     // The memo itself, in his hand all day, and his office dim while he hides in it.
     s.setProp('michael', 'papers');
     s.addEffect({ id: DIM_FX, kind: 'dark', rooms: ['boss'], level: 0.35, emergency: false });
+    const mf = feetOf(anchor('desk.michael').tile);
+    s.addEffect({ id: LAMP_FX, kind: 'light', x: mf.x, y: mf.y - 8, radius: 52, color: 0xffd27d });
   }
 
   private holds(): boolean {
@@ -153,7 +156,7 @@ class MemoRun implements ChapterRun {
       }
       return;
     }
-    if (s.holding === 'michael' || s.isAirborne('michael')) {
+    if (s.holding === 'michael' || s.isAirborne('michael') || s.isSeized('michael')) {
       this.carried = true;
       return;
     }
@@ -294,6 +297,7 @@ class MemoRun implements ChapterRun {
     s.setHiddenNote('michael', null);
     s.setProp('michael', null);
     s.removeEffect(DIM_FX);
+    s.removeEffect(LAMP_FX);
     for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
     s.narrate(MEMO.missed, { icon: 'phone', room: 'meeting', beat: true });
     for (const p of s.people()) if (p.isCast && p.present) s.feel(p.id, 'nervous', 0.6, 20);
@@ -320,6 +324,7 @@ class MemoRun implements ChapterRun {
     s.setHiddenNote('michael', null);
     s.setProp('michael', null);
     s.removeEffect(DIM_FX);
+    s.removeEffect(LAMP_FX);
     // Whoever was hiding from the news has heard it now.
     for (const st of MEMO.stragglers) if (s.person(st.id)?.conviction?.text === st.conviction) s.convince(st.id, null);
     const u = this.c.used;
@@ -1332,6 +1337,16 @@ class LeakRun implements ChapterRun {
       return;
     }
     if (s.time >= t.arrivedAt + BEEP_AFTER) {
+      if (s.facts().some((f) => f.includes('fax machine in the annex has been smashed'))) {
+        if (leak && leak.present) {
+          s.feel(leak.id, 'scared', 0.9, 10);
+          s.emote(leak.id, 'alert');
+          s.narrate(`${displayName(leak.id)} reached the fax machine and froze — it has been smashed to pieces!`, { icon: 'warn', room: 'annex', beat: true });
+        }
+        this.trip = null;
+        this.nextSend = s.time + 90;
+        return;
+      }
       if (leak && leak.present && leak.doing === LEAK.fax.stay) this.beep();
       else this.abandon();
     }
@@ -2069,11 +2084,15 @@ class VerdictRun implements ChapterRun {
     const s = this.c.sim;
     for (let i = 0; i < 3; i++) if (this.scores[i] === null) this.scoreStop(i);
     const calm = s.incidentsToday === this.incidentsAt;
+    const eliminated = s.people().filter((p) => p.isCast && s.hasStatus(p.id, 'eliminated'));
+    const bodyPenalty = eliminated.length ? 35 : 0;
+    const bodyNote = eliminated.length ? 'The inspector saw the chalk outline on the floor and stopped taking notes.' : '';
+    if (bodyNote) s.narrate(bodyNote, { icon: 'inspector', beat: true });
     // A row nobody stopped is seen even if the tour was cut short.
     const row = this.problem('row');
     if (row?.state === 'live') this.fail(row);
     const failed = this.problems.filter((p) => p.state === 'failed');
-    const penalty = failed.reduce((sum, p) => sum + (p.id === 'leak' ? INSPECTION_POINTS.lastPage : INSPECTION_POINTS.problem), 0) + (this.dangling ? INSPECTION_POINTS.problem : 0);
+    const penalty = failed.reduce((sum, p) => sum + (p.id === 'leak' ? INSPECTION_POINTS.lastPage : INSPECTION_POINTS.problem), 0) + (this.dangling ? INSPECTION_POINTS.problem : 0) + bodyPenalty;
     const bonus = this.bonuses.reduce((sum, b) => sum + b.pts, 0);
     const sc = this.scores.map((v) => v ?? 0);
     const raw = INSPECTION_POINTS.bullpen * sc[0] + INSPECTION_POINTS.accounts * sc[1] + INSPECTION_POINTS.michael * sc[2] + (calm ? INSPECTION_POINTS.calm : 0) - penalty + bonus;
@@ -2093,7 +2112,7 @@ class VerdictRun implements ChapterRun {
     if (this.speech === 'cancelled' || this.speech === 'planned' || this.speech === 'during') this.c.setExtra('ovation', 'lost');
     const lines = [
       pass ? VERDICT.passed(total) : VERDICT.failed(total),
-      [...this.stopLines.filter(Boolean), calmLine].join(' '),
+      [...this.stopLines.filter(Boolean), calmLine, bodyNote].filter(Boolean).join(' '),
       [...failed.map((p) => (p.id === 'dwight' ? VERDICT.problems.dwight.failed : p.id === 'row' ? VERDICT.problems.row.failed : VERDICT.problems.leak.failed(displayName(p.who[0])))), ...this.bonuses.map((b) => b.text)].join(' ')
     ].filter(Boolean);
     this.leftAt = s.time;

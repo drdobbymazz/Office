@@ -201,7 +201,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       { id: 'o3', title: 'Steady hands', detail: 'Keep morale above 50 until 5pm.', progress: 1, done: true, icon: 'stock' }
     ],
     toasts: [], report: null, settings: baseSettings, holding: null, targeting: null,
-    inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null,
+    inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null, sagaSaved: null,
     beat: null, ceremony: null, finishing: false, finale: false
   }));
 
@@ -532,6 +532,14 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       saved = null;
       toBriefing(from.chapter, from.results.slice());
       store.setState({ storySaved: null });
+    },
+    startSaga() {
+      // Visual harness uses startStory / jumpStory for campaign views; stub falls through to free play.
+      run = null;
+      store.setState({ mode: 'sandbox', story: null, phase: 'playing', paused: false });
+    },
+    nextSeason() {
+      store.setState({ phase: 'playing', paused: false });
     },
     startSandbox() {
       run = null;

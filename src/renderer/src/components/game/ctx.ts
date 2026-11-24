@@ -45,6 +45,8 @@ export interface Viewport {
   w: number;
   h: number;
   portrait: boolean;
+  /** Coarse touch device (phone/tablet) rather than a narrow desktop window. */
+  coarse: boolean;
   /** Short landscape phone (412 tall or less). */
   short: boolean;
   /** Desktop-size window. */
@@ -54,7 +56,8 @@ export interface Viewport {
 function measure(): Viewport {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  return { w, h, portrait: h > w, short: h <= 440, wide: w >= 1200 && h >= 640 };
+  const coarse = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)').matches : false;
+  return { w, h, portrait: h > w, coarse, short: h <= 440, wide: w >= 1200 && h >= 640 };
 }
 
 export function useViewport(): Viewport {

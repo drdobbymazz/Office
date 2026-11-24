@@ -85,7 +85,8 @@ export class GameFloor {
     const sortedIndex = mapRoot.getChildIndex(this.sorted);
     mapRoot.addChildAt(this.shadows, sortedIndex);
     mapRoot.addChildAt(this.fx.floor, sortedIndex);
-    mapRoot.addChildAt(drawPavement(), 0);
+    mapRoot.addChildAt(drawOfficeDecor(), mapRoot.getChildIndex(this.fx.floor));
+    mapRoot.addChildAt(drawSurroundings(), 0);
     this.world.addChild(mapRoot, this.fx.air, this.marks);
     app.stage.addChild(this.world, this.fx.screen);
     app.stage.eventMode = 'none';
@@ -354,7 +355,7 @@ function resolutionFor(q: Quality): number {
  * road, in the map's own muted palette, so people have somewhere to arrive
  * from and to stand during a fire drill.
  */
-function drawPavement(): Container {
+function drawSurroundings(): Container {
   const c = new Container();
   const g = new Graphics();
   const top = MAP_PX_H;
@@ -362,11 +363,33 @@ function drawPavement(): Container {
   const slabDark = 0xa39d8e;
   const joint = 0x8c8678;
   const kerb = 0xd8d3c4;
-  const road = 0x4a4654;
+  const road = 0x454250;
   const roadLine = 0xe8d9a0;
   const paveH = 3 * TILE;
 
+  // Business-park lawn & dark trim framing outside the office walls (strictly outside 544x416).
+  g.rect(-240, -180, MAP_PX_W + 480, WORLD_H + 340).fill(0x527a46);
+  for (let gx = -224; gx < MAP_PX_W + 224; gx += 40) {
+    for (let gy = -160; gy < top + 20; gy += 36) {
+      if ((Math.abs(gx + gy) / 4) % 3 === 0) g.rect(gx, gy, 18, 12).fill(0x496f3e);
+    }
+  }
+  // Hedges & trees around the north/west/east perimeter outside the building footprint.
+  const drawShrub = (x: number, y: number, w: number, h: number) => {
+    g.rect(x + 1, y + 2, w, h).fill(0x2d4a26);
+    g.rect(x, y, w, h).fill(0x3a6432);
+    g.rect(x + 2, y + 2, Math.max(4, w - 5), Math.max(3, Math.floor(h * 0.5))).fill(0x568b46);
+  };
+  for (let hx = 16; hx < MAP_PX_W - 32; hx += 48) drawShrub(hx, -20, 26, 14);
+  for (let hy = 16; hy < MAP_PX_H - 32; hy += 56) {
+    drawShrub(-24, hy, 18, 22);
+    drawShrub(MAP_PX_W + 6, hy, 18, 22);
+  }
+
   g.rect(0, top, MAP_PX_W, paveH).fill(slab);
+  // Sidewalk planters beside the front entrance.
+  drawShrub(5 * TILE, top + 6, 22, 12);
+  drawShrub(25 * TILE, top + 6, 22, 12);
   // Paving slabs, two tiles wide, offset on alternate rows like brickwork.
   for (let row = 0; row < 3; row++) {
     const y = top + row * TILE;
@@ -377,12 +400,79 @@ function drawPavement(): Container {
       if (((x / TILE) + row) % 5 === 0) g.rect(x + 2, y + 2, 2 * TILE - 4, TILE - 4).fill(slabDark);
     }
   }
-  // A doormat in front of the door.
+  // Welcome doormat in front of the door.
   g.rect(16 * TILE + 2, top + 2, TILE - 4, 6).fill(0x7a4b3a).stroke({ width: 1, color: 0x4a2c22 });
-  // Kerb and road.
-  g.rect(0, top + paveH, MAP_PX_W, 3).fill(kerb);
-  g.rect(0, top + paveH + 3, MAP_PX_W, WORLD_H - top - paveH - 3).fill(road);
-  for (let x = 6; x < MAP_PX_W; x += 28) g.rect(x, top + paveH + 9, 12, 2).fill(roadLine);
+  // Concrete curb & expanded asphalt parking lot south of the sidewalk.
+  g.rect(-240, top + paveH, MAP_PX_W + 480, 3).fill(kerb);
+  g.rect(-240, top + paveH + 3, MAP_PX_W + 480, WORLD_H + 140 - top - paveH).fill(road);
+  // Yellow parking bay lines & road center dashes.
+  for (let x = 24; x < MAP_PX_W; x += 48) {
+    g.rect(x, top + paveH + 4, 2, 16).fill(0xdcb448);
+  }
+  for (let x = -180; x < MAP_PX_W + 180; x += 28) {
+    g.rect(x, top + paveH + 26, 12, 2).fill(roadLine);
+  }
+
+  // Parked pixel cars tucked into parking bays outside the walkable pavement.
+  const drawCar = (cx: number, cy: number, body: number, roof: number) => {
+    g.rect(cx + 2, cy + 1, 30, 12).fill(0x221c29);
+    g.rect(cx, cy, 30, 11).fill(body);
+    g.rect(cx + 6, cy + 2, 14, 7).fill(roof);
+    g.rect(cx + 8, cy + 3, 5, 5).fill(0x9bd2ee);
+    g.rect(cx + 15, cy + 3, 4, 5).fill(0x9bd2ee);
+    g.rect(cx + 3, cy - 1, 5, 2).fill(0x1a1320);
+    g.rect(cx + 22, cy - 1, 5, 2).fill(0x1a1320);
+    g.rect(cx + 3, cy + 10, 5, 2).fill(0x1a1320);
+    g.rect(cx + 22, cy + 10, 5, 2).fill(0x1a1320);
+    g.rect(cx + 29, cy + 2, 1, 2).fill(0xfff1a8);
+    g.rect(cx + 29, cy + 7, 1, 2).fill(0xfff1a8);
+  };
+  drawCar(34, top + paveH + 6, 0x4b749f, 0x6f9ac4);
+  drawCar(130, top + paveH + 6, 0xc8963e, 0xe4b85e);
+  drawCar(370, top + paveH + 6, 0x9aa2b2, 0xc4ccd8);
+
+  c.addChild(g);
+  return c;
+}
+
+/** Crisp, purely visual interior studio accents placed on walls and furniture tops. */
+function drawOfficeDecor(): Container {
+  const c = new Container();
+  const g = new Graphics();
+
+  // Conference room north wall whiteboard + colorful markers.
+  g.rect(11 * TILE, 2 * TILE + 5, 4 * TILE, 8).fill(0x3a3242);
+  g.rect(11 * TILE + 1, 2 * TILE + 6, 4 * TILE - 2, 6).fill(0xf7f3ea);
+  g.rect(11 * TILE + 4, 2 * TILE + 8, 12, 1).fill(0x3d7ac9);
+  g.rect(12 * TILE + 6, 2 * TILE + 10, 18, 1).fill(0xd94848);
+  g.rect(14 * TILE + 2, 2 * TILE + 7, 8, 2).fill(0x479e55);
+
+  // Spider conference phone in the center of the conference table area.
+  g.rect(13 * TILE + 5, 6 * TILE + 3, 6, 5).fill(0x282430);
+  g.rect(13 * TILE + 7, 6 * TILE + 4, 2, 3).fill(0x52b788);
+
+  // Tiny mugs & desk pads on boss/sales desks (matching DESKS positions visually).
+  const mugSpots: [number, number, number][] = [
+    [3 * TILE + 11, 3 * TILE + 9, 0xe05248],
+    [2 * TILE + 11, 12 * TILE + 9, 0x5292d6],
+    [6 * TILE + 11, 12 * TILE + 9, 0xd8a838],
+    [10 * TILE + 11, 12 * TILE + 9, 0xe8e2d5],
+    [14 * TILE + 11, 12 * TILE + 9, 0xb87ac4]
+  ];
+  for (const [mx, my, col] of mugSpots) {
+    g.rect(mx, my, 3, 3).fill(col);
+    g.rect(mx, my, 2, 1).fill(0xfffdf5);
+  }
+
+  // Boss office warm desk lamp beside Michael's desk corner.
+  g.rect(3 * TILE - 12, 3 * TILE + 6, 4, 5).fill(0x5a4630);
+  g.rect(3 * TILE - 13, 3 * TILE + 4, 6, 3).fill(0xf2c864);
+
+  // Break room counter mugs & paper cups next to the cooler.
+  g.rect(27 * TILE + 3, 16 * TILE + 10, 3, 4).fill(0xd64848);
+  g.rect(27 * TILE + 8, 16 * TILE + 10, 3, 4).fill(0x4894d6);
+  g.rect(32 * TILE + 2, 3 * TILE + 11, 3, 4).fill(0xf5f2ec);
+
   c.addChild(g);
   return c;
 }

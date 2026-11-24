@@ -94,7 +94,7 @@ function CueTool({ who, name }: { who: CharId; name: string }) {
   const other = people.find((p) => p.id !== who && p.present)?.name ?? 'someone';
   return (
     <>
-      <TextTool hint={`${name} will try to do exactly this next.`} placeholder="go and apologise to Angela" accent="sky"
+      <TextTool hint={`${name} will try to do exactly this next.`} placeholder="drag Michael to the conference room" accent="sky"
         suggestions={suggestions.cues.map((c) => fill(c, name, other))} sendLabel={`Tell ${name}`} cost={price?.cost} short={price?.short} warn={warn}
         onSend={(t) => { game.cue(who, t); setSent(`${name} has their orders.`); }} />
       {sent && <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14 }}><GIcon name="check" px={16} />{sent}</div>}
@@ -262,7 +262,10 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
                     <span style={{ fontSize: 14, color: readableOnCream(b.color), flex: 1 }}>{b.name}</span>
                     <LikeBar score={score} w={56} />
                   </div>
-                  <div style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{
+                    fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-500)', overflow: 'hidden',
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'
+                  }}>
                     {b.label}: {b.note}
                   </div>
                 </div>

@@ -27,6 +27,7 @@ import { Director } from '@/game/director/director';
 import type { Sim, SimOptions } from '@/game/sim';
 import { EXTRA_INFLUENCE, Story, StoryDay, browserStore, type EndingId, type PlayerAction } from '@/game/story';
 import { FINALE_PREROLL, FinaleScene } from '@/game/story/finale';
+import { SAGA_EXTRA_STANDING, Saga, SagaDay } from '@/game/saga';
 import { Objectives } from './objectives';
 import { loadSettings, saveSettings } from './settings';
 import { loadJson, removeKey, saveJson } from './storage';
@@ -98,15 +99,18 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
 
   let sim = sandboxSim();
 
-  // ── story mode ──
+  // ── story & saga modes ──
   let mode: GameMode = 'sandbox';
   let story: Story | null = null;
+  let saga: Saga | null = null;
   /** Today's story day (its goals, budget and logic), while one is set up. */
   let day: StoryDay | null = null;
+  /** Today's Endless Saga day while one is set up. */
+  let sagaDay: SagaDay | null = null;
   const today = (): StoryDay | null => day;
   /** finishDay: the rest of the day runs at FINISH_SPEED with no new scenes, voices or banners. */
   let finishing = false;
-  /** A story day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
+  /** A story/saga day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
   let holdDayStart = false;
   /** The week's last scene, playing on the floor while UiState.finale is true. */
   let finaleScene: FinaleScene | null = null;
@@ -137,7 +141,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     phase: 'title', paused: false, speed: 1, day: sim.day, weekday: sim.weekday, clock: sim.clock, dayProgress: sim.dayProgress,
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
-    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null, storySaved: Story.peek(browserStore),
+    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null,
+    storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore),
     beat: null, ceremony: null, finishing: false, finale: false
   }));
   const set = store.setState;
@@ -154,11 +159,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       onBusy: (b) => {
         brainBusy = { thinking: b.thinking, queued: b.queued };
       },
-      // Someone today's chapter is holding where they are does not answer announcements.
-      pinned: (who) => day?.pinned(who) ?? false,
-      // What the office is talking about in the story right now (small talk can pick it up).
-      storyTopics: () => (mode === 'story' && day ? day.topics() : []),
-      // Today's chapter may adjust a scene's change in feeling (e.g. while it counts progress itself).
+      // Someone today's chapter is holding where they are does not answer announcements (Classic Story only).
+      pinned: (who) => (mode === 'story' ? day?.pinned(who) ?? false : false),
+      // What the office is talking about in Story or Endless Saga right now (small talk picks it up).
+      storyTopics: () => (mode === 'story' && day ? day.topics() : mode === 'saga' && sagaDay ? sagaDay.topics() : []),
+      // Classic Story may adjust a scene's change in feeling while counting progress; Saga leaves shifts raw.
       vetoShift: (who, about, delta) => (mode === 'story' && day ? day.vetoShift(who, about, delta) : delta)
     });
   }
@@ -219,9 +224,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     bus.on('feed', (item) => {
       feedBuffer.push(item);
       if (item.kind === 'say') linesToday += 1;
-      // Story narration worth seeing on the floor, not only in the Log.
+      // Story & Saga narration worth seeing on the floor, not only in the Log.
       // A story moment that needs the player (Mr Figgis walking in) brings the game back to normal speed.
-      if (item.slow && mode === 'story' && !finishing && get().speed > 1) set({ speed: 1 });
+      if (item.slow && (mode === 'story' || mode === 'saga') && !finishing && get().speed > 1) set({ speed: 1 });
       if (item.beat && !finishing) {
         const words = item.text.split(/\s+/).length;
         set({ beat: { id: item.id, text: item.text, icon: item.icon, room: item.room, holdFor: Math.max(3.5, Math.min(9, 2 + words * 0.32)) } });
@@ -343,9 +348,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       return;
     }
     const sameOrigin = location.protocol.startsWith('http') ? `${location.origin}/ollama` : '';
+    const lanHosts = location.protocol.startsWith('http') ? ['http://192.168.1.124:11434', 'http://MSI.lan:11434'] : [];
     // A build can name extra places to look (the Android app names the laptop on the home network).
     const extra = String(import.meta.env.VITE_OLLAMA_CANDIDATES ?? '').split(',').map((u) => u.trim()).filter(Boolean);
-    const candidates = [...new Set([settings.brain.baseUrl, ...extra, sameOrigin, 'http://localhost:11434'].filter(Boolean))];
+    const candidates = [...new Set([settings.brain.baseUrl, ...extra, sameOrigin, ...lanHosts, 'http://localhost:11434'].filter(Boolean))];
     const found = await parts.probeOllama(candidates).catch(() => null);
     if (found) {
       const want = settings.brain.model;
@@ -365,6 +371,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   async function endDay(): Promise<void> {
     if (get().phase === 'report') return;
     const storyDay = today();
+    const activeSagaDay = mode === 'saga' ? sagaDay : null;
     const m = sim.meters();
     const day = sim.day;
     const stats = { incidents: sim.incidentsToday, stockStart, stockEnd: m.stock, morale: m.morale, chaosPeak: Math.round(chaosPeak) };
@@ -372,25 +379,40 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const todays = get().feed.filter((f) => f.day === day && f.kind === 'say' && f.who && f.text.length > 18);
     const quotes = director.pickQuotes(todays, 3).map((f) => ({ who: f.who as CharId, name: displayName(f.who as CharId), avatar: avatar(f.who as CharId, f.emotion), text: f.text }));
     const base: DayReport = { day, headline: '', paragraphs: [], awards: [], quotes, stats: { ...stats, lines: linesToday }, writing: true };
-    // Story mode: settle the day, move Branch Standing and save, before the report shows.
+    // Story & Saga modes: settle the day, move Branch Standing and save, before the report shows.
     if (mode === 'story' && story && storyDay) {
       story.finishDay(storyDay, sim.serialize());
       set({ storySaved: Story.peek(browserStore) });
+    } else if (mode === 'saga' && saga && activeSagaDay) {
+      saga.finishDay(activeSagaDay, sim.serialize());
+      set({ sagaSaved: Saga.peek(browserStore) });
     }
     finishing = false;
     set({ phase: 'report', report: base, caption: null, beat: null, finishing: false });
     pushStory();
-    const storyResult = mode === 'story' && story ? story.result : null;
+    const storyResult =
+      mode === 'story' && story ? story.result
+      : mode === 'saga' && saga ? saga.result
+      : null;
     audio.sfx(storyResult ? (storyResult.won ? 'dayWon' : 'dayLost') : 'dayEnd');
     audio.setMusicMood({ menu: true });
     saveWorld();
-    const storyInfo = storyResult && story ? {
-      title: `${story.def.weekday}: ${story.def.title}`,
-      goal: story.def.goal.title,
-      won: storyResult.won,
-      lines: [...storyResult.text],
-      changes: storyResult.changes.map((c) => `${c.delta > 0 ? '+' : ''}${c.delta} ${c.text}`)
-    } : undefined;
+    const storyInfo =
+      storyResult && mode === 'story' && story ? {
+        title: `${story.def.weekday}: ${story.def.title}`,
+        goal: story.def.goal.title,
+        won: storyResult.won,
+        lines: [...storyResult.text],
+        changes: storyResult.changes.map((c) => `${c.delta > 0 ? '+' : ''}${c.delta} ${c.text}`)
+      }
+      : storyResult && mode === 'saga' && saga ? {
+        title: `Season ${saga.season} (${saga.arc.title}) · ${saga.def.weekday}: ${saga.def.title}`,
+        goal: saga.def.goalInfo.title,
+        won: storyResult.won,
+        lines: [...storyResult.text],
+        changes: storyResult.changes.map((c) => `${c.delta > 0 ? '+' : ''}${c.delta} ${c.text}`)
+      }
+      : undefined;
     const res = await director.writeReport(stats, storyInfo);
     if (get().report?.day !== day) return;
     set({
@@ -403,20 +425,33 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       }
     });
     saveWorld();
+    // In Endless Saga, ask the model to craft tomorrow's reactive opening & plot twist while reading the report.
+    if (mode === 'saga' && saga && activeSagaDay && brain.sagaEpisode) {
+      const targetSaga = saga;
+      const req = targetSaga.buildEpisodeRequest(activeSagaDay, sim.dayLog());
+      void brain.sagaEpisode(req).then((ep) => {
+        if (saga !== targetSaga) return;
+        targetSaga.applyAiEpisode(req.season, req.day, ep);
+        pushStory();
+      }).catch(() => undefined);
+    }
   }
 
-  /** The sandbox world saves itself; a story day always starts again from its morning instead. */
+  /** The sandbox world saves itself; story and saga days save via their own state/world stores. */
   function saveWorld(): void {
     if (mode === 'sandbox') saveJson(SAVE_KEY, sim.serialize());
   }
 
-  // ── story mode ─────────────────────────────────────────────────────────────
+  // ── story & saga modes ─────────────────────────────────────────────────────
 
   let lastStoryKey = '';
 
   /** Keep UiState.story in step (only a new object when something changed). */
   function pushStory(): void {
-    const ui: StoryUi | null = mode === 'story' && story ? story.ui(day) : null;
+    const ui: StoryUi | null =
+      mode === 'story' && story ? story.ui(day)
+      : mode === 'saga' && saga ? saga.ui(sagaDay)
+      : null;
     const key = ui ? JSON.stringify(ui) : '';
     if (key === lastStoryKey && (ui !== null) === (get().story !== null)) return;
     lastStoryKey = key;
@@ -425,18 +460,21 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
 
   let ceremonySeq = 0;
 
-  function goalNotice(g: { id: string; title: string; state: 'won' | 'lost'; main: boolean }): void {
+  function handleGoalNotice(
+    g: { id: string; title: string; state: 'won' | 'lost'; main: boolean },
+    mainDef: { stamp?: readonly [string, string]; icon: string; room?: Parameters<typeof roomCentrePx>[0] } | undefined,
+    extraDetail: string
+  ): void {
     if (finishing) return;
-    const def = day?.def;
     const won = g.state === 'won';
     ceremonySeq += 1;
-    if (g.main && def) {
-      const stamp = def.goal.stamp ?? ['GOAL DONE', 'GOAL FAILED'];
-      set({ ceremony: { id: `c${ceremonySeq}`, kind: won ? 'goalWon' : 'goalLost', title: won ? stamp[0] : stamp[1], detail: g.title, icon: def.goal.icon, room: def.goal.room } });
+    if (g.main && mainDef) {
+      const stamp = mainDef.stamp ?? ['GOAL DONE', 'GOAL FAILED'];
+      set({ ceremony: { id: `c${ceremonySeq}`, kind: won ? 'goalWon' : 'goalLost', title: won ? stamp[0] : stamp[1], detail: g.title, icon: mainDef.icon, room: mainDef.room } });
       audio.sfx(won ? 'goalWin' : 'goalFail');
       if (won) {
-        if (def.goal.room) {
-          const c = roomCentrePx(def.goal.room);
+        if (mainDef.room) {
+          const c = roomCentrePx(mainDef.room);
           floor.cue({ kind: 'burst', what: 'stars', x: c.x, y: c.y, count: 16 });
           floor.cue({ kind: 'burst', what: 'confetti', x: c.x, y: c.y - 8, count: 12 });
         }
@@ -444,10 +482,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       } else buzz([60, 40, 60]);
       return;
     }
-    const detail = won ? `+${EXTRA_INFLUENCE} influence` : undefined;
+    const detail = won ? extraDetail : undefined;
     set({ ceremony: { id: `c${ceremonySeq}`, kind: won ? 'extraWon' : 'extraLost', title: g.title, detail } });
     if (won) {
-      toast(`Goal done: ${g.title}. +${EXTRA_INFLUENCE} influence`, 'good', 'check');
+      toast(`Goal done: ${g.title}. ${extraDetail}`, 'good', 'check');
       audio.sfx('objective');
     } else {
       toast(`Goal failed: ${g.title}`, 'bad', 'x');
@@ -455,25 +493,49 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     }
   }
 
-  /** Build the office for the story's current day (from its saved morning) and show the chapter card. */
-  function storyDayStart(): void {
-    if (!story) return;
+  function resetDayOverlay(): void {
     day?.dispose();
     day = null;
+    sagaDay?.dispose();
+    sagaDay = null;
     feedBuffer = [];
     finishing = false;
     set({ feed: [], beat: null, ceremony: null, finishing: false });
     holdDayStart = true;
+  }
+
+  /** Build the office for the story's current day (from its saved morning) and show the chapter card. */
+  function storyDayStart(): void {
+    if (!story) return;
+    resetDayOverlay();
     const next = buildSim({ save: story.daySave(), dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: story.simSeed() });
     if (next.day !== story.chapter) next.beginDay(story.chapter);
     story.recordStart(next.serialize());
     mode = 'story';
     swapWorld(next);
     day = story.beginDay(sim, {
-      onGoal: goalNotice,
+      onGoal: (g) => handleGoalNotice(g, day?.def.goal, `+${EXTRA_INFLUENCE} influence`),
       script: (lines, o) => director.playScript(lines, o)
     });
-    set({ mode: 'story', phase: 'briefing', paused: false, report: null, storySaved: Story.peek(browserStore) });
+    set({ mode: 'story', phase: 'briefing', paused: false, report: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
+    audio.setMusicMood({ menu: true });
+    pushUi();
+  }
+
+  /** Build the office for the active Endless Saga day with full sandbox settings & zero restrictions. */
+  function sagaDayStart(): void {
+    if (!saga) return;
+    resetDayOverlay();
+    const next = buildSim({ save: saga.daySave(), dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, seed: saga.simSeed() });
+    const absDay = (saga.season - 1) * 5 + saga.chapter;
+    if (next.day !== absDay) next.beginDay(absDay);
+    saga.recordStart(next.serialize());
+    mode = 'saga';
+    swapWorld(next);
+    sagaDay = saga.beginDay(sim, {
+      onGoal: (g) => handleGoalNotice(g, sagaDay?.def.goalInfo, `+${SAGA_EXTRA_STANDING} standing`)
+    });
+    set({ mode: 'saga', phase: 'briefing', paused: false, report: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
     audio.setMusicMood({ menu: true });
     pushUi();
   }
@@ -488,6 +550,21 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     finaleScene = buildFinale(ending);
     set({ mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, finishing: false, finale: !!finaleScene, storySaved: Story.peek(browserStore) });
     // The ending's sting and music start as the ending begins (the scene's phone call follows a moment later).
+    audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
+    audio.setMusicMood({ menu: true, ending });
+    pushUi();
+  }
+
+  function showSagaEnding(): void {
+    sagaDay?.dispose();
+    sagaDay = null;
+    mode = 'saga';
+    finishing = false;
+    const ending = saga?.endingId() ?? 'scraped';
+    set({
+      mode: 'saga', phase: 'ending', paused: false, report: null, beat: null, ceremony: null,
+      finishing: false, finale: false, sagaSaved: Saga.peek(browserStore)
+    });
     audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
     audio.setMusicMood({ menu: true, ending });
     pushUi();
@@ -522,22 +599,25 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     if (get().finale) set({ finale: false });
   }
 
-  /** Leave the story for the sandbox office (rebuilt from its own save). */
+  /** Leave Story or Saga for the sandbox office (rebuilt from its own save). */
   function enterSandbox(): void {
     day?.dispose();
     day = null;
     story = null;
+    sagaDay?.dispose();
+    sagaDay = null;
+    saga = null;
     mode = 'sandbox';
     feedBuffer = [];
     set({ feed: [] });
     swapWorld(sandboxSim());
-    set({ mode: 'sandbox', story: null, storySaved: Story.peek(browserStore) });
+    set({ mode: 'sandbox', story: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
     lastStoryKey = '';
   }
 
   /**
-   * Story mode: pay for an action, or refuse it with a toast and a 'deny' (locked today, or
-   * not enough influence). Returns the reason, or null when paid. The sandbox is free.
+   * Classic Story mode: pay for an action, or refuse it with a toast and a 'deny' (locked today, or
+   * not enough influence). Returns the reason, or null when paid. Sandbox & Endless Saga are free.
    */
   function pay(action: ActionId): string | null {
     if (mode !== 'story' || !day) return null;
@@ -555,6 +635,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
 
   function noteStory(a: PlayerAction): void {
     if (mode === 'story' && day) day.note(a);
+    else if (mode === 'saga' && sagaDay) sagaDay.note(a);
   }
 
   // ── the loop ───────────────────────────────────────────────────────────────
@@ -596,8 +677,12 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       blackout: sim.activeChaos().some((c) => c.id === 'blackout'),
       frozen: sim.activeChaos().some((c) => c.id === 'timeFreeze'),
       menu: get().phase !== 'playing',
-      stakes: mode === 'story' && day && get().phase === 'playing' ? day.stakes() : 0,
-      ending: get().phase === 'ending' ? story?.endingId() ?? null : null
+      stakes: mode === 'story' && day && get().phase === 'playing'
+        ? day.stakes()
+        : mode === 'saga' && sagaDay && get().phase === 'playing'
+          ? sagaDay.stakes()
+          : 0,
+      ending: get().phase === 'ending' ? (mode === 'saga' ? saga?.endingId() : story?.endingId()) ?? null : null
     });
   }
 
@@ -625,6 +710,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         if (s.phase === 'playing') {
           if (!finishing) director.update(dt);
           if (mode === 'story') day?.update(dt);
+          else if (mode === 'saga') sagaDay?.update(dt);
         } else if (finale) finaleScene?.update(dt);
       }
       if (finale && finaleScene?.done) endFinale();
@@ -798,6 +884,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         else storyDayStart();
         return;
       }
+      if (mode === 'saga' && saga) {
+        if (saga.advance() === 'ending') showSagaEnding();
+        else sagaDayStart();
+        return;
+      }
       sim.beginDay(sim.day + 1);
       director.reset();
       set({ phase: 'playing', report: null, paused: false });
@@ -809,6 +900,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       void audio.unlock().then(() => audio.startMusic());
       // Keep the sandbox office as it was before stepping into the story.
       saveWorld();
+      sagaDay?.dispose();
+      sagaDay = null;
+      saga = null;
       finaleScene = null;
       if (get().finale) set({ finale: false });
       let s = fresh ? null : Story.load(browserStore);
@@ -822,8 +916,32 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       }
       storyDayStart();
     },
+    startSaga(fresh) {
+      void audio.unlock().then(() => audio.startMusic());
+      saveWorld();
+      day?.dispose();
+      day = null;
+      story = null;
+      finaleScene = null;
+      if (get().finale) set({ finale: false });
+      let s = fresh ? null : Saga.load(browserStore);
+      if (!s) s = Saga.create(browserStore, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+      else if (s.stage === 'ended') s.startNextSeason();
+      saga = s;
+      lastStoryKey = '';
+      if (s.stage === 'done' && s.advance() === 'ending') {
+        showSagaEnding();
+        return;
+      }
+      sagaDayStart();
+    },
+    nextSeason() {
+      if (mode !== 'saga' || !saga) return;
+      saga.startNextSeason();
+      sagaDayStart();
+    },
     startSandbox() {
-      if (mode === 'story') {
+      if (mode === 'story' || mode === 'saga') {
         enterSandbox();
         set({ phase: 'title' });
       }
@@ -831,7 +949,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     },
     beginChapter() {
       void audio.unlock().then(() => audio.startMusic());
-      if (get().phase !== 'briefing' || mode !== 'story' || !day) return;
+      if (get().phase !== 'briefing') return;
+      if (mode === 'story' && !day) return;
+      if (mode === 'saga' && !sagaDay) return;
+      if (mode !== 'story' && mode !== 'saga') return;
       set({ phase: 'playing', paused: false });
       holdDayStart = false;
       audio.sfx('dayStart');
@@ -841,18 +962,25 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       pushUi();
     },
     retryDay() {
-      if (mode !== 'story' || !story) return;
       const phase = get().phase;
       if (phase !== 'report' && phase !== 'playing' && phase !== 'briefing') return;
-      story.retry();
-      storyDayStart();
+      if (mode === 'story' && story) {
+        story.retry();
+        storyDayStart();
+        return;
+      }
+      if (mode === 'saga' && saga) {
+        saga.retry();
+        sagaDayStart();
+      }
     },
     skipFinale() {
       if (get().phase === 'ending' && get().finale) endFinale();
     },
     finishDay() {
-      if (mode !== 'story' || !story || !day || get().phase !== 'playing' || finishing) return;
-      if (!day.settled) return;
+      const activeDay = mode === 'story' && story ? day : mode === 'saga' && saga ? sagaDay : null;
+      if (!activeDay || get().phase !== 'playing' || finishing) return;
+      if (!activeDay.settled) return;
       finishing = true;
       director.reset();
       select(null);
@@ -861,17 +989,19 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       audio.sfx('whoosh');
     },
     accuse(who) {
-      if (mode !== 'story' || !day || get().phase !== 'playing') return;
-      day.accuse(who);
+      if (get().phase !== 'playing') return;
+      if (mode === 'story' && day) day.accuse(who);
+      else if (mode === 'saga' && sagaDay) sagaDay.accuse(who);
+      else return;
       pushUi();
     },
     toTitle() {
       finishing = false;
       finaleScene = null;
       set({ finishing: false, beat: null, ceremony: null, finale: false });
-      if (mode === 'story') enterSandbox();
+      if (mode === 'story' || mode === 'saga') enterSandbox();
       else saveWorld();
-      set({ phase: 'title', paused: false, report: null, storySaved: Story.peek(browserStore) });
+      set({ phase: 'title', paused: false, report: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
       audio.setMusicMood({ menu: true });
       pushUi();
     },
@@ -962,8 +1092,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     },
     resetWorld() {
       removeKey(SAVE_KEY);
-      // In the story, only the sandbox's own office is wiped; the week carries on.
-      if (mode === 'story') {
+      // In Story or Endless Saga, only the sandbox office is wiped; the active arc carries on.
+      if (mode === 'story' || mode === 'saga') {
         toast('The sandbox office starts again from day 1.', 'info');
         return;
       }
@@ -1009,6 +1139,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       for (const off of offs) off();
       saveWorld();
       day?.dispose();
+      sagaDay?.dispose();
       void wakeLock?.release().catch(() => undefined);
       input.destroy();
       objectives.dispose();

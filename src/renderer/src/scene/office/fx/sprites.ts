@@ -120,7 +120,9 @@ export function ghostTex(mood: 'drift' | 'boo' | 'sad', frame: number, back: boo
 
 // ── animals (side view, facing right; flipped for left) ─────────────────────
 
-export type Species = 'raccoon' | 'puppy' | 'pigeon';
+export type Species =
+  | 'raccoon' | 'puppy' | 'pigeon'
+  | 'bear' | 'horse' | 'dragon' | 'cat' | 'dino' | 'robot' | 'alien' | 'shark';
 export type CreatureAnim = 'idle' | 'run' | 'sit' | 'eat' | 'jump' | 'fly' | 'happy';
 
 interface Legs { ox: number[]; lift: number[] }
@@ -294,6 +296,283 @@ function pigeon(anim: CreatureAnim, frame: number, carrying: boolean): Pix {
 
 const FRAMES: Record<CreatureAnim, number> = { idle: 4, run: 4, sit: 2, eat: 2, jump: 1, fly: 2, happy: 2 };
 
+const EXTRA_PALS: Record<'bear' | 'horse' | 'dragon' | 'cat' | 'dino' | 'robot' | 'alien' | 'shark', Record<string, number>> = {
+  bear: { k: INK, b: 0x7d4c2c, B: 0x563218, l: 0xa67048, s: 0xd4a878, w: 0xfffdf5 },
+  horse: { k: INK, b: 0xa85d34, B: 0x783e20, l: 0xc87d50, m: 0x3b261c, w: 0xfffdf5, h: 0x36303d },
+  dragon: { k: INK, g: 0x4ea854, G: 0x2e6e36, l: 0x8be07e, r: 0xe05a47, y: 0xffc857, o: 0xe88a38, w: 0xfffdf5 },
+  cat: { k: INK, o: 0xe89040, O: 0xb86220, l: 0xf8c488, w: 0xfff8ec, p: 0xf08a9a },
+  dino: { k: INK, g: 0x52a848, G: 0x307430, l: 0x92da6e, y: 0xf2df88, w: 0xfffdf5 },
+  robot: { k: INK, s: 0xc0cad8, S: 0x7e8a9e, d: 0x4e5868, c: 0x4de6ff, r: 0xf05048, y: 0xffd93d },
+  alien: { k: INK, g: 0x84e86a, G: 0x48b044, l: 0xc6ffa0, s: 0xb8c0d0, S: 0x6a7284 },
+  shark: { k: INK, b: 0x5a84aa, B: 0x385878, l: 0x90b6d6, w: 0xfffdf5, r: 0xe05252 }
+};
+
+function extraCreature(species: keyof typeof EXTRA_PALS, anim: CreatureAnim, frame: number): Pix {
+  const pal = EXTRA_PALS[species];
+  const step = anim === 'run' || anim === 'happy' || anim === 'fly' ? frame % 2 : frame === 2 ? 1 : 0;
+  const rows: Record<keyof typeof EXTRA_PALS, [string[], string[]]> = {
+    bear: [
+      [
+        '....kk....kk......',
+        '...kbk....kbk.....',
+        '..kbbkkkkkkbbk....',
+        '.kbbbbbbbbbbbbk...',
+        '.kbbwkbkbsssbk....',
+        '.kbbbbbbsssssk....',
+        '..kkbbllbbbbk.....',
+        '.kbbbbbbbbbbbk....',
+        'kBbbbbbbbbbbbbk...',
+        'kBbbbbbbbbbbbbk...',
+        'k.kbbbbbbbbbbk....',
+        '..kbBk....kbBk....',
+        '..kBBk....kBBk....',
+        '..kssk....kssk....'
+      ],
+      [
+        '....kk....kk......',
+        '...kbk....kbk.....',
+        '..kbbkkkkkkbbk....',
+        '.kbbbbbbbbbbbbk...',
+        '.kbbwkbkbsssbk....',
+        '.kbbbbbbsssssk....',
+        '..kkbbllbbbbk.....',
+        '.kbbbbbbbbbbbk....',
+        'kBbbbbbbbbbbbbk...',
+        'kBbbbbbbbbbbbbk...',
+        '.k.kbbbbbbbbbk....',
+        '...kbBk..kbBk.....',
+        '..kBBk....kBBk....',
+        '..kssk....kssk....'
+      ]
+    ],
+    horse: [
+      [
+        '..........kk.kk...',
+        '.........kmmkbbk..',
+        '........kmbbbbbbk.',
+        '.......kmbbbwkbbbk',
+        '......kmbbbbbllbbk',
+        '..kkkkkmbllllkkbbk',
+        '.kbbbbbbbbbbk..kk.',
+        'kmbBbbbbbbbbk.....',
+        'kmbBbbbbbbbbk.....',
+        'km.kbbbbbbbk......',
+        'k..kbbk.kbbk......',
+        '...kbbk.kbbk......',
+        '...kBBk.kBBk......',
+        '...khhk.khhk......'
+      ],
+      [
+        '..........kk.kk...',
+        '.........kmmkbbk..',
+        '........kmbbbbbbk.',
+        '.......kmbbbwkbbbk',
+        '......kmbbbbbllbbk',
+        '..kkkkkmbllllkkbbk',
+        '.kbbbbbbbbbbk..kk.',
+        'kmbBbbbbbbbbk.....',
+        'kmbBbbbbbbbbk.....',
+        '.k.kbbbbbbbk......',
+        '..kbbk...kbbk.....',
+        '..kbbk...kbbk.....',
+        '..kBBk...kBBk.....',
+        '..khhk...khhk.....'
+      ]
+    ],
+    dragon: [
+      [
+        '......kk..kkk.....',
+        '.....koykkoyk..kk.',
+        '....kooykggggkkwkk',
+        '...kooogggggwggggk',
+        '....kkoggggggkkkk.',
+        '..kkk.kggggggk....',
+        '.kgggggggggrrk....',
+        'kGggggggggrrrk....',
+        'k.kggggggrrrk.....',
+        '...kggk..kggk.....',
+        '...kGGk..kGGk.....',
+        '...kyyk..kyyk.....'
+      ],
+      [
+        '....kk....kkk.....',
+        '...koyk..koyk..kk.',
+        '..kooooykggggkkwkk',
+        '..koooooggggwggggk',
+        '...kkkoggggggkkkk.',
+        '..kkk.kggggggk....',
+        '.kgggggggggrrk....',
+        'kGggggggggrrrk....',
+        '.k.kgggggrrrk.....',
+        '..kggk....kggk....',
+        '..kGGk....kGGk....',
+        '..kyyk....kyyk....'
+      ]
+    ],
+    cat: [
+      [
+        '..kk..kk....',
+        '.kpokkopk...',
+        '.kwoowook...',
+        '.kooopookkk.',
+        '..kkoolkoook',
+        '...kooooookk',
+        '.kkoooook...',
+        'kOkooooook..',
+        'k.kookkook..',
+        '..kwwkkwwk..'
+      ],
+      [
+        '..kk..kk....',
+        '.kpokkopk...',
+        '.kwoowook...',
+        '.kooopookkk.',
+        '..kkoolkoook',
+        '..koooooookk',
+        '.kkoooook...',
+        '.kkooooook..',
+        '..kook.kook.',
+        '.kwwk..kwwk.'
+      ]
+    ],
+    dino: [
+      [
+        '.........kkkkkkkk.',
+        '........kggwgggggk',
+        '.......kgggggggggk',
+        '.......kggggkkkkkk',
+        '.......kggggwwwwwk',
+        '......kgggggyyykk.',
+        '.kk..kgggggyyyk...',
+        'kggkkggggggyykk...',
+        '.kgggggggggyykk...',
+        '..kkggggggyyyk....',
+        '....kggggggyk.....',
+        '....kggk.kggk.....',
+        '....kGGk.kGGk.....',
+        '....kwwk.kwwk.....'
+      ],
+      [
+        '.........kkkkkkkk.',
+        '........kggwgggggk',
+        '.......kgggggggggk',
+        '.......kggggkkkkkk',
+        '.......kggggwwwwwk',
+        '......kgggggyyykk.',
+        'kggk.kgggggyyyk...',
+        '.kggkggggggyykk...',
+        '..kggggggggyykk...',
+        '...kggggggyyyk....',
+        '....kggggggyk.....',
+        '...kggk...kggk....',
+        '...kGGk...kGGk....',
+        '...kwwk...kwwk....'
+      ]
+    ],
+    robot: [
+      [
+        '......kk......',
+        '.....krrk.....',
+        '......kk......',
+        '..kkkkkkkkkk..',
+        '.kssssssssssk.',
+        '.kskccccccksk.',
+        '.kskccccccksk.',
+        '.kssssssssssk.',
+        '..kkkddddkkk..',
+        '.kssddddddssk.',
+        'kSksssssssskSk',
+        'kSkssyssysskSk',
+        '.kksssssssskk.',
+        '...kSSkkSSk...',
+        '...kddkkddk...',
+        '...kkkkkkkk...'
+      ],
+      [
+        '......kk......',
+        '.....kyyk.....',
+        '......kk......',
+        '..kkkkkkkkkk..',
+        '.kssssssssssk.',
+        '.kskccccccksk.',
+        '.kskccccccksk.',
+        '.kssssssssssk.',
+        '..kkkddddkkk..',
+        '.kssddddddssk.',
+        'kSksssssssskSk',
+        'kSkssyssysskSk',
+        '.kksssssssskk.',
+        '..kSSk..kSSk..',
+        '..kddk..kddk..',
+        '..kkkk..kkkk..'
+      ]
+    ],
+    alien: [
+      [
+        '...kkkkkkkk...',
+        '..kllllllllk..',
+        '.klgggggggglk.',
+        '.kgkkkggkkkgk.',
+        '.kgkkkggkkkgk.',
+        '.kggggggggggk.',
+        '..kkggggggkk..',
+        '....kkggkk....',
+        '..kksssssskk..',
+        '.kssSSSSSSssk.',
+        '.k.kssssssk.k.',
+        '...ksSkksSk...',
+        '...kssksssk...',
+        '...kkkkkkkk...'
+      ],
+      [
+        '...kkkkkkkk...',
+        '..kllllllllk..',
+        '.klgggggggglk.',
+        '.kgkkkggkkkgk.',
+        '.kgkkkggkkkgk.',
+        '.kggggggggggk.',
+        '..kkggggggkk..',
+        '....kkggkk....',
+        '..kksssssskk..',
+        '.kssSSSSSSssk.',
+        'k..kssssssk..k',
+        '..ksSk..ksSk..',
+        '..kssk..kssk..',
+        '..kkkk..kkkk..'
+      ]
+    ],
+    shark: [
+      [
+        '.......kkk........',
+        '......kbbbk.......',
+        '..kk..kbbbbk......',
+        '.kbbk.kbbbbbbbkk..',
+        'kbbbbkbbbbbbbwbbk.',
+        '.kbbbbbbbbbbbbbbbk',
+        '..kbbbbbbbwwwwwkk.',
+        '..kbbwwwwwwwwwwk..',
+        '...kkkbbbbbkkkk...',
+        '.....kbbk.kbbk....',
+        '....kBBk..kBBk....'
+      ],
+      [
+        '.......kkk........',
+        '......kbbbk.......',
+        '.kk...kbbbbk......',
+        'kbbk..kbbbbbbbkk..',
+        '.kbbbkbbbbbbbwbbk.',
+        '..kbbbbbbbbbbbbbbk',
+        '..kbbbbbbbwwwwwkk.',
+        '..kbbwwwwwwwwwwk..',
+        '...kkkbbbbbkkkk...',
+        '....kbbk...kbbk...',
+        '...kBBk....kBBk...'
+      ]
+    ]
+  };
+  return ascii(rows[species][step], pal);
+}
+
 /** The frames for one animal and one anim, facing right. */
 export function creatureFrames(species: Species, anim: CreatureAnim, carrying: boolean): Texture[] {
   const n = FRAMES[anim];
@@ -302,7 +581,8 @@ export function creatureFrames(species: Species, anim: CreatureAnim, carrying: b
     out.push(tex(`cr:${species}:${anim}:${f}:${carrying}`, () => {
       if (species === 'raccoon') return raccoon(anim, f, carrying);
       if (species === 'puppy') return puppy(anim, f, carrying);
-      return pigeon(anim === 'happy' ? 'idle' : anim, f, carrying);
+      if (species === 'pigeon') return pigeon(anim === 'happy' ? 'idle' : anim, f, carrying);
+      return extraCreature(species, anim, f);
     }));
   }
   return out;
@@ -386,8 +666,69 @@ const ITEM_ROWS: Record<string, string[]> = {
     'srrrrrrhhhBBoo',
     'pPpppnnnnnhhoo',
     '.PPPPNNNNNNNO.'
+  ],
+  chalkOutline: [
+    '......w.w.w.........',
+    '....w.......w.......',
+    '...w.........w......',
+    '....w.......w.......',
+    '..w..w.w.w.w..w.....',
+    '.w.............w....',
+    '..w..w.....w..w.....',
+    '.....w.....w........',
+    '....w.......w.......',
+    '...w..w...w..w......',
+    '..w.w.......w.w.....'
+  ],
+  brokenParts: [
+    '....SS........k...',
+    '..kssssk..yy.kSk..',
+    '.ksk..ksk..y.ksk..',
+    '..kssssk.oo..kSSk.',
+    '....SS...yy.kdddk.',
+    '..kssssk....kddk..',
+    '.kSSaaSSk.oo......'
   ]
 };
+
+const SCUFFLE_FRAMES: string[][] = [
+  [
+    '.....wwwww..yy......',
+    '...wwwwwwwwwry......',
+    '..wwwwaaawwwwww.....',
+    '.wwwaawwwaawwwww.yy.',
+    'wwwwwkwwwkwwwwwwwr..',
+    'wwwwwakwkawwwwwwww..',
+    '.wwwwaaaawwwwaawww..',
+    '..wwwwwwrrwwwwwww...',
+    '...wwwwwwwwwyyww....',
+    '....sswwwwwwss......'
+  ],
+  [
+    '...yy..wwwww........',
+    '...rywwwwwwwww......',
+    '....wwwwaaawwwww.yy.',
+    '...wwwaawwwaawwwwr..',
+    '..wwwwwkwwwkwwwwww..',
+    '.wwwwwwakwkawwwwww..',
+    '..wwwwwaaaawwwwww...',
+    '...wwwwwyywwwwww....',
+    '....wwwwwwrrwww.....',
+    '.....sswwwwss.......'
+  ],
+  [
+    '......wwwww....yy...',
+    '....wwwwwwwww..ry...',
+    '.yy.wwwaaawwwwww....',
+    '.rrwwwaawwwaawwww...',
+    '..wwwwwkwwwkwwwwww..',
+    '..wwwwwakwkawwwwww..',
+    '..wwwwaaaawwwaawww..',
+    '...wwwwwwwwrrwwww...',
+    '....wwwwwyywwwww....',
+    '.....sswwwwwwss.....'
+  ]
+];
 
 /** Candles flicker, so the cake has two frames. */
 function cakePix(frame: number): Pix {
@@ -412,6 +753,7 @@ export function itemFrames(item: string): Texture[] {
   if (item === 'puddle') return [tex('item:puddle', puddlePix)];
   if (item === 'scorch') return [tex('item:scorch', scorchPix)];
   if (item === 'foam') return [tex('item:foam:0', () => foamPix(0)), tex('item:foam:1', () => foamPix(1))];
+  if (item === 'scuffle') return SCUFFLE_FRAMES.map((rows, f) => tex(`item:scuffle:${f}`, () => ascii(rows, IP)));
   const rows = ITEM_ROWS[item] ?? ITEM_ROWS.gift;
   return [tex('item:' + item, () => ascii(rows, IP))];
 }
@@ -457,7 +799,7 @@ function foamPix(frame: number): Pix {
 }
 
 /** Items that lie flat on the floor (drawn in fx.floor, under people). */
-export const FLAT_ITEMS = new Set(['puddle', 'scorch', 'foam']);
+export const FLAT_ITEMS = new Set(['puddle', 'scorch', 'foam', 'chalkOutline', 'brokenParts']);
 
 // ── small things that move ──────────────────────────────────────────────────
 

@@ -16,10 +16,14 @@ import type { InstinctBank } from '@/game/core/content/types';
 import { PLAN_KINDS } from '@/game/core/types';
 import type { CharId, TargetRoomId } from '@/game/core/types';
 import type {
-  Brain, BrainSettings, BrainStatus, ChatStats, ChatTransport, InterpretRequest, InterpretResult, MindResult, MindsRequest,
-  ReportRequest, ReportResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult
+  Brain, BrainSettings, BrainStatus, ChatStats, ChatTransport, DirectiveRequest, DirectiveResult, DirectiveVerb,
+  InterpretRequest, InterpretResult, MindResult, MindsRequest, ReportRequest, ReportResult, SagaEpisodeRequest,
+  SagaEpisodeResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult
 } from './api';
-import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES } from './api';
+import {
+  CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, DIRECTIVE_VERBS, GUEST_COLOURS,
+  GUEST_SKINS, GUEST_STYLES
+} from './api';
 import type { CustomPower } from './api';
 import { cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanShifts, cleanText, lineKey } from './clean';
 import type { LineContext } from './clean';
@@ -29,7 +33,7 @@ import { ArrayItemStream, parseLoose } from './jsonStream';
 import { NameMap } from './names';
 import { PromptBook } from './prompts';
 import type { RequestKind } from './prompts';
-import { interpretSchema, mindsSchema, reportSchema, sceneSchema } from './schema';
+import { directiveSchema, interpretSchema, mindsSchema, reportSchema, sagaEpisodeSchema, sceneSchema } from './schema';
 import type { JsonSchema } from './schema';
 import { BrainError, isAbort } from './transports/common';
 import type { TransportOptions, TransportProgress } from './transports/common';
@@ -70,7 +74,7 @@ interface RunSpec<T> {
   parse: (text: string) => T | null;
   /** Make the best of what already arrived (streamed lines) when the call fails. */
   salvage?: () => T | null;
-  fallback: () => T | Promise<T>;
+  fallback: () => T;
 }
 
 export class LlmBrain implements Brain {
@@ -197,7 +201,7 @@ export class LlmBrain implements Brain {
 
   // ── Queue ─────────────────────────────────────────────────────────────────
 
-  /** Wait for our turn at the model. Rejects if the caller gives up while waiting. */
+  /** Wait for our turn. Rejects if the caller gives up while waiting. */
   private async acquire(signal?: AbortSignal): Promise<() => void> {
     let release!: () => void;
     const prev = this.tail;
@@ -238,7 +242,7 @@ export class LlmBrain implements Brain {
     }
     try {
       for (let attempt = 0; attempt < 2; attempt++) {
-        if (this.unavailable()) return spec.salvage?.() ?? (await spec.fallback());
+        if (this.unavailable()) return spec.salvage?.() ?? spec.fallback();
         spec.onAttempt?.();
         const temperature = attempt === 0 ? spec.temperature : Math.max(0.2, spec.temperature * 0.6);
         let text: string;
@@ -258,7 +262,7 @@ export class LlmBrain implements Brain {
           text = res.text;
         } catch (e) {
           if (!(isAbort(e) && spec.signal?.aborted)) this.noteFailure(e);
-          return spec.salvage?.() ?? (await spec.fallback());
+          return spec.salvage?.() ?? spec.fallback();
         }
         let result: T | null = null;
         try {
@@ -270,7 +274,7 @@ export class LlmBrain implements Brain {
         const salvaged = spec.salvage?.();
         if (salvaged) return salvaged;
       }
-      return await spec.fallback();
+      return spec.fallback();
     } finally {
       release();
     }
@@ -406,7 +410,7 @@ export class LlmBrain implements Brain {
           const r = item as Record<string, unknown>;
           const who = names.resolve(r.who);
           if (!who || got.has(who)) continue;
-          const thought = cleanSay(r.thought, 16);
+          const thought = cleanSay(r.thought, 36);
           if (!thought) continue;
           const person = req.people.find((p) => p.id === who)!;
           const plan = cleanPlan(r, who, others, this.rooms, allowed) ?? this.instinct.mindFor(person, req).plan;
@@ -468,6 +472,62 @@ export class LlmBrain implements Brain {
     });
   }
 
+  private normalizeDirective(
+    v: Record<string, unknown>,
+    base: DirectiveResult,
+    names: NameMap,
+    roomIds: string[]
+  ): DirectiveResult {
+    const physicalPriority = new Set<DirectiveVerb>([
+      'eliminate', 'knockout', 'shove', 'drag', 'lock_in', 'sabotage',
+      'trigger_power', 'walk_out', 'steal', 'romance', 'chase', 'follow', 'guard'
+    ]);
+    let verb = (DIRECTIVE_VERBS as readonly string[]).includes(String(v.verb))
+      ? (v.verb as DirectiveVerb)
+      : base.verb;
+    // Never let a timid model soften an unmistakable physical order into plain chat or walking.
+    if (physicalPriority.has(base.verb) && (verb === 'social' || verb === 'go_to')) {
+      verb = base.verb;
+    }
+    const resolvedPerson = v.targetPerson && v.targetPerson !== 'none' ? names.resolve(v.targetPerson) : null;
+    const targetPerson = resolvedPerson ?? base.targetPerson;
+    const rawRoom = typeof v.targetRoom === 'string' && v.targetRoom !== 'none' ? v.targetRoom : '';
+    const resolvedRoom = rawRoom ? (roomIds.includes(rawRoom) ? rawRoom : this.rooms(rawRoom)) : null;
+    const targetRoom = ((resolvedRoom && roomIds.includes(resolvedRoom) ? resolvedRoom : null) ?? base.targetRoom) as DirectiveResult['targetRoom'];
+    const power = (CUSTOM_POWERS as readonly string[]).includes(String(v.power))
+      ? (v.power as CustomPower)
+      : base.power;
+    return {
+      verb,
+      targetPerson,
+      targetRoom,
+      power: power === 'none' && base.power !== 'none' ? base.power : power,
+      item: cleanText(v.item, 32) || base.item,
+      summary: cleanText(v.summary, 120) || base.summary,
+      source: 'model'
+    };
+  }
+
+  async interpretDirective(req: DirectiveRequest, signal?: AbortSignal): Promise<DirectiveResult> {
+    const base = this.instinct.interpretDirectiveNow(req);
+    const names = new NameMap(req.people.map((p) => ({ id: p.id, name: p.name })));
+    const roomIds = req.rooms.map((r) => r.id as string);
+    return this.run<DirectiveResult>({
+      kind: 'directive',
+      user: this.book.directiveUser(req, names),
+      schema: directiveSchema(names.names, roomIds),
+      temperature: 0.25,
+      maxTokens: 160,
+      signal,
+      parse: (text) => {
+        const v = parseLoose(text)?.value;
+        if (!v) return null;
+        return this.normalizeDirective(v, base, names, roomIds);
+      },
+      fallback: () => base
+    });
+  }
+
   // ── End of day ────────────────────────────────────────────────────────────
 
   async report(req: ReportRequest, signal?: AbortSignal): Promise<ReportResult> {
@@ -511,6 +571,40 @@ export class LlmBrain implements Brain {
         };
       },
       fallback: () => this.instinct.reportNow(req)
+    });
+  }
+
+  async sagaEpisode(req: SagaEpisodeRequest, signal?: AbortSignal): Promise<SagaEpisodeResult> {
+    const base = this.instinct.sagaEpisodeNow(req);
+    return this.run<SagaEpisodeResult>({
+      kind: 'saga',
+      user: this.book.sagaUser(req),
+      schema: sagaEpisodeSchema(),
+      temperature: this.temp(0.6),
+      maxTokens: 280,
+      signal,
+      parse: (text) => {
+        const v = parseLoose(text)?.value;
+        if (!v) return null;
+        const title = cleanText(v.title, 44) || base.title;
+        const recap = cleanText(v.recap, 220);
+        const hook = cleanText(v.hook, 260);
+        const twistFact = cleanText(v.twistFact, 180) || base.twistFact;
+        if (!recap || !hook) return null;
+        const topics = (Array.isArray(v.topics) ? v.topics : [])
+          .map((t) => cleanText(t, 120))
+          .filter(Boolean)
+          .slice(0, 2);
+        return {
+          title,
+          recap,
+          hook,
+          twistFact,
+          topics: topics.length ? topics : base.topics,
+          source: 'model'
+        };
+      },
+      fallback: () => base
     });
   }
 }

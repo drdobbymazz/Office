@@ -21,7 +21,7 @@ const ROOM_WORDS: [TargetRoomId, RegExp][] = [
 ];
 
 /** Asks people to go somewhere (or offers something worth going for). */
-const INVITE_RE = /\b(come|comes|coming|go|head|heads|meet|meeting|everyone|everybody|all staff|all hands|now|free|cake|pizza|party|report to|gather|join|assemble|please)\b/i;
+const INVITE_RE = /\b(come|comes|coming|go|head|heads|meet|meeting|everyone|everybody|all staff|all hands|now|free|cake|pizza|party|report to|gather|join|assemble|huddle|head over|swing by|get in|come into|show up|please)\b/i;
 /**
  * Says something is happening in the room it names, which is an invitation too:
  * "The call from Corporate is in the conference room at three."
@@ -30,7 +30,7 @@ const EVENT_RE = /\b(call|calls|phone call|talk|speech|presentation|celebration|
 /** Tells people to keep away: "Nobody go to the annex", "Stay out of the break room". Not a summons. */
 const KEEP_AWAY_RE = /\b(don'?t|do not|never)\s+(go|come|head|enter|walk|run)\b|\b(nobody|no one)\s+(go|goes|come|comes|enter|enters|is to)\b|\b(stay|keep)\s+(out of|away from)\b/i;
 /** Food and treats: everyone is keener, Kevin most of all. */
-const FOOD_RE = /\b(free|cake|cakes|pizza|pizzas|party|food|donuts?|doughnuts?|snacks?|lunch|cookies?|biscuits?|treats?|sweets|chocolate|bagels?)\b/i;
+const FOOD_RE = /\b(free|cake|cakes|pizza|pizzas|party|food|donuts?|doughnuts?|snacks?|lunch|cookies?|biscuits?|treats?|sweets|chocolate|bagels?|tacos?|burritos?|burgers?|sushi|ice cream|brownies?|drinks?)\b/i;
 /** Everyone, rather than only the people named. */
 const EVERYONE_RE = /\b(everyone|everybody|all staff|all hands|all of you|the whole office|whole office|team|staff)\b/i;
 

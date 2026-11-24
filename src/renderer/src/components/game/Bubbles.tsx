@@ -28,9 +28,9 @@ export interface Bounds { left: number; right: number; top: number; bottom: numb
  */
 export const unshownLines = new Set<string>();
 
-const MAX_W = 220;
+const MAX_W = 260;
 /** Bubble width when the camera shows the whole office (a person is a few pixels tall there). */
-const MAX_W_FITTED = 176;
+const MAX_W_FITTED = 204;
 /** Zoom (CSS px per art px) above which bubbles may use their full width. */
 const CLOSE_ZOOM = 1.6;
 /** A line that lost its room stays a tag at least this long, so bubbles do not flicker. */
@@ -42,6 +42,8 @@ const GAP = 4;
 interface Node {
   sp: Speech;
   el: HTMLDivElement;
+  inner: HTMLDivElement;
+  box: HTMLDivElement;
   rev: HTMLSpanElement;
   rest: HTMLSpanElement;
   tail: HTMLDivElement;
@@ -172,14 +174,14 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       el.append(pop, tag);
       el.style.visibility = 'hidden';
       root!.append(el);
-      // Measure once with the whole line laid out (unrevealed letters are transparent), then fix the size.
-      // offsetWidth rounds to the nearest pixel, which can leave the box half a pixel too narrow and push
-      // the last word (or the last letter of a name) onto a new line: measure exactly and round up.
+      // Measure width once across the whole line so text never jumps horizontally, then collapse `rest`
+      // so the bubble grows height cleanly line by line as the typewriter reveals characters.
       const w = Math.ceil(box.getBoundingClientRect().width) + 1;
       box.style.width = `${w}px`;
+      rest.style.display = 'none';
       const h = Math.ceil(box.getBoundingClientRect().height);
       if (sp.kind === 'shout') inner.insertBefore(shoutBg(w, h), box);
-      const n: Node = { sp, el, rev, rest, tail, w, h, shown: 0, x: -999, y: -999, flipped: false, dying: false, tag: false, tagUntil: 0, dim: false };
+      const n: Node = { sp, el, inner, box, rev, rest, tail, w, h, shown: 0, x: -999, y: -999, flipped: false, dying: false, tag: false, tagUntil: 0, dim: false };
       setTail(n, false, w / 2);
       return n;
     }
@@ -246,7 +248,16 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
         if (count !== n.shown) {
           n.shown = count;
           n.rev.textContent = sp.text.slice(0, count);
-          n.rest.textContent = sp.text.slice(count);
+          const nextH = Math.ceil(n.box.getBoundingClientRect().height);
+          if (nextH !== n.h) {
+            n.h = nextH;
+            if (sp.kind === 'shout') {
+              const oldBg = n.inner.querySelector('.gu-shout-bg');
+              const nextBg = shoutBg(n.w, n.h);
+              if (oldBg) oldBg.replaceWith(nextBg);
+              else n.inner.insertBefore(nextBg, n.box);
+            }
+          }
         }
         typedOut.set(id, count >= sp.text.length);
         const head = game.headOnScreen(sp.who);

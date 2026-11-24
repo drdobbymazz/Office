@@ -83,15 +83,34 @@ function InfluenceLine({ left, max }: { left: number; max: number }) {
   );
 }
 
-/** Story mode: today's job in place of the random goals, and the way out once it is settled. */
+/** Story & Saga mode: today's job in place of random goals, and the way out once settled. */
 function MissionSection({ story }: { story: StoryUi }) {
   const game = useGame();
   const finishing = useUi((s) => s.finishing);
   const lost = story.goal.state === 'lost';
+  const saga = story.saga;
   return (
     <div data-mission style={{ display: 'flex', flexDirection: 'column', scrollMarginTop: 8 }}>
-      <Section title="MISSION" accent="peach" right={<span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, whiteSpace: 'nowrap' }}>{story.title}</span>}>
+      <Section title="MISSION" accent="peach" right={
+        <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, whiteSpace: 'nowrap' }}>
+          {saga ? `S${saga.season} · ${story.title}` : story.title}
+        </span>
+      }>
+        {saga && (
+          <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+            <strong>{saga.arcTitle}</strong> · {saga.arcTagline}
+          </div>
+        )}
         <GoalBlock goal={story.goal} />
+        {saga?.twist && (
+          <div style={{
+            padding: '6px 8px 6px 10px', fontSize: 13, lineHeight: '17px', color: 'var(--cth-ink-900)',
+            background: 'var(--cth-lilac-light)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900), inset 4px 0 0 var(--cth-lilac)'
+          }}>
+            <div className="gu-label" style={{ marginBottom: 2 }}>Reactive twist</div>
+            {saga.twist}
+          </div>
+        )}
         {finishing && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>
             <GIcon name="ff" px={16} style={{ animation: 'gu-blink 0.5s steps(1) infinite' }} />
@@ -113,13 +132,13 @@ function MissionSection({ story }: { story: StoryUi }) {
         )}
         {story.side.length > 0 && (
           <>
-            <Label style={{ marginTop: 4 }}>Extra goals</Label>
-            {story.side.map((g) => <ExtraRow key={g.id} goal={g} />)}
+            <Label style={{ marginTop: 4 }}>{saga ? 'Bonus goals (+3 standing)' : 'Extra goals'}</Label>
+            {story.side.map((g) => <ExtraRow key={g.id} goal={g} worth={saga ? 3 : undefined} />)}
           </>
         )}
         <Rule />
         <StandingMeter value={story.standing} />
-        <InfluenceLine left={story.influence.left} max={story.influence.max} />
+        {!saga && <InfluenceLine left={story.influence.left} max={story.influence.max} />}
         {story.hints.length > 0 && (
           <>
             <Rule />

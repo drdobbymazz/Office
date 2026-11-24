@@ -62,7 +62,8 @@ function cutWords(s: string, maxWords: number): string {
   let m: RegExpExecArray | null;
   while ((m = re.exec(head))) cut = m.index + 1;
   if (cut > 0 && head.slice(0, cut).split(' ').length >= 4) return head.slice(0, cut);
-  const short = words.slice(0, Math.min(maxWords, 18)).join(' ').replace(/[,;:]$/, '');
+  const cap = maxWords <= 22 ? Math.min(maxWords, 18) : Math.min(maxWords, maxWords - 2);
+  const short = words.slice(0, cap).join(' ').replace(/[,;:]$/, '');
   return `${short}...`;
 }
 
@@ -111,7 +112,7 @@ export function cleanLine(raw: unknown, ctx: LineContext): SceneLine | null {
   const r = raw as Record<string, unknown>;
   const who = ctx.speakers.resolve(r.who);
   if (!who) return null;
-  const say = cleanSay(r.say, 22, (n) => ctx.speakers.resolve(n) !== null);
+  const say = cleanSay(r.say, 60, (n) => ctx.speakers.resolve(n) !== null);
   if (!say) return null;
   const key = lineKey(say);
   if (!key || ctx.seen.has(key)) return null;

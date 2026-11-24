@@ -7,8 +7,9 @@ import type { LooseVoiceBank, VoiceBank } from '@/game/core/content/types';
 import { CHAOS_IDS, PLAN_KINDS } from '@/game/core/types';
 import type { ChaosId, CharId, EmotionId, LineAct, Plan, PlanKind, RelationShift, TargetRoomId } from '@/game/core/types';
 import type {
-  BarkKind, Brain, BrainStatus, CustomVibe, InterpretRequest, InterpretResult, MindResult, MindsRequest, PersonBrief,
-  Reflexes, ReportRequest, ReportResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult, StoryTheme
+  BarkKind, Brain, BrainStatus, CustomVibe, DirectiveRequest, DirectiveResult, DirectiveVerb, InterpretRequest,
+  InterpretResult, MindResult, MindsRequest, PersonBrief, Reflexes, ReportRequest, ReportResult, SagaEpisodeRequest,
+  SagaEpisodeResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult, StoryTheme
 } from './api';
 import { cleanSay, lineKey, SOCIAL_PLANS } from './clean';
 import {
@@ -646,6 +647,109 @@ export class InstinctBrain implements Brain, Reflexes {
     };
   }
 
+  async interpretDirective(req: DirectiveRequest): Promise<DirectiveResult> {
+    return this.interpretDirectiveNow(req);
+  }
+
+  interpretDirectiveNow(req: DirectiveRequest): DirectiveResult {
+    const text = req.text.trim();
+    const roomIds = req.rooms.map((r) => r.id);
+    const pickRoom = (candidate: string): DirectiveResult['targetRoom'] =>
+      (roomIds.includes(candidate) ? candidate : null) as DirectiveResult['targetRoom'];
+
+    let targetPerson: CharId | null = null;
+    for (const p of req.people) {
+      if (p.id === req.actor.id) continue;
+      const parts = [p.name, p.name.split(/\s+/)[0]].filter((s) => s.length >= 2);
+      if (parts.some((part) => new RegExp(`\\b${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text))) {
+        targetPerson = p.id;
+        break;
+      }
+    }
+    if (!targetPerson && /\b(yourself|himself|herself|themself|myself|self)\b/i.test(text)) {
+      targetPerson = req.actor.id;
+    }
+
+    const byName = req.rooms.find((r) => text.toLowerCase().includes(r.name.toLowerCase().replace(/^the\s+/, '')))?.id;
+    let targetRoom = (byName ?? this.index.roomInText(text, roomIds) ?? null) as DirectiveResult['targetRoom'];
+    if (!targetRoom) {
+      if (/\b(fax(?:\s+machine)?|copier|printer)\b/i.test(text)) targetRoom = pickRoom('annex') ?? pickRoom('bullpen');
+      else if (/\b(coffee(?:\s*maker|\s*machine)?|fridge|vending|microwave|break\s*room|kitchen)\b/i.test(text)) targetRoom = pickRoom('kitchen');
+      else if (/\breception|switchboard\b/i.test(text)) targetRoom = pickRoom('bullpen');
+      else if (/\bmichael'?s\s+office|boss\b/i.test(text)) targetRoom = pickRoom('boss');
+      else if (/\bconference|meeting\b/i.test(text)) targetRoom = pickRoom('meeting');
+      else if (/\bwater\s+cooler|accounting\b/i.test(text)) targetRoom = pickRoom('accounts');
+    }
+
+    const itemMatch = text.toLowerCase().match(
+      /\b(stapler|mug|coffee|chair|printer|fax|copier|laptop|computer|monitor|desk|scissors|knife|bat|broom|mop|wrench|extinguisher|keyboard|phone|fridge|vending|plant|box|papers?)\b/
+    );
+    const item = itemMatch ? itemMatch[1] : '';
+    const power = powerFor(text);
+    const hasMachine = /\b(fax(?:\s+machine)?|printer|copier|coffee\s*(?:machine|maker)?|vending(?:\s+machine)?|fridge|microwave|computer|laptop|monitor|desk|router|wifi|phone)\b/i.test(text);
+    const inanimateTarget = !targetPerson && /\b(wifi|power|lights?|internet|office|room|building)\b/i.test(text);
+    const phrasalOff = /\b(take|strip|rip|pull|get|back|tell|turn|shut|cut|blow|jerk|jack|rub|whack|lay|keep|stay|run|walk|storm|piss|fuck|screw|show|cool|knock|head|send|set|drop|kick|push|shove|kiss|make)\s+(?:\w+\s+){0,2}off\b/i.test(text);
+    const clothingWord = /\b(clothes|shirt|pants|dress|skirt|bra|underwear|trousers|blouse)\b/i.test(text);
+    const isRomance =
+      /\b(kiss|smooch|hug|cuddle|embrace|make\s+out|french\s+kiss|propose|profess\s+(?:your\s+)?love|confess\s+(?:your\s+)?love|flirt|romance|marry|seduce|hit\s+on|hook\s+up|sleep\s+with|sleep\s+together|have\s+sex|make\s+love|get\s+laid|shag|grope|feel\s+up|fondle|strip|strip\s*tease|undress|get\s+naked|take\s+(?:your\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear)\s+off|take\s+off\s+(?:your\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear)|rip\s+(?:your\s+)?(?:clothes|shirt|pants|dress)\s+off|rip\s+off\s+(?:your\s+)?(?:clothes|shirt|pants|dress)|lap\s+dance|grind\s+on|dry\s+hump|spank|affair|orgy|threesome|blowjob|handjob|jerk\s+off|jack\s+off|masturbat\w*|eat\s+\w+\s+out|suck\s+\w+\s+off|finger|turn\s+\w+\s+on|touch\s+(?:yourself|himself|herself|myself)|pleasure\s+(?:yourself|himself|herself|myself|\w+)|flash)\b/i.test(text) ||
+      (/\b(fuck(?!\s+(?:off|up|this|that|it|everything|around))|bang|screw(?!\s+(?:up|off|around))|bed|ride|blow(?!\s+(?:up|off|away|out)))\b/i.test(text) && !!targetPerson && !hasMachine);
+
+    let verb: DirectiveVerb = 'social';
+    if (/\b(fire\s*alarm|pull\s+(?:the\s+)?alarm|set\s+.+\s+on\s+fire|burn\s+(?:the\s+)?down)\b/i.test(text) && power !== 'none') {
+      verb = 'trigger_power';
+    } else if (
+      (/\b(kill|murder|assassinate|execute|strangle|stab|shoot|poison|slay)\b/i.test(text) && !inanimateTarget) ||
+      (/\b(whack|off)\b/i.test(text) && !!targetPerson && !inanimateTarget && !phrasalOff) ||
+      (/\b(eliminate|finish|destroy|end)\b/i.test(text) && !!targetPerson && !hasMachine)
+    ) {
+      verb = 'eliminate';
+    } else if (/\b(knock\s*out|punch|hit(?!\s+on)|tackle|beat\s+up|choke|slap|smack|bonk|clobber|deck|attack|fight|brawl)\b/i.test(text) || (/\bsmash\b/i.test(text) && !!targetPerson && !hasMachine)) {
+      verb = 'knockout';
+    } else if (
+      /\b(drag|haul|kidnap|abduct|carry|lug|yank)\b/i.test(text) ||
+      (/\bpull\b/i.test(text) && !!targetPerson) ||
+      (/\bbring\b/i.test(text) && !!targetPerson && !!targetRoom && !item)
+    ) {
+      verb = 'drag';
+    } else if (/\b(lock(?:\s+in|\s+\w+\s+in)?|barricade|trap|seal|bolt|lock\s+the\s+door)\b/i.test(text)) {
+      verb = 'lock_in';
+    } else if (/\b(quit|resign|walk\s+out|pack\s+(?:up|your\s+things)|i'?m\s+done|storm\s+out)\b/i.test(text)) {
+      verb = 'walk_out';
+    } else if (/\b(shove|push|trip|yeet|splash)\b/i.test(text) || (/\b(throw|toss|hurl|fling)\b/i.test(text) && !/\b(disco|party|meeting)\b/i.test(text) && (!!targetPerson || !!item))) {
+      verb = 'shove';
+    } else if (
+      (/\b(smash|wreck|break|unplug|vandalize|sabotage|trash|destroy|ruin|jam|screw\s+up|fuck\s+up)\b/i.test(text) ||
+        (/\brip\b/i.test(text) && !clothingWord)) &&
+      (hasMachine || !targetPerson)
+    ) {
+      verb = 'sabotage';
+    } else if (power !== 'none') {
+      verb = 'trigger_power';
+    } else if (/\b(steal|swipe|snatch|thieve|rob|nick|confiscate)\b/i.test(text) || (/\btake\b/i.test(text) && /\bfrom\b/i.test(text) && !!targetPerson)) {
+      verb = 'steal';
+    } else if (isRomance) {
+      verb = 'romance';
+    } else if (/\b(chase|hunt|pursue|run\s+after|corner)\b/i.test(text)) {
+      verb = 'chase';
+    } else if (/\b(follow|shadow|stalk|tail|trail)\b/i.test(text)) {
+      verb = 'follow';
+    } else if (/\b(guard|block|stand\s+watch|patrol|bouncer)\b/i.test(text)) {
+      verb = 'guard';
+    } else if (targetRoom && /\b(go\s+to|walk\s+to|run\s+to|head\s+to|hide\s+in|wait\s+in|stay\s+in|get\s+to)\b/i.test(text)) {
+      verb = 'go_to';
+    }
+
+    return {
+      verb,
+      targetPerson,
+      targetRoom,
+      power,
+      item,
+      summary: text.slice(0, 120),
+      source: 'instinct'
+    };
+  }
+
   // ── End of day ────────────────────────────────────────────────────────────
 
   async report(req: ReportRequest): Promise<ReportResult> {
@@ -724,7 +828,7 @@ export class InstinctBrain implements Brain, Reflexes {
     give('Coolest Head', req.people.find((p) => ['neutral', 'bored', 'tired'].includes(p.mood))?.id, 'Barely looked up all day.');
     if (!awards.length && req.people[0]) give('Still Standing', req.people[0].id, 'Made it to home time.');
 
-    // What each person takes away: the newest thing that happened with them in it (never a half-quoted line).
+      // What each person takes away: the newest thing that happened with them in it (never a half-quoted line).
     const takeaways = req.people.map((p) => {
       const n = normName(names.name(p.id));
       const line = [...(story?.lines ?? []), ...events].reverse().find((l) => normName(l).includes(n));
@@ -733,6 +837,38 @@ export class InstinctBrain implements Brain, Reflexes {
     });
 
     return { headline, paragraphs: paragraphs.filter(Boolean), awards, takeaways, source: 'instinct' };
+  }
+
+  // ── Endless Saga ──────────────────────────────────────────────────────────
+
+  async sagaEpisode(req: SagaEpisodeRequest): Promise<SagaEpisodeResult> {
+    return this.sagaEpisodeNow(req);
+  }
+
+  /** Reactive deterministic episode bridge when the language model is offline or skipped. */
+  sagaEpisodeNow(req: SagaEpisodeRequest): SagaEpisodeResult {
+    const y = req.yesterday;
+    const peak = Math.round(y.chaosPeak);
+    const ev = y.events[0] ?? (y.incidents > 0 ? `${y.incidents} incidents rattled the floor` : '');
+    const recap = ev
+      ? `After "${y.title}" ended with ${ev.replace(/\.$/, '')} and peak chaos at ${peak}%, nobody came in calm this morning.`
+      : `Yesterday's "${y.title}" ${y.won ? 'went the office\'s way' : 'missed the mark'}, leaving standing at ${Math.round(req.standing)}.`;
+    const hook = `${req.tomorrow.goalDetail} Meanwhile, everyone is still talking about yesterday's fallout.`;
+    const twistFact = ev
+      ? `The office is still reeling from yesterday: ${ev.replace(/\.$/, '')}.`
+      : `Season ${req.season} (${req.arcTitle}) enters ${req.weekday} with nerves frayed.`;
+    const topics = [
+      ev ? `Everyone is still whispering about how yesterday ended: ${ev.replace(/\.$/, '')}.` : `People are sizing up ${req.tomorrow.goalTitle.toLowerCase()}.`,
+      peak >= 65 ? 'Nobody has forgotten how wild the office got yesterday.' : `Staff are bracing for ${req.weekday}'s ${req.arcTitle.toLowerCase()} fallout.`
+    ];
+    return {
+      title: req.tomorrow.title,
+      recap,
+      hook,
+      twistFact,
+      topics,
+      source: 'instinct'
+    };
   }
 }
 

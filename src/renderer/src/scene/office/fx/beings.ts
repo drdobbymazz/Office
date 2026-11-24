@@ -260,7 +260,9 @@ export class Creature extends Lasting<Of<'creature'>> {
     const tex = creatureFrames(inst.species, inst.anim, inst.carrying)[0];
     this.sprite = new Sprite(tex);
     this.sprite.anchor.set(0.5, 1);
-    const big = inst.species === 'pigeon' ? 4 : 7;
+    const big = inst.species === 'pigeon' ? 4
+      : (inst.species === 'bear' || inst.species === 'horse' || inst.species === 'dragon' || inst.species === 'dino') ? 10
+        : (inst.species === 'robot' || inst.species === 'alien' || inst.species === 'shark') ? 8 : 7;
     this.shadow = new Sprite(shadowTex(big, 2));
     this.shadow.anchor.set(0.5);
     this.shadow.alpha = 0.2;

@@ -12,7 +12,8 @@ import { Land, Layer } from './particles';
 
 const KINDS: readonly StatusKind[] = [
   'love', 'rage', 'truth', 'paranoid', 'caffeinated', 'sleepy', 'asleep', 'tiny', 'giant', 'swapped',
-  'crowned', 'party', 'rich', 'spooked', 'abducted', 'stung', 'dizzy', 'wet', 'sooty', 'frizzy', 'frozen'
+  'crowned', 'party', 'rich', 'spooked', 'abducted', 'stung', 'dizzy', 'wet', 'sooty', 'frizzy', 'frozen',
+  'knockedOut', 'eliminated', 'guilty', 'quit'
 ];
 const IDX = new Map<StatusKind, number>(KINDS.map((k, i) => [k, i]));
 
@@ -20,7 +21,8 @@ const IDX = new Map<StatusKind, number>(KINDS.map((k, i) => [k, i]));
 const EVERY: Record<StatusKind, number> = {
   love: 0.55, rage: 0.32, truth: 0.22, paranoid: 0, caffeinated: 0.1, sleepy: 1.3, asleep: 0.75,
   tiny: 0, giant: 0, swapped: 0, crowned: 0.32, party: 0.09, rich: 0.45, spooked: 0.45,
-  abducted: 0.14, stung: 0.55, dizzy: 0, wet: 0.8, sooty: 0.4, frizzy: 0.22, frozen: 0.38
+  abducted: 0.14, stung: 0.55, dizzy: 0, wet: 0.8, sooty: 0.4, frizzy: 0.22, frozen: 0.38,
+  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0
 };
 
 interface PFx {
@@ -102,7 +104,7 @@ export class Statuses {
         emitPoof(env.parts, p.x, p.y - 2, 0, 5, 0xffffff, 0, 0, 0, 0.4, Layer.Air, 0.6);
       }
       if (started & (1 << IDX.get('frozen')!)) emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 10);
-      const needBox = mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('paranoid')!) | (1 << IDX.get('swapped')!) | (1 << IDX.get('rage')!));
+      const needBox = mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('knockedOut')!) | (1 << IDX.get('paranoid')!) | (1 << IDX.get('swapped')!) | (1 << IDX.get('rage')!));
       if (needBox || s.box) this.attached(s, p, mask, head);
       if (!mask || !onScreen) continue;
       for (let i = 0; i < KINDS.length; i++) {
@@ -129,7 +131,7 @@ export class Statuses {
     const box = this.ensureBox(s);
     box.position.set(Math.round(p.x), Math.round(p.headY));
     const t = s.t;
-    const dizzy = !!(mask & (1 << IDX.get('dizzy')!));
+    const dizzy = !!(mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('knockedOut')!)));
     for (let i = 0; i < 3; i++) {
       const st = s.stars[i];
       st.visible = dizzy;
@@ -245,6 +247,9 @@ export class Statuses {
         break;
       case 'frozen':
         q.x += rr(-7, 7); q.z = rr(2, head); q.frames = sparkles(); q.once = true; q.fps = 8; q.life = 0.5; tint = pick([0xb6f0ff, 0xffffff, 0x8adcff]);
+        break;
+      case 'guilty':
+        q.x += pick([-6, 6]); q.z = head - 2; q.vz = -18; q.g = 90; q.life = 0.45; q.fadeOut = 0.35; tex = shapeTex('drop');
         break;
       default:
         q.life = 0.01;

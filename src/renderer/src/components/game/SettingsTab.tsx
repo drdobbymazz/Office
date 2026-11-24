@@ -136,22 +136,20 @@ function GameSection() {
   const set = (p: Partial<GameSettings>) => game.updateSettings(p);
   return (
     <Section title="GAME" accent="lemon">
+      <Label>Length of a day</Label>
       {s.story ? (
         // A story day always runs at the length it was balanced for, and keeps its cooldowns:
-        // the two sandbox settings would do nothing here, so they wait for the sandbox.
+        // the two sandbox settings apply in Sandbox and Endless Saga instead.
         <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-          Story days always last 10 minutes. Day length and No cooldowns apply in the sandbox.
+          Classic Story days always last 10 minutes. Day length and No cooldowns apply in Sandbox and Endless Saga.
         </div>
       ) : (
-        <>
-          <Label>Length of a sandbox day</Label>
-          <Seg value={s.dayMinutes} onChange={(v) => set({ dayMinutes: v })}
-            options={[{ value: 6, label: '6 min' }, { value: 10, label: '10 min' }, { value: 16, label: '16 min' }]} />
-        </>
+        <Seg value={s.dayMinutes} onChange={(v) => set({ dayMinutes: v })}
+          options={[{ value: 6, label: '6 min' }, { value: 10, label: '10 min' }, { value: 16, label: '16 min' }]} />
       )}
       <Toggle label="Camera follows the action" on={s.autoCamera} onChange={(v) => set({ autoCamera: v })} />
       <Toggle label="Subtitles" hint="Show the line being spoken." on={s.captions} onChange={(v) => set({ captions: v })} />
-      {!s.story && <Toggle label="No cooldowns" hint="Sandbox only: powers can be used again at once." on={s.sandbox} onChange={(v) => set({ sandbox: v })} />}
+      {!s.story && <Toggle label="No cooldowns" hint="Sandbox & Endless Saga: powers can be used again at once." on={s.sandbox} onChange={(v) => set({ sandbox: v })} />}
       <Toggle label="Vibration" on={s.haptics} onChange={(v) => set({ haptics: v })} />
       <Label>Picture quality</Label>
       <Seg value={s.quality} onChange={(v) => set({ quality: v })}
@@ -207,52 +205,57 @@ function StoryAction({ icon, label, ask, go, onGo, danger }: {
   );
 }
 
-/** Story mode: start the day or the week again, or leave for the title. */
+/** Story or Endless Saga: start the day or the campaign again, or leave for the title. */
 function StorySection() {
   const game = useGame();
   const story = useStory();
   const phase = useUi((s) => s.phase);
   if (!story) return null;
   const day = story.weekday;
+  const saga = story.saga;
   return (
-    <Section title="STORY" accent="peach">
+    <Section title={saga ? 'SAGA' : 'STORY'} accent={saga ? 'lilac' : 'peach'}>
       <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>
-        Closing Time, day {story.chapter} of {story.chapters}: {day}, {story.title}.
+        {saga
+          ? `Season ${saga.season} · ${saga.arcTitle}, day ${story.chapter} of ${story.chapters}: ${day}, ${story.title}.`
+          : `Closing Time, day ${story.chapter} of ${story.chapters}: ${day}, ${story.title}.`}
       </div>
       {(phase === 'playing' || phase === 'briefing') && (
         <StoryAction icon="refresh" label="Restart this day" go={`Restart ${day}`}
-          ask={`Start ${day} again from 08:50? Everything done today is undone and the influence comes back.`}
+          ask={`Start ${day} again from 08:50? Everything done today is undone${saga ? ' and standing returns to this morning' : ' and the influence comes back'}.`}
           onGo={() => game.retryDay()} />
       )}
       <StoryAction icon="back" label="Back to the title" go="Leave"
-        ask={`Leave for the title? The week is saved, but ${day} starts again from the morning when you come back.`}
+        ask={`Leave for the title? Your progress is saved, and ${day} starts again from the morning when you come back.`}
         onGo={() => game.toTitle()} />
-      <StoryAction icon="play" label="Start the week again" go="New week" danger
-        ask={`Start a new week from Monday? Standing goes back to ${STANDING_START} and this week is lost.`}
-        onGo={() => game.startStory(true)} />
+      <StoryAction icon="play" label={saga ? 'Start a new Saga' : 'Start the week again'} go={saga ? 'New saga' : 'New week'} danger
+        ask={saga
+          ? `Start a brand new Endless Saga from Season 1 Monday? Your current seasons and Season ${saga.season} standing are reset.`
+          : `Start a new week from Monday? Standing goes back to ${STANDING_START} and this week is lost.`}
+        onGo={() => (saga ? game.startSaga(true) : game.startStory(true))} />
     </Section>
   );
 }
 
 function DataSection() {
   const game = useGame();
-  const story = useUi((s) => s.mode === 'story');
+  const narrative = useUi((s) => s.mode === 'story' || s.mode === 'saga');
   const [sure, setSure] = useState(false);
   return (
     <Section title="DATA" accent="peach">
       {!sure ? (
         <>
           <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>
-            {story ? 'The sandbox office and the story week save themselves separately. This wipes the sandbox only.' : 'The office saves itself as you play.'}
+            {narrative ? 'The sandbox office, Classic Story, and Endless Saga save separately. This wipes the sandbox only.' : 'The office saves itself as you play.'}
           </div>
-          <Btn variant="destructive" size="md" full onClick={() => setSure(true)} sound="open">{story ? 'Wipe the sandbox office' : 'Start again from day 1'}</Btn>
+          <Btn variant="destructive" size="md" full onClick={() => setSure(true)} sound="open">{narrative ? 'Wipe the sandbox office' : 'Start again from day 1'}</Btn>
         </>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <GIcon name="warn" px={16} style={{ marginTop: 2 }} />
             <span style={{ fontSize: 14, lineHeight: '18px' }}>
-              {story ? 'This wipes every memory, feeling and day of the sandbox office. The story week is kept. It cannot be undone.' : 'This wipes every memory, feeling and day so far. It cannot be undone.'}
+              {narrative ? 'This wipes every memory, feeling and day of the sandbox office. Your story & saga saves are kept. It cannot be undone.' : 'This wipes every memory, feeling and day so far. It cannot be undone.'}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

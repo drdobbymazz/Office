@@ -179,7 +179,7 @@ describe('health', () => {
   it('goes offline after two failures, answers from instinct at once, and comes back', async () => {
     const m2 = await startMock();
     const port = m2.port;
-    const brain = createBrain(settings({ baseUrl: m2.url }), { bank: BANK, world: WORLD, recheckMs: 150 }) as LlmBrain;
+    const brain = createBrain(settings({ baseUrl: m2.url }), { bank: BANK, world: WORLD, recheckMs: 500 }) as LlmBrain;
     expect((await brain.status()).ok).toBe(true);
     expect((await brain.scene(req)).source).toBe('model');
     await m2.close();
@@ -198,7 +198,7 @@ describe('health', () => {
 
     const m3 = await startMock({ port });
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 550));
       expect((await brain.status()).ok).toBe(true);
       expect((await brain.scene(req)).source).toBe('model');
     } finally {

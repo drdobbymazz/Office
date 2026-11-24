@@ -14,13 +14,30 @@
 
 import type { CustomKind, CustomVibe, GuestColour, GuestLookWords, InterpretResult } from '@/game/brain/api';
 import type { DirectorSimApi, SceneAsk, SimPerson } from '@/game/core/simApi';
-import type { CharId, EmotionId, Plan, TargetRoomId, Vec } from '@/game/core/types';
+import type { CharId, Dir, EmotionId, Plan, TargetRoomId, Vec } from '@/game/core/types';
 import { TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
 import { anchor, feetOf, findPath, room as roomDef, roomAt, roomCentrePx, tileAt, walkableTilesIn } from '@/game/core/world';
 import { registerVisitor } from '@/game/core/cast';
 import type { GuestLook } from '@/game/core/cast';
 import type { AnimId } from '@/game/core/types';
 import type { EmoteIcon } from '@/game/view/api';
+import type { Species } from '@/scene/office/fx/sprites';
+
+function speciesFor(text: string, name: string, emoji: string): Species | null {
+  const s = `${text} ${name} ${emoji}`.toLowerCase();
+  if (/\b(bears?|grizzl\w*|pandas?|cubs?|polar)\b/.test(s) || emoji === '🐻' || emoji === '🐼') return 'bear';
+  if (/\b(horses?|pon(?:y|ies)|unicorns?|stallion|mustang)\b/.test(s) || emoji === '🐴' || emoji === '🦄') return 'horse';
+  if (/\b(dragons?|wyverns?|drakes?)\b/.test(s) || emoji === '🐉') return 'dragon';
+  if (/\b(cats?|kittens?|kitty|tabby|lions?|tigers?|panther)\b/.test(s) || emoji === '🐱' || emoji === '🐯' || emoji === '🦁') return 'cat';
+  if (/\b(t-?rex|dinosaurs?|dinos?|raptors?|godzilla)\b/.test(s) || emoji === '🦖' || emoji === '🦕') return 'dino';
+  if (/\b(robots?|androids?|cyborgs?|bots?|mechs?)\b/.test(s) || emoji === '🤖') return 'robot';
+  if (/\b(aliens?|martians?|et|extraterrestrial)\b/.test(s) || emoji === '👽' || emoji === '👾') return 'alien';
+  if (/\b(sharks?|jaws)\b/.test(s) || emoji === '🦈') return 'shark';
+  if (/\b(raccoons?|trash\s+panda)\b/.test(s) || emoji === '🦝') return 'raccoon';
+  if (/\b(dogs?|pupp(?:y|ies)|hounds?|corgi|golden)\b/.test(s) || emoji === '🐶' || emoji === '🐕') return 'puppy';
+  if (/\b(pigeons?|birds?|seagulls?|doves?|ducks?|owls?|hawks?|eagles?)\b/.test(s) || emoji === '🐦' || emoji === '🕊️' || emoji === '🦆') return 'pigeon';
+  return null;
+}
 
 export interface GuestContext {
   sim: DirectorSimApi;
@@ -51,6 +68,8 @@ interface Guest {
   who: CharId | null;
   /** The emoji: a badge over a character's head, the body of a creature or thing. */
   emojiKey: string | null;
+  species: Species | null;
+  facing: Dir;
   lookKey: string | null;
   /** A cloud or a downpour is a moment, not the whole visit. */
   lookUntil: number;
@@ -172,7 +191,7 @@ export class Guests {
 
     const g: Guest = {
       key, kind, name, text, fact, title: res.title || name, vibe: res.vibe, intensity: res.intensity, room,
-      since: sim.clock, leaveAt: now + stay, leaving: false, leftAt: 0, who: null, emojiKey: null, lookKey: null,
+      since: sim.clock, leaveAt: now + stay, leaving: false, leftAt: 0, who: null, emojiKey: null, species: null, facing: 'right', lookKey: null,
       lookUntil: now + 30 + res.intensity * 8, x: spot.x, y: spot.y, path: [], pauseUntil: now + 3, goingTo: null, met: new Set(),
       nextVisitAt: now + (this.ctx.slow() ? 40 : 28), visiting: null, visitAt: 0,
       power: res.power, powerAt: res.power !== 'none' ? now + 1.6 : Infinity
@@ -187,12 +206,17 @@ export class Guests {
 
     // What it looks like.
     sim.fx({ kind: 'poof', x: spot.x, y: spot.y - 8 });
+    const species = kind !== 'character' && kind !== 'happening' ? speciesFor(text, name, res.emoji) : null;
     if (kind === 'character') {
       g.who = this.spawnCharacter(g, res, tile);
       if (res.emoji) {
         g.emojiKey = `${key}-badge`;
         sim.addEffect({ id: g.emojiKey, kind: 'emoji', emoji: res.emoji, x: spot.x, y: spot.y, size: 10, bob: true, lift: 33 });
       }
+    } else if (species) {
+      g.emojiKey = key;
+      g.species = species;
+      sim.addEffect({ id: key, kind: 'creature', species, x: spot.x, y: spot.y, facing: 'right', anim: 'idle', carrying: false });
     } else if (res.emoji) {
       g.emojiKey = key;
       const size = kind === 'creature' ? 18 + res.intensity * 4 : 16 + res.intensity * 5;
@@ -251,7 +275,7 @@ export class Guests {
         if (reason) console.info(`[guests] ${g.name} could not set off ${g.power}: ${reason}`);
       }
       if (g.kind === 'character') this.updateCharacter(g, now);
-      else if (g.kind === 'creature') this.updateCreature(g, now, dt);
+      else if (g.kind === 'creature' || g.species) this.updateCreature(g, now, dt);
       else if (now >= g.leaveAt) this.depart(g, true);
     }
   }
@@ -396,6 +420,9 @@ export class Guests {
         const dx = n.x - g.x;
         const dy = n.y - g.y;
         const d = Math.hypot(dx, dy);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          g.facing = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+        }
         if (d <= step) {
           g.x = n.x;
           g.y = n.y;
@@ -407,7 +434,14 @@ export class Guests {
           step = 0;
         }
       }
-      if (g.emojiKey) sim.patchEffect(g.emojiKey, { x: g.x, y: g.y });
+      if (g.emojiKey) {
+        sim.patchEffect(
+          g.emojiKey,
+          g.species
+            ? { x: g.x, y: g.y, facing: g.facing, anim: g.path.length ? 'run' : 'idle' }
+            : { x: g.x, y: g.y }
+        );
+      }
       if (g.path.length) return;
       // Arrived.
       if (g.leaving) {

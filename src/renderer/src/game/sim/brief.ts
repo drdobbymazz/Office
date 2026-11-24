@@ -33,6 +33,10 @@ export function statusWords(core: SimCore, s: StatusEffect): string | null {
     case 'stung': return 'stung by a bee and swelling up';
     case 'dizzy': return 'dizzy';
     case 'frozen': return 'frozen in time';
+    case 'knockedOut': return 'knocked out cold on the floor';
+    case 'eliminated': return `eliminated by ${t}`;
+    case 'guilty': return `just took out ${t} and everyone saw`;
+    case 'quit': return 'stormed out and quit for the day';
     default: return null;
   }
 }

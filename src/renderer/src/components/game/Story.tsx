@@ -41,7 +41,7 @@ export function useCost(id: ActionId): CostInfo | null {
 }
 
 export function costOf(story: StoryUi | null, id: ActionId): CostInfo | null {
-  if (!story) return null;
+  if (!story || story.saga) return null;
   const cost = story.costs[id] ?? 0;
   const left = story.influence.left;
   const locked = (story.locked as Record<string, string | undefined>)[id] ?? null;
@@ -86,9 +86,10 @@ export function GoalBlock({ goal, tile = 32, live = true }: { goal: StoryGoalUi;
 }
 
 /** One extra goal: a small tile that becomes a check, the title, the detail and what it is worth. */
-export function ExtraRow({ goal, live = true }: { goal: StoryGoalUi; live?: boolean }) {
+export function ExtraRow({ goal, live = true, worth }: { goal: StoryGoalUi; live?: boolean; worth?: number }) {
   const done = goal.state === 'won';
   const lost = goal.state === 'lost';
+  const pts = worth ?? EXTRA_WORTH;
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', opacity: lost ? 0.6 : done ? 0.8 : 1 }}>
       <IconTile icon={done ? 'check' : lost ? 'x' : goal.icon || 'goal'} size={24} bg={done ? 'var(--cth-mint)' : lost ? 'var(--cth-cream-300)' : 'var(--cth-cream-50)'} />
@@ -99,10 +100,10 @@ export function ExtraRow({ goal, live = true }: { goal: StoryGoalUi; live?: bool
           <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>{goal.status}</div>
         )}
       </div>
-      <span title={`Worth ${EXTRA_WORTH} standing`} style={{
+      <span title={`Worth ${pts} standing`} style={{
         fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '18px', flexShrink: 0,
         color: done ? '#2f8a45' : lost ? 'var(--cth-ink-300)' : 'var(--cth-ink-500)'
-      }}>+{EXTRA_WORTH}</span>
+      }}>+{pts}</span>
     </div>
   );
 }

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // A stand-in for the laptop's Ollama, for development and tests. Plain Node,
 // no dependencies.
 //
@@ -154,7 +153,39 @@ function generate(schema, ctx) {
         case 'kind':
           return /superman|batman|santa|elvis|wizard|ghost|pirate|\b(man|woman|king|queen|chef)\b/i.test(event) ? 'character'
             : /horse|dog|goat|cat|duck|bear|dragon|dinosaur|raccoon|cow|pig/i.test(event) ? 'creature' : 'thing';
-        case 'power': return /dragon|fire|flame/i.test(event) && en.includes('fire') ? 'fire' : /dj|disco/i.test(event) && en.includes('disco') ? 'disco' : 'none';
+        case 'verb': {
+          if (/\b(kill|murder|assassinate|execute|strangle|stab|shoot|poison)\b/i.test(event) && en.includes('eliminate')) return 'eliminate';
+          if (/\b(knock\s*out|punch|hit|tackle|beat\s+up|attack)\b/i.test(event) && en.includes('knockout')) return 'knockout';
+          if (/\b(drag|haul|kidnap|carry|pull)\b/i.test(event) && en.includes('drag')) return 'drag';
+          if (/\b(lock|barricade|trap)\b/i.test(event) && en.includes('lock_in')) return 'lock_in';
+          if (/\b(quit|resign|walk\s+out)\b/i.test(event) && en.includes('walk_out')) return 'walk_out';
+          if (/\b(smash|wreck|sabotage|unplug|break)\b/i.test(event) && en.includes('sabotage')) return 'sabotage';
+          if (/\b(fire|burn|bees|wifi|blackout|disco|pizza|flood)\b/i.test(event) && en.includes('trigger_power')) return 'trigger_power';
+          if (/\b(shove|push|trip|throw)\b/i.test(event) && en.includes('shove')) return 'shove';
+          if (/\b(steal|swipe|snatch)\b/i.test(event) && en.includes('steal')) return 'steal';
+          if (/\b(kiss|hug|love|romance)\b/i.test(event) && en.includes('romance')) return 'romance';
+          if (/\b(chase|hunt)\b/i.test(event) && en.includes('chase')) return 'chase';
+          if (/\b(follow|stalk|shadow)\b/i.test(event) && en.includes('follow')) return 'follow';
+          if (/\b(guard|block)\b/i.test(event) && en.includes('guard')) return 'guard';
+          if (/\b(go to|walk to|hide in)\b/i.test(event) && en.includes('go_to')) return 'go_to';
+          return en.includes('social') ? 'social' : en[0];
+        }
+        case 'targetPerson': {
+          const hit = en.find((n) => n !== 'none' && new RegExp(`\\b${n.split(/\s+/)[0]}\\b`, 'i').test(event));
+          return hit || (en.includes('none') ? 'none' : en[0]);
+        }
+        case 'targetRoom': {
+          const low = event.toLowerCase();
+          const hit = en.find((r) => r !== 'none' && (low.includes(r) || (r === 'meeting' && low.includes('conference')) || (r === 'kitchen' && /break|coffee|fridge|vending/.test(low)) || (r === 'boss' && /boss|michael/.test(low)) || (r === 'annex' && /annex|fax|copier/.test(low)) || (r === 'accounts' && /account|cooler/.test(low))));
+          return hit || (en.includes('none') ? 'none' : en[0]);
+        }
+        case 'power':
+          return /dragon|fire|flame/i.test(event) && en.includes('fire') ? 'fire'
+            : /dj|disco/i.test(event) && en.includes('disco') ? 'disco'
+            : /bees/i.test(event) && en.includes('bees') ? 'bees'
+            : /wifi|internet/i.test(event) && en.includes('wifi') ? 'wifi'
+            : /blackout|power/i.test(event) && en.includes('blackout') ? 'blackout'
+            : /pizza/i.test(event) && en.includes('pizza') ? 'pizza' : 'none';
         case 'skin': return 'light';
         case 'hair': return 'black';
         case 'outfit': return /superman/i.test(event) ? 'blue' : pick(en, event);
@@ -165,6 +196,7 @@ function generate(schema, ctx) {
     }
     const who = item?.who;
     switch (key) {
+      case 'item': return /\b(stapler|mug|coffee|chair|printer|fax|laptop|scissors|knife|bat|broom|mop|wrench|extinguisher)\b/i.exec(event)?.[1]?.toLowerCase() || '';
       case 'say': {
         const line = LINES[st.lineIdx++ % LINES.length];
         return fillT(line, who);
