@@ -12,11 +12,12 @@ import { useContent, useGame, useUi } from './ctx';
 import { useNav } from './Dock';
 import { WhisperTool } from './PowersTab';
 import { useCost, useStory } from './Story';
-import { EMOTION_WORD, STATUS_WORD, ROOM_LIST, cap, doingWhere, fill, readableOnCream } from './words';
+import { EMOTION_WORD, STATUS_WORD, cap, doingWhere, fill, readableOnCream, roomListFor } from './words';
 
 function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
   const { pressed, handlers } = usePress();
   const selected = useUi((s) => s.selectedId === p.id);
+  const loc = useUi((s) => s.location);
   return (
     <button type="button" className="gu-hit" {...handlers} onClick={onTap} aria-label={p.name}
       style={{
@@ -33,7 +34,7 @@ function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
           {p.statuses.slice(0, 2).map((s) => <GIcon key={s} name={statusIcon(s)} px={16} title={STATUS_WORD[s]} />)}
         </div>
         <div style={{ fontSize: 13, lineHeight: '15px', color: 'var(--cth-ink-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {p.present ? `${ROOM_LIST[p.room] ?? p.roomName} · ${p.doing}` : cap(p.doing || 'not here')}
+          {p.present ? `${roomListFor(p.room, loc) ?? p.roomName} · ${p.doing}` : cap(p.doing || 'not here')}
         </div>
       </div>
       <GIcon name={emotionIcon(p.emotion)} px={16} title={EMOTION_WORD[p.emotion]} />

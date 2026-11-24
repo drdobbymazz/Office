@@ -3,6 +3,7 @@
 // report, and which button leads after a day is won or lost.
 
 import type { EmotionId } from '@/game/core/types';
+import type { EpisodeId } from '@/game/story/types';
 
 /** The first sentence of the chapter's opening, to lead with, and the rest. */
 export function splitHook(intro: readonly string[]): { hook: string; rest: string[] } {
@@ -17,11 +18,19 @@ export function splitHook(intro: readonly string[]): { hook: string; rest: strin
 export type DayPicture = { faces: { id: string; face: EmotionId }[]; icon?: undefined } | { faces: []; icon: string };
 
 /**
- * Monday is Michael's day; Tuesday Angela and Oscar (and Kevin between them); Wednesday the client
- * and the sales team; Friday Michael and the inspector. Thursday shows the leak's envelope rather
- * than faces: picturing some of the staff would point at suspects the game has not.
+ * Episode 1 (Office): Monday is Michael's day; Tuesday Angela and Oscar (and Kevin between them);
+ * Wednesday the client and the sales team; Friday Michael and the inspector; Thursday shows the
+ * leak's envelope rather than faces. Episode 2 (Day in the Park): three outdoor acts.
  */
-export function dayPicture(chapter: number): DayPicture {
+export function dayPicture(chapter: number, episodeId: EpisodeId = 'office'): DayPicture {
+  if (episodeId === 'park') {
+    switch (chapter) {
+      case 1: return { faces: [{ id: 'michael', face: 'excited' }, { id: 'stanley', face: 'tired' }, { id: 'dwight', face: 'suspicious' }] };
+      case 2: return { faces: [{ id: 'jim', face: 'amused' }, { id: 'dwight', face: 'angry' }, { id: 'kevin', face: 'happy' }] };
+      case 3: return { faces: [{ id: 'visitor:ranger', face: 'suspicious' }, { id: 'michael', face: 'nervous' }] };
+      default: return { faces: [] };
+    }
+  }
   switch (chapter) {
     case 1: return { faces: [{ id: 'michael', face: 'nervous' }] };
     case 2: return { faces: [{ id: 'angela', face: 'angry' }, { id: 'oscar', face: 'angry' }, { id: 'kevin', face: 'nervous' }] };
@@ -37,7 +46,15 @@ export function dayPicture(chapter: number): DayPicture {
  * about. Not the card's portraits (Wednesday pictures two salespeople, and tagging them would
  * answer "who should pitch?"), and nobody on Thursday, when finding the right person is the job.
  */
-export function storyMarks(chapter: number): string[] {
+export function storyMarks(chapter: number, episodeId: EpisodeId = 'office'): string[] {
+  if (episodeId === 'park') {
+    switch (chapter) {
+      case 1: return ['michael'];
+      case 2: return ['jim', 'dwight'];
+      case 3: return ['visitor:ranger', 'michael'];
+      default: return [];
+    }
+  }
   switch (chapter) {
     case 1: return ['michael'];
     case 2: return ['angela', 'oscar'];
@@ -64,8 +81,15 @@ export interface ReportActions {
   nextLabel: string;
 }
 
-export function reportActions(won: boolean, lastDay: boolean): ReportActions {
-  if (won) return { lead: 'next', confirmRetry: true, nextLabel: lastDay ? 'See how the week ended' : 'Next day' };
+export function reportActions(won: boolean, lastDay: boolean, unitLabel = 'Day'): ReportActions {
+  const isDay = unitLabel.toLowerCase() === 'day';
+  if (won) {
+    return {
+      lead: 'next',
+      confirmRetry: true,
+      nextLabel: lastDay ? (isDay ? 'See how the week ended' : 'See how the outing ended') : (isDay ? 'Next day' : `Next ${unitLabel.toLowerCase()}`),
+    };
+  }
   return { lead: 'retry', confirmRetry: false, nextLabel: lastDay ? 'See the ending' : 'Move on anyway' };
 }
 

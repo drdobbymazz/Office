@@ -18,7 +18,7 @@ import { StoryMarkers } from './markers';
 import { EventsAndToasts, hudBottom, hudInset, MissionChip, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
 import { StoryCoach } from './coach';
 import { Dock, NavCtx, type Nav } from './Dock';
-import { ChapterCard, Coach, EndingCard, FinaleSkip, ReportCard, RotateCard, TitleCard } from './Dialogs';
+import { ChapterCard, Coach, EndingCard, FinaleSkip, IntroSkip, ReportCard, RotateCard, TitleCard } from './Dialogs';
 import { CeremonyBanner } from './ceremony';
 import { DayBand, useDayBand, useScreenWipe } from './transitions';
 import { pendingChaos } from './PowersTab';
@@ -49,6 +49,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   if (initial?.chaos && pendingChaos.id === null && tab === 'powers') pendingChaos.set(initial.chaos);
 
   const phase = game.store((s) => s.phase);
+  const intro = game.store((s) => s.intro);
   const finale = game.store((s) => s.phase === 'ending' && s.finale);
   const tutorialDone = game.store((s) => s.settings.tutorialDone);
   const selectedId = game.store((s) => s.selectedId);
@@ -75,8 +76,8 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   const blocked = portrait && (vp.coarse || vp.w < 600) && !playAnyway;
 
   // What is on screen trails the game's phase by half a wipe: the paper sheet covers the old screen
-  // before the new one is shown (transitions.tsx). The week's last scene counts as its own screen.
-  const { shown: screen, wipe } = useScreenWipe(finale ? 'finale' : phase, game);
+  // before the new one is shown (transitions.tsx). The intro and finale count as their own screens.
+  const { shown: screen, wipe } = useScreenWipe(intro ? 'intro' : finale ? 'finale' : phase, game);
   // The panel and the HUD belong to the day itself; the full-screen cards get the office behind them.
   const dockOn = screen === 'playing';
   // A band across the floor each time a day starts (from its card, a report or the title).
@@ -155,13 +156,14 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
               {band && <DayBand right={cover.right} bottom={cover.bottom} />}
             </>
           )}
-          {/* The week's last scene is narrated on the floor: its captions (and lines from off screen) still show. */}
-          {screen === 'finale' && <Subtitle right={0} bottom={0} />}
+          {/* The intro and finale are narrated on the floor: captions and skip controls stay visible. */}
+          {(screen === 'finale' || screen === 'intro') && <Subtitle right={0} bottom={0} />}
           {!blocked && dockOn && <Dock ref={dockRef} vp={vp} portrait={portrait} />}
           {screen === 'title' && !blocked && <TitleCard vp={vp} />}
           {screen === 'briefing' && !blocked && <ChapterCard vp={vp} />}
           {screen === 'report' && !blocked && <ReportCard vp={vp} />}
           {screen === 'ending' && !blocked && <EndingCard vp={vp} />}
+          {screen === 'intro' && !blocked && <IntroSkip />}
           {screen === 'finale' && !blocked && <FinaleSkip />}
           {screen === 'playing' && !blocked && (storyOn
             ? (mode === 'story' && <StoryCoach />)

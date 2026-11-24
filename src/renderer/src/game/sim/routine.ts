@@ -3,35 +3,54 @@
 
 import type { CastId, RoomId } from '@/game/core/types';
 import { TARGET_ROOMS } from '@/game/core/types';
-import { anchor, deskOf, findAnchor, ROOMS } from '@/game/core/world';
+import { anchor, deskOf, findAnchor, getWorldLocation, ROOMS } from '@/game/core/world';
 import { idleAct, makeJob, resolveWant, type Job } from './jobs';
 import type { Person } from './people';
 import type { SimCore } from './core';
 
 /** Plain words for where an anchor is: "by the coffee machine". */
 export function placePhrase(core: SimCore, anchorId: string): string {
-  if (anchorId === 'stand.coffee') return 'by the coffee machine';
-  if (anchorId === 'stand.vending') return 'by the vending machine';
-  if (anchorId === 'stand.fridge') return 'by the fridge';
-  if (anchorId === 'stand.counter') return 'at the kitchen counter';
-  if (anchorId === 'stand.cooler') return 'at the water cooler';
-  if (anchorId.startsWith('seat.cafe')) return 'at the cafe table';
-  if (anchorId.startsWith('seat.spare')) return 'at a spare desk';
-  if (anchorId === 'door.entrance') return 'by the front door';
-  if (anchorId === 'spot.meetHead') return 'at the head of the conference table';
+  const park = getWorldLocation() === 'park';
+  if (anchorId === 'stand.coffee') return park ? 'by the BBQ grill' : 'by the coffee machine';
+  if (anchorId === 'stand.vending') return park ? 'by the snack stand' : 'by the vending machine';
+  if (anchorId === 'stand.fridge') return park ? 'by the picnic cooler' : 'by the fridge';
+  if (anchorId === 'stand.counter') return park ? 'at the picnic counter' : 'at the kitchen counter';
+  if (anchorId === 'stand.cooler') return park ? 'at the park drinking fountain' : 'at the water cooler';
+  if (anchorId.startsWith('seat.cafe')) return park ? 'at the picnic tables' : 'at the cafe table';
+  if (anchorId.startsWith('seat.spare')) return park ? 'by a shaded park bench' : 'at a spare desk';
+  if (anchorId === 'door.entrance') return park ? 'by the park gate' : 'by the front door';
+  if (anchorId === 'spot.meetHead') return park ? 'at the front of the pavilion' : 'at the head of the conference table';
   if (anchorId.startsWith('desk.')) {
+    if (park) return 'on the grass';
     const owner = anchorId.slice(5);
     return `at ${core.nameOf(owner)}'s desk`;
   }
   const a = findAnchor(anchorId);
-  return a ? `in ${core.roomName(a.room)}` : 'about the office';
+  return a ? `in ${core.roomName(a.room)}` : park ? 'around the park' : 'about the office';
 }
 
 function work(core: SimCore, p: Person, scale = 1): Job {
+  const park = getWorldLocation() === 'park';
   const d = deskOf(p.def!.id);
   const phone = core.rng() < (p.def!.job === 'reception' ? 0.4 : 0.22);
   const keepCoffee = p.prop === 'coffee' && core.time < p.propUntil;
   const dil = p.def!.temperament.diligence;
+  if (park) {
+    return makeJob('routine', { kind: 'anchor', id: d.id }, {
+      doing: 'wandering over to a picnic spot',
+      act: {
+        anim: phone ? 'phone' : keepCoffee && core.rng() < 0.3 ? 'drink' : 'idle',
+        seated: false, face: d.face,
+        prop: phone ? 'phone' : keepCoffee ? undefined : null,
+        doing: phone ? 'on the phone in the park' : p.def!.id === 'michael' ? 'planning team building in the gazebo' : 'enjoying the park air',
+        seconds: core.rng.range(16, 40) * (0.6 + dil) * scale
+      },
+      then: () => {
+        if (p.prop === 'phone') p.prop = null;
+        p.energy = Math.max(0, p.energy - 0.02);
+      }
+    });
+  }
   const where = p.def!.id === 'michael' ? 'in his office' : `at ${p.his} desk`;
   return makeJob('routine', { kind: 'anchor', id: d.id }, {
     doing: `going back to ${p.his} desk`,
@@ -50,9 +69,10 @@ function work(core: SimCore, p: Person, scale = 1): Job {
 }
 
 function coffee(core: SimCore, p: Person, after?: () => void): Job {
+  const park = getWorldLocation() === 'park';
   return makeJob('routine', { kind: 'anchor', id: 'stand.coffee' }, {
-    doing: 'going to get a coffee',
-    act: { anim: 'operate', seated: false, face: anchor('stand.coffee').face, prop: null, doing: 'making a coffee', seconds: core.rng.range(3, 6) },
+    doing: park ? 'getting a drink by the BBQ' : 'going to get a coffee',
+    act: { anim: 'operate', seated: false, face: anchor('stand.coffee').face, prop: null, doing: park ? 'chatting by the BBQ grill' : 'making a coffee', seconds: core.rng.range(3, 6) },
     then: () => {
       p.prop = 'coffee';
       p.propUntil = core.time + 70;
@@ -63,11 +83,13 @@ function coffee(core: SimCore, p: Person, after?: () => void): Job {
 }
 
 function snack(core: SimCore, p: Person): Job {
+  const park = getWorldLocation() === 'park';
   const fridge = core.rng() < 0.4;
   const id = fridge ? 'stand.fridge' : 'stand.vending';
+  const what = park ? (fridge ? 'picnic cooler' : 'snack stand') : (fridge ? 'fridge' : 'vending machine');
   return makeJob('routine', { kind: 'anchor', id }, {
-    doing: `going to get a snack from the ${fridge ? 'fridge' : 'vending machine'}`,
-    act: { anim: 'operate', seated: false, face: anchor(id).face, prop: null, doing: `getting a snack from the ${fridge ? 'fridge' : 'vending machine'}`, seconds: core.rng.range(3, 6) },
+    doing: park ? `grabbing a snack from the ${what}` : `going to get a snack from the ${what}`,
+    act: { anim: 'operate', seated: false, face: anchor(id).face, prop: null, doing: `getting a snack from the ${what}`, seconds: core.rng.range(3, 6) },
     then: () => {
       p.prop = 'donut';
       p.propUntil = core.time + 25;
@@ -76,7 +98,8 @@ function snack(core: SimCore, p: Person): Job {
   });
 }
 
-function cafe(core: SimCore, p: Person, seconds?: number, doing = 'sitting at the cafe table'): Job {
+function cafe(core: SimCore, p: Person, seconds?: number, doing?: string): Job {
+  const park = getWorldLocation() === 'park';
   const seats = ['seat.cafe1', 'seat.cafe2', 'seat.cafe3', 'seat.cafe4'].filter((id) => {
     const a = findAnchor(id);
     return a && core.nav.free(a.tile.x, a.tile.y, p.num);
@@ -86,18 +109,20 @@ function cafe(core: SimCore, p: Person, seconds?: number, doing = 'sitting at th
   const a = anchor(id);
   const eating = p.prop === 'donut' || p.prop === 'pizza';
   return makeJob('routine', { kind: 'anchor', id }, {
-    doing: 'heading to the break room',
+    doing: park ? 'heading to the picnic tables' : 'heading to the break room',
     act: {
-      anim: eating ? 'eat' : p.prop === 'coffee' ? 'drink' : 'idle', seated: seat, face: a.face, doing,
+      anim: eating ? 'eat' : p.prop === 'coffee' ? 'drink' : 'idle', seated: seat, face: a.face,
+      doing: doing ?? (park ? 'sitting at the picnic tables' : 'sitting at the cafe table'),
       seconds: seconds ?? core.rng.range(10, 20)
     }
   });
 }
 
 function cooler(core: SimCore, p: Person): Job {
+  const park = getWorldLocation() === 'park';
   return makeJob('routine', { kind: 'anchor', id: 'stand.cooler' }, {
-    doing: 'going to the water cooler',
-    act: { anim: 'drink', seated: false, face: 'up', doing: 'standing at the water cooler', seconds: core.rng.range(6, 11) }
+    doing: park ? 'walking to the drinking fountain' : 'going to the water cooler',
+    act: { anim: 'drink', seated: false, face: 'up', doing: park ? 'at the drinking fountain' : 'standing at the water cooler', seconds: core.rng.range(6, 11) }
   });
 }
 
@@ -162,13 +187,14 @@ function bossRoam(core: SimCore, p: Person): Job {
 }
 
 function patrol(core: SimCore, p: Person): Job {
+  const park = getWorldLocation() === 'park';
   const route = ['door.entrance', 'spot.bullpen2', 'spot.bullpen9', 'spot.boss2', 'spot.kitchen1', 'spot.bullpen11', 'spot.annex1'].filter((id) => {
     const a = findAnchor(id);
     return a && !core.isHazard(a.room);
   });
   const id = core.rng.pick(route.length ? route : ['spot.bullpen2']);
   return makeJob('routine', { kind: 'anchor', id }, {
-    doing: 'patrolling the office',
+    doing: park ? 'patrolling the park' : 'patrolling the office',
     act: { anim: core.rng() < 0.3 ? 'point' : 'idle', seated: false, face: null, doing: `keeping watch ${placePhrase(core, id)}`, seconds: core.rng.range(3, 6) }
   });
 }
@@ -191,20 +217,22 @@ export function nextRoutine(core: SimCore, p: Person): Job {
 
   // Lunch.
   if (!p.hadLunch && core.clockState.phase === 'working' && core.clock >= p.lunchAt) {
+    const park = getWorldLocation() === 'park';
     p.hadLunch = true;
     if (def.id === 'dwight' || def.id === 'angela') {
       return work(core, p, 1.4);
     }
     const mins = core.rng.range(25, 40);
     const seconds = Math.max(12, Math.min(60, core.clockState.secondsFor(mins)));
+    const lunchPlace = park ? 'having picnic lunch at the BBQ' : 'having lunch in the break room';
     if (core.rng() < 0.5) {
-      const j = cafe(core, p, seconds, 'having lunch in the break room');
+      const j = cafe(core, p, seconds, lunchPlace);
       j.kind = 'lunch';
       if (j.act) j.act.anim = 'eat';
       return j;
     }
     const spots = ['spot.kitchen1', 'spot.kitchen2', 'spot.kitchen3', 'spot.kitchen4', 'stand.counter', 'stand.fridge'];
-    const j = hangAt(core, p, core.rng.pick(spots), seconds, 'having lunch in the break room');
+    const j = hangAt(core, p, core.rng.pick(spots), seconds, lunchPlace);
     j.kind = 'lunch';
     if (j.act) {
       j.act.anim = 'eat';
@@ -216,6 +244,7 @@ export function nextRoutine(core: SimCore, p: Person): Job {
   // The first thing after arriving (or after lunch) is usually the desk.
   if (p.routineSteps <= 1) return work(core, p);
 
+  const park = getWorldLocation() === 'park';
   const opts: [number, () => Job | null][] = [
     [1.2 + 3 * T.diligence, () => work(core, p)],
     [0.5 + (1 - p.energy) * 1.5, () => (core.isHazard('kitchen') ? null : coffee(core, p))],
@@ -239,7 +268,7 @@ export function nextRoutine(core: SimCore, p: Person): Job {
     case 'reception':
       opts[0][0] += 3;
       opts[7][0] = 0;
-      opts.push([0.8, () => hangAt(core, p, 'door.entrance', core.rng.range(5, 9), 'greeting people by the front door')]);
+      opts.push([0.8, () => hangAt(core, p, 'door.entrance', core.rng.range(5, 9), park ? 'greeting people by the park gate' : 'greeting people by the front door')]);
       break;
     case 'security':
       opts.push([2, () => patrol(core, p)]);
@@ -248,7 +277,7 @@ export function nextRoutine(core: SimCore, p: Person): Job {
     case 'hr':
       for (const o of opts) o[0] *= 0.5;
       opts[0][0] += 2;
-      opts.push([2, () => hangAt(core, p, core.rng.pick(['spot.annex1', 'spot.annex2', 'spot.annex3', 'spot.annex4']), core.rng.range(8, 14), 'keeping to the annex')]);
+      opts.push([2, () => hangAt(core, p, core.rng.pick(['spot.annex1', 'spot.annex2', 'spot.annex3', 'spot.annex4']), core.rng.range(8, 14), park ? 'watching the ducks at the pond' : 'keeping to the annex')]);
       break;
     case 'temp':
       opts.push([1.6, () => {

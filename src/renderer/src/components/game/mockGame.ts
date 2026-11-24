@@ -201,8 +201,8 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       { id: 'o3', title: 'Steady hands', detail: 'Keep morale above 50 until 5pm.', progress: 1, done: true, icon: 'stock' }
     ],
     toasts: [], report: null, settings: baseSettings, holding: null, targeting: null,
-    inArtifact: !!opts.inArtifact, mode: 'sandbox', story: null, storySaved: null, sagaSaved: null,
-    beat: null, ceremony: null, finishing: false, finale: false
+    inArtifact: !!opts.inArtifact, mode: 'sandbox', location: 'office', story: null, storySaved: null, episodes: [], sagaSaved: null,
+    beat: null, ceremony: null, intro: null, finishing: false, finale: false
   }));
 
   function personUi(m: Mover): PersonUi {
@@ -527,7 +527,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     store,
     camera,
     begin() { store.setState({ phase: 'playing', paused: false }); },
-    startStory(fresh) {
+    startStory(fresh, _episodeId) {
       const from = !fresh && saved ? saved : { chapter: 1, results: blankWeek() };
       saved = null;
       toBriefing(from.chapter, from.results.slice());
@@ -560,6 +560,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     },
     skipAhead() {
       // The mock has no day to run.
+    },
+    skipIntro() {
+      store.setState({ intro: null });
     },
     skipFinale() {
       store.setState({ finale: false });

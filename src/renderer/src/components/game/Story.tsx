@@ -110,19 +110,21 @@ export function ExtraRow({ goal, live = true, worth }: { goal: StoryGoalUi; live
 
 // ── meters ──
 
-/** Branch standing with its plain label: the number, the bar with marks at 40 and 65, and what it means. */
-export function StandingMeter({ value, from, note = true }: { value: number; from?: number; note?: boolean }) {
+/** Branch standing (or Team Spirit) with its plain label: the number, the bar, and what it means. */
+export function StandingMeter({ value, from, note = true, label, noteText }: {
+  value: number; from?: number; note?: boolean; label?: string; noteText?: string;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <GIcon name="branch" px={16} />
-        <Label style={{ flex: 1, minWidth: 0 }}>Branch standing</Label>
+        <Label style={{ flex: 1, minWidth: 0 }}>{label ?? 'Branch standing'}</Label>
         <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 24, lineHeight: '18px' }}>{Math.round(value)}</span>
       </div>
       <StandingBar value={value} from={from} h={12} style={{ margin: '2px 0' }} />
       {note && (
         <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-          {STANDING_NOTE}: <span style={{ color: 'var(--cth-ink-700)' }}>{standingWord(value).toLowerCase()}.</span> {MARKS_NOTE}
+          {noteText ?? <>{STANDING_NOTE}: <span style={{ color: 'var(--cth-ink-700)' }}>{standingWord(value).toLowerCase()}.</span> {MARKS_NOTE}</>}
         </div>
       )}
     </div>

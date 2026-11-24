@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import type {
-  ActionId, BrainUi, DayReport, GameApi, GameMode, GameSettings, PersonDetail, PersonUi, ScreenPoint, StoryUi, TargetingUi, ToastUi, UiState
+  ActionId, BrainUi, DayReport, EpisodeSavedUi, GameApi, GameMode, GameSettings, PersonDetail, PersonUi, ScreenPoint, StoryUi, TargetingUi, ToastUi, UiState
 } from '@/game/app/gameApi';
 import type { Meters, CooldownUi, ActiveChaosUi } from '@/game/app/gameApi';
 import type { Brain, BrainSettings, BrainStatus, Reflexes } from '@/game/brain/api';
@@ -19,13 +19,17 @@ import type {
 import { Bus } from '@/game/core/bus';
 import type { GameBus } from '@/game/core/bus';
 import { CAST_LIST, SETTING, VISITORS, displayName, voiceOf } from '@/game/core/cast';
-import { ROOMS, WORLD_W, roomCentrePx, roomRectPx } from '@/game/core/world';
+import { WORLD_W, roomCentrePx, roomRectPx, roomsFor, setWorldLocation, type WorldLocation } from '@/game/core/world';
 import type { CreateActorView, CreateFxView, PortraitUrl, RenderFrame } from '@/game/view/api';
 import { GameFloor } from '@/scene/office/floor/GameFloor';
 import { FloorInput } from '@/scene/office/floor/input';
 import { Director } from '@/game/director/director';
 import type { Sim, SimOptions } from '@/game/sim';
-import { EXTRA_INFLUENCE, Story, StoryDay, browserStore, type EndingId, type PlayerAction } from '@/game/story';
+import {
+  EPISODES, EXTRA_INFLUENCE, PARK_INTRO_PREROLL, ParkFinaleScene, ParkIntroScene, Story, StoryDay, browserStore,
+  type EndingId, type EpisodeId, type PlayerAction
+} from '@/game/story';
+import { PARK_INTRO } from '@/game/story/parkText';
 import { FINALE_PREROLL, FinaleScene } from '@/game/story/finale';
 import { SAGA_EXTRA_STANDING, Saga, SagaDay } from '@/game/saga';
 import { Objectives } from './objectives';
@@ -61,9 +65,11 @@ const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 const hex = (c: number): string => '#' + c.toString(16).padStart(6, '0');
 
-function brainWorld(): BrainWorld {
+const PARK_SETTING = 'Scranton Community Park: outdoor Dunder Mifflin Scranton Branch team-building outing with Gazebo, Picnic Pavilion, Duck Pond, Quiet Grove, Great Lawn, BBQ & Snack Stand, and Park Car Park.';
+
+function brainWorld(loc: WorldLocation = 'office'): BrainWorld {
   return {
-    setting: SETTING,
+    setting: loc === 'park' ? PARK_SETTING : SETTING,
     people: [
       ...CAST_LIST.map((c) => ({
         id: c.id, name: c.name, role: c.role, summary: c.persona.summary, speech: c.persona.speech, wants: c.persona.wants,
@@ -75,8 +81,22 @@ function brainWorld(): BrainWorld {
         fears: v.fears ?? 'nothing here', quirk: v.quirk ?? '', secret: '', examples: [] as string[]
       }))
     ],
-    rooms: ROOMS.filter((r) => r.id !== 'outside').map((r) => ({ id: r.id, name: r.name }))
+    rooms: roomsFor(loc).filter((r) => r.id !== 'outside').map((r) => ({ id: r.id, name: r.name }))
   };
+}
+
+function episodesUi(): EpisodeSavedUi[] {
+  const saved = Story.peekAll(browserStore);
+  return EPISODES.map((ep) => ({
+    id: ep.id,
+    number: ep.number,
+    title: ep.title,
+    subtitle: ep.subtitle,
+    tagline: ep.tagline,
+    chapters: ep.chapters.length,
+    unitLabel: ep.unitLabel,
+    saved: saved[ep.id],
+  }));
 }
 
 export async function createGame(host: HTMLElement, parts: GameParts): Promise<Game> {
@@ -122,7 +142,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   /** A story/saga day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
   let holdDayStart = false;
   /** The week's last scene, playing on the floor while UiState.finale is true. */
-  let finaleScene: FinaleScene | null = null;
+  let finaleScene: FinaleScene | ParkFinaleScene | null = null;
+  /** Active Office -> Park bridge cinematic before Act 1. */
+  let introScene: ParkIntroScene | null = null;
 
   const instinct = parts.createBrain({ ...settings.brain, provider: 'instinct' }, { bank: parts.bank, world });
   let brain: Brain = parts.createBrain(settings.brain, { bank: parts.bank, world });
@@ -150,12 +172,22 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     phase: 'title', paused: false, speed: 1, day: sim.day, weekday: sim.weekday, clock: sim.clock, dayProgress: sim.dayProgress,
     meters: sim.meters(), incidentsToday: sim.incidentsToday, incidentFreeDays: sim.incidentFreeDays, brain: initialBrain,
     people: [], selectedId: null, feed: [], caption: null, cooldowns: {}, activeChaos: [], objectives: [], toasts: [], report: null,
-    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', story: null,
-    storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore),
-    beat: null, ceremony: null, finishing: false, finale: false
+    settings, holding: null, targeting: null, inArtifact: false, mode: 'sandbox', location: 'office', story: null,
+    storySaved: Story.peek(browserStore), episodes: episodesUi(), sagaSaved: Saga.peek(browserStore),
+    beat: null, ceremony: null, intro: null, finishing: false, finale: false
   }));
   const set = store.setState;
   const get = store.getState;
+
+  function applyLocation(loc: WorldLocation): void {
+    setWorldLocation(loc);
+    floor.setLocation(loc);
+    const next = brainWorld(loc);
+    const mutable = world as { setting: string; rooms: BrainWorld['rooms'] };
+    mutable.setting = next.setting;
+    mutable.rooms = next.rooms;
+    set({ location: loc });
+  }
 
   let director = makeDirector();
   let objectives = new Objectives(sim, bus, () => sim.meters(), () => sim.incidentsToday);
@@ -408,7 +440,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     // Story & Saga modes: settle the day, move Branch Standing and save, before the report shows.
     if (mode === 'story' && story && storyDay) {
       story.finishDay(storyDay, sim.serialize());
-      set({ storySaved: Story.peek(browserStore) });
+      set({ storySaved: Story.peek(browserStore), episodes: episodesUi() });
     } else if (mode === 'saga' && saga && activeSagaDay) {
       saga.finishDay(activeSagaDay, sim.serialize());
       set({ sagaSaved: Saga.peek(browserStore) });
@@ -541,10 +573,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     holdDayStart = true;
   }
 
-  /** Build the office for the story's current day (from its saved morning) and show the chapter card. */
+  /** Build the map for the story's current day/act (from its saved morning) and show the chapter card. */
   function storyDayStart(): void {
     if (!story) return;
     resetDayOverlay();
+    applyLocation(story.episode.location);
     const next = buildSim({ save: story.daySave(), dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: story.simSeed() });
     if (next.day !== story.chapter) next.beginDay(story.chapter);
     // Building the office announces the day it was saved on before today begins: only today belongs in today's Log.
@@ -556,15 +589,71 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       onGoal: (g) => handleGoalNotice(g, day?.def.goal, `+${EXTRA_INFLUENCE} influence`),
       script: (lines, o) => director.playScript(lines, o)
     });
-    set({ mode: 'story', phase: 'briefing', paused: false, report: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
+    set({
+      mode: 'story', phase: 'briefing', paused: false, report: null, intro: null,
+      storySaved: Story.peek(browserStore), episodes: episodesUi(), sagaSaved: Saga.peek(browserStore)
+    });
     audio.setMusicMood({ menu: true });
     pushUi();
+  }
+
+  /** Play the Office -> Park bridge cinematic before Act 1 briefing. */
+  function startIntroCinematic(s: Story): void {
+    resetDayOverlay();
+    applyLocation('office');
+    const next = buildSim({ dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: s.simSeed() });
+    finishing = true;
+    next.beginDay(1);
+    for (let t = 0; t < PARK_INTRO_PREROLL; t += 0.25) next.update(0.25);
+    finishing = false;
+    feedBuffer = [];
+    mode = 'story';
+    swapWorld(next);
+    floor.camera.frame(roomRectPx('bullpen'));
+    introScene = new ParkIntroScene(
+      sim,
+      () => {
+        applyLocation('park');
+        const parkSim = buildSim({ dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: s.simSeed() });
+        finishing = true;
+        parkSim.beginDay(1);
+        for (let t = 0; t < 10; t += 0.25) parkSim.update(0.25);
+        finishing = false;
+        swapWorld(parkSim);
+        floor.camera.frame(roomRectPx('bullpen'));
+      },
+      (caption) => {
+        set((st) => (st.intro ? { intro: { ...st.intro, caption, progress: introScene?.progress ?? st.intro.progress } } : {}));
+      },
+    );
+    set({
+      mode: 'story',
+      phase: 'playing',
+      paused: false,
+      report: null,
+      feed: [],
+      intro: { caption: PARK_INTRO.beats[0], progress: 0, canSkip: true },
+      story: s.ui(null),
+      storySaved: Story.peek(browserStore),
+      episodes: episodesUi(),
+    });
+    audio.setMusicMood({ menu: false });
+    pushUi();
+  }
+
+  function endIntro(): void {
+    introScene?.skip();
+    introScene = null;
+    story?.markIntroSeen();
+    set({ intro: null });
+    storyDayStart();
   }
 
   /** Build the office for the active Endless Saga day with full sandbox settings & zero restrictions. */
   function sagaDayStart(): void {
     if (!saga) return;
     resetDayOverlay();
+    applyLocation('office');
     const next = buildSim({ save: saga.daySave(), dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, seed: saga.simSeed() });
     const absDay = (saga.season - 1) * 5 + saga.chapter;
     if (next.day !== absDay) next.beginDay(absDay);
@@ -583,12 +672,17 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   function showEnding(): void {
     day?.dispose();
     day = null;
+    introScene = null;
     mode = 'story';
     finishing = false;
+    if (story) applyLocation(story.episode.location);
     const ending = story?.endingId() ?? 'scraped';
-    // The week's last scene plays on the floor first; the ending card waits for it (or for Skip).
+    // The episode's last scene plays on the floor first; the ending card waits for it (or for Skip).
     finaleScene = buildFinale(ending);
-    set({ mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, finishing: false, finale: !!finaleScene, storySaved: Story.peek(browserStore) });
+    set({
+      mode: 'story', phase: 'ending', paused: false, report: null, beat: null, ceremony: null, intro: null,
+      finishing: false, finale: !!finaleScene, storySaved: Story.peek(browserStore), episodes: episodesUi()
+    });
     // The ending's sting and music start as the ending begins (the scene's phone call follows a moment later).
     audio.sfx(ending === 'saved' ? 'endingSaved' : ending === 'closed' ? 'endingClosed' : 'endingScraped');
     audio.setMusicMood({ menu: true, ending });
@@ -610,10 +704,11 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     pushUi();
   }
 
-  /** The office for the last scene (everyone in, quietly), with the scene on top. Null if it cannot be built. */
-  function buildFinale(ending: EndingId): FinaleScene | null {
+  /** The map for the last scene (everyone in, quietly), with the scene on top. Null if it cannot be built. */
+  function buildFinale(ending: EndingId): FinaleScene | ParkFinaleScene | null {
     if (!story) return null;
     try {
+      applyLocation(story.episode.location);
       const next = buildSim({ save: story.endSnapshot, dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: (story.simSeed() ^ 0x5eed) >>> 0 || 1 });
       // Arrivals happen off stage: no greetings, footsteps or jingles while the staff come in.
       finishing = true;
@@ -623,8 +718,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       feedBuffer = [];
       swapWorld(next);
       set({ feed: [] });
-      const scene = new FinaleScene(sim, ending, story.state.notes);
-      floor.camera.frame(scene.frame);
+      const scene = story.episode.id === 'park'
+        ? new ParkFinaleScene(sim, ending, story.state.notes)
+        : new FinaleScene(sim, ending, story.state.notes);
+      floor.camera.frame('frame' in scene && scene.frame ? scene.frame : roomRectPx(scene.room));
       return scene;
     } catch (err) {
       finishing = false;
@@ -647,11 +744,13 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     sagaDay?.dispose();
     sagaDay = null;
     saga = null;
+    introScene = null;
+    applyLocation('office');
     mode = 'sandbox';
     feedBuffer = [];
-    set({ feed: [] });
+    set({ feed: [], intro: null });
     swapWorld(sandboxSim());
-    set({ mode: 'sandbox', story: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
+    set({ mode: 'sandbox', story: null, storySaved: Story.peek(browserStore), episodes: episodesUi(), sagaSaved: Saga.peek(browserStore) });
     lastStoryKey = '';
   }
 
@@ -747,22 +846,26 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     // Behind a chapter card the office is held at its 08:50 start; behind the ending card nothing moves,
     // but the week's last scene plays on the floor first (at normal speed).
     const finale = s.phase === 'ending' && s.finale && !!finaleScene;
+    const introActive = !!s.intro && !!introScene;
     const held = s.phase === 'briefing' || (s.phase === 'ending' && !finale);
-    const active = (!s.paused || finishing) && s.phase !== 'report' && !held && !waiting;
-    const simDt = active ? real * (finishing ? FINISH_SPEED : finale ? 1 : s.speed) : 0;
+    const active = (!s.paused || finishing || introActive) && s.phase !== 'report' && !held && !waiting;
+    const simDt = active ? real * (finishing ? FINISH_SPEED : finale || introActive ? 1 : s.speed) : 0;
     if (simDt > 0) {
       // Large steps are split so people still walk and arrive properly.
       const steps = Math.max(1, Math.ceil(simDt / 0.25));
       for (let i = 0; i < steps; i++) {
         const dt = simDt / steps;
         sim.update(dt);
-        if (s.phase === 'playing') {
+        if (introActive) {
+          introScene?.update(dt);
+        } else if (s.phase === 'playing') {
           if (!finishing) director.update(dt);
           if (mode === 'story') day?.update(dt);
           else if (mode === 'saga') sagaDay?.update(dt);
         } else if (finale) finaleScene?.update(dt);
       }
-      if (finale && finaleScene?.done) endFinale();
+      if (introActive && introScene?.done) endIntro();
+      else if (finale && finaleScene?.done) endFinale();
       if (skipUntil !== null && (sim.clock >= skipUntil || s.phase !== 'playing')) stopSkip();
     }
     input.update(real);
@@ -772,6 +875,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     if (uiClock >= UI_TICK) {
       uiClock = 0;
       pushUi();
+      if (introActive && introScene) {
+        set((st) => (st.intro ? { intro: { ...st.intro, progress: introScene!.progress } } : {}));
+      }
     }
     statusTimer += real;
     if (statusTimer > 15 && !statusRunning) {
@@ -946,7 +1052,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       saveWorld();
     },
 
-    startStory(fresh) {
+    startStory(fresh, episodeId: EpisodeId = 'office') {
       void audio.unlock().then(() => audio.startMusic());
       // Keep the sandbox office as it was before stepping into the story.
       saveWorld();
@@ -954,14 +1060,23 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       sagaDay = null;
       saga = null;
       finaleScene = null;
+      introScene = null;
       if (get().finale) set({ finale: false });
-      let s = fresh ? null : Story.load(browserStore);
-      if (!s || s.stage === 'ended') s = Story.create(browserStore, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+      if (get().intro) set({ intro: null });
+      let s = fresh ? null : Story.load(browserStore, episodeId);
+      if (!s || s.stage === 'ended') {
+        s = Story.create(browserStore, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0, episodeId);
+      }
       story = s;
       lastStoryKey = '';
       // A day that was finished but not moved on from carries on with the next one.
       if (s.stage === 'done' && s.advance() === 'ending') {
+        applyLocation(s.episode.location);
         showEnding();
+        return;
+      }
+      if (s.needsIntro()) {
+        startIntroCinematic(s);
         return;
       }
       storyDayStart();
@@ -973,7 +1088,10 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       day = null;
       story = null;
       finaleScene = null;
+      introScene = null;
       if (get().finale) set({ finale: false });
+      if (get().intro) set({ intro: null });
+      applyLocation('office');
       let s = fresh ? null : Saga.load(browserStore);
       if (!s) s = Saga.create(browserStore, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
       else if (s.stage === 'ended') s.startNextSeason();
@@ -1024,6 +1142,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         sagaDayStart();
       }
     },
+    skipIntro() {
+      if (introScene || get().intro) endIntro();
+    },
     skipFinale() {
       if (get().phase === 'ending' && get().finale) endFinale();
     },
@@ -1061,10 +1182,17 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       skipUntil = null;
       finishing = false;
       finaleScene = null;
-      set({ finishing: false, beat: null, ceremony: null, finale: false });
+      introScene = null;
+      set({ finishing: false, beat: null, ceremony: null, finale: false, intro: null });
       if (mode === 'story' || mode === 'saga') enterSandbox();
-      else saveWorld();
-      set({ phase: 'title', paused: false, report: null, storySaved: Story.peek(browserStore), sagaSaved: Saga.peek(browserStore) });
+      else {
+        applyLocation('office');
+        saveWorld();
+      }
+      set({
+        phase: 'title', paused: false, report: null,
+        storySaved: Story.peek(browserStore), episodes: episodesUi(), sagaSaved: Saga.peek(browserStore)
+      });
       audio.setMusicMood({ menu: true });
       pushUi();
     },

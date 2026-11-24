@@ -360,7 +360,7 @@ export function meansQuitting(text: string): boolean {
 export function stripRoomPhrases(text: string): string {
   return text
     .replace(
-      /\b(michael'?s\s+office|the\s+boss'?s\s+office|boss'?s\s+office|manager'?s\s+office|conference(?:\s+room)?|meeting\s+room|board\s*room|break\s*room|staff\s*room|kitchen|accountants'?\s+corner|accounting|accounts|annex|bullpen|sales\s+floor)\b/gi,
+      /\b(michael'?s\s+office|the\s+boss'?s\s+office|boss'?s\s+office|manager'?s\s+office|command\s+gazebo|the\s+gazebo|gazebo|picnic\s+pavilion|the\s+pavilion|pavilion|conference(?:\s+room)?|meeting\s+room|board\s*room|bbq(?:\s*&\s*snack\s+stand|\s+stand)?|barbecue|snack\s+stand|break\s*room|staff\s*room|kitchen|quiet\s+grove|shady\s+grove|the\s+grove|grove|accountants'?\s+corner|accounting|accounts|duck\s+pond|the\s+pond|pond|wooden\s+dock|pier|annex|great\s+lawn|the\s+lawn|lawn|meadow|bullpen|sales\s+floor)\b/gi,
       ' '
     )
     .replace(/\s+/g, ' ')
@@ -1280,12 +1280,12 @@ export class InstinctBrain implements Brain, Reflexes {
       const byName = req.rooms.find((r) => src.toLowerCase().includes(r.name.toLowerCase().replace(/^the\s+/, '')))?.id;
       let r = (byName ?? this.index.roomInText(src, roomIds) ?? null) as DirectiveResult['targetRoom'];
       if (!r) {
-        if (/\b(fax(?:\s+machine)?|copier|printer)\b/i.test(src)) r = pickRoom('annex') ?? pickRoom('bullpen');
-        else if (/\b(coffee(?:\s*maker|\s*machine)?|fridge|vending|microwave|break\s*room|kitchen)\b/i.test(src)) r = pickRoom('kitchen');
-        else if (/\breception|switchboard\b/i.test(src)) r = pickRoom('bullpen');
-        else if (/\bmichael'?s\s+office|boss\b/i.test(src)) r = pickRoom('boss');
-        else if (/\bconference|meeting\b/i.test(src)) r = pickRoom('meeting');
-        else if (/\bwater\s+cooler|accounting\b/i.test(src)) r = pickRoom('accounts');
+        if (/\b(fax(?:\s+machine)?|copier|printer|pond|dock|pier)\b/i.test(src)) r = pickRoom('annex') ?? pickRoom('bullpen');
+        else if (/\b(coffee(?:\s*maker|\s*machine)?|fridge|vending|microwave|break\s*room|kitchen|bbq|barbecue|grill|snack\s+stand|picnic\s+tables?)\b/i.test(src)) r = pickRoom('kitchen');
+        else if (/\b(reception|switchboard|great\s+lawn|lawn|meadow)\b/i.test(src)) r = pickRoom('bullpen');
+        else if (/\b(michael'?s\s+office|boss|gazebo)\b/i.test(src)) r = pickRoom('boss');
+        else if (/\b(conference|meeting|pavilion)\b/i.test(src)) r = pickRoom('meeting');
+        else if (/\b(water\s+cooler|accounting|grove)\b/i.test(src)) r = pickRoom('accounts');
       }
       return r;
     };

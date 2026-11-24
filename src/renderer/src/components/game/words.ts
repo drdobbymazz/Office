@@ -46,6 +46,8 @@ export const FEED_ICON: Record<FeedKind, GIconName> = {
   say: 'tell', think: 'brain', event: 'warn', overseer: 'powers', shift: 'morale', system: 'gear'
 };
 
+import type { WorldLocation } from '@/game/core/world';
+
 /** Short room names for the mini plan. */
 export const ROOM_SHORT: Record<string, string> = {
   boss: 'Boss', meeting: 'Meeting', annex: 'Annex', accounts: 'Accounts', bullpen: 'Bullpen', kitchen: 'Kitchen',
@@ -58,6 +60,23 @@ export const ROOM_LIST: Record<string, string> = {
   outside: 'Outside'
 };
 
+export const PARK_ROOM_LIST: Record<string, string> = {
+  boss: 'Gazebo', meeting: 'Picnic Pavilion', annex: 'Duck Pond', accounts: 'Quiet Grove', bullpen: 'Great Lawn', kitchen: 'BBQ & Snack Stand',
+  outside: 'Park Car Park'
+};
+
+export function roomListFor(id: string, loc: WorldLocation = 'office'): string | undefined {
+  return loc === 'park' ? PARK_ROOM_LIST[id] : ROOM_LIST[id];
+}
+
+export const PARK_ROOM_SHORT: Record<string, string> = {
+  boss: 'Gazebo', meeting: 'Pavilion', annex: 'Pond', accounts: 'Grove', bullpen: 'Lawn', kitchen: 'BBQ',
+  outside: 'Car Park'
+};
+
+export function roomShortFor(id: string, loc: WorldLocation = 'office'): string {
+  return (loc === 'park' ? PARK_ROOM_SHORT[id] : ROOM_SHORT[id]) ?? ROOM_SHORT[id] ?? id;
+}
 /** Room names for the tiles of the mini plan (they wrap onto two short lines in the narrow tiles). */
 export const ROOM_TILE: Record<string, string> = {
   boss: "Michael's office", meeting: 'Conference room', annex: 'Annex', accounts: 'Accounts', bullpen: 'Bullpen', kitchen: 'Break room',
@@ -65,7 +84,7 @@ export const ROOM_TILE: Record<string, string> = {
 };
 
 /** Words in an activity that already say where someone is ("hiding in his office", "waiting at the door"). */
-const PLACE_IN_DOING = /\b(in|at|into|inside|outside)\b|\b(office|room|kitchen|bullpen|annex|accounts|corner|desk|door|lift|pavement|building|home|loo|toilet|stairs)\b/i;
+const PLACE_IN_DOING = /\b(in|at|into|inside|outside)\b|\b(office|room|kitchen|bullpen|annex|accounts|corner|desk|door|lift|pavement|building|home|loo|toilet|stairs|gazebo|pavilion|pond|grove|lawn|bbq|grill|park|dock|bench|picnic)\b/i;
 
 /**
  * One sentence on what someone is doing and where, saying the place once: "Typing in the bullpen."
