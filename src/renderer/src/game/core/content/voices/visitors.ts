@@ -131,8 +131,74 @@ export const inspector: VisitorVoice = {
   }
 };
 
+/** Ranger Miller: stern park warden with a brass whistle and a rulebook. */
+export const ranger: VisitorVoice = {
+  speech: 'Curt and official. Cites park bylaws. Blows the whistle first.',
+  examples: ['Permit first, fun second.', 'This park closes at dusk.', 'No open flames near the ducks.'],
+  bank: {
+    story: {
+      inspection: [
+        'Let me see your group permit and check the pavilion.',
+        'Every bylaw on this clipboard applies to office picnics too.',
+        'One grease fire near the pond and you are packed up by noon.',
+        'Keep the noise below town ordinance and leave the grass clean.'
+      ],
+      closure: [
+        'Whether your permit clears depends on what I find on this walk.',
+        'I write the citation or sign the permit. Simple as that.',
+        'One tidy afternoon and you can have the pavilion.'
+      ]
+    },
+    barks: {
+      scared: ['Clear the path!', 'Watch the pond!', 'Stay back!'],
+      startled: ['Hey! Watch it!', 'Who did that?', 'Mind the whistle!'],
+      angry: ['That is a citation.', 'Pack it up right now.', 'Bylaw violation!'],
+      delighted: ['Very good.', 'Model park citizens.', 'Permit approved.'],
+      disgusted: ['Clean that up now.', 'Disgraceful mess.', 'Not on my lawn.'],
+      hurt: ['Ow! Watch yourself!', 'Assault on a warden!', 'Stop that!'],
+      confused: ['Where is your permit?', 'Explain this at once.', 'What are you doing?'],
+      greeting: ['Ranger Miller. Permit check.', 'Afternoon, everyone.', 'I am here to inspect.'],
+      goodbye: ['Inspection complete.', 'Keep it tidy.', 'Good afternoon.'],
+      bored: ['I am waiting.', 'Clock is ticking.', 'Show me the pavilion.'],
+      pickedUp: ['Unhand a city warden!', 'Put me down now!', 'That is a fine!'],
+      dropped: ['Ow. My clipboard!', 'Another fine for that.', 'Watch it!'],
+      poked: ['Hands off the uniform.', 'Do not poke me.', 'One more and you leave.']
+    },
+    chaos: {
+      inspector: ['Even the park has forms today.', 'Keep walking. Nothing to hide here.'],
+      fire: ['Open flame violation! Put that out right now!', 'Somebody grab water before it spreads!'],
+      puppy: ['Leash bylaw section four: keep that dog under control.', 'Cute dog, still needs a lead.'],
+      pizza: ['Pack out every cardboard box when you finish.', 'No crusts in the duck pond.'],
+      disco: ['Turn down that amplifier! Quiet hours apply!', 'Decibel limit exceeded on the lawn!'],
+      meeting: ['Good, a proper huddle. Just keep the noise down.', 'At least everyone is off the flowerbeds.'],
+      raccoon: ['Do not feed the wildlife! I warned the city about that raccoon!', 'Keep the cooler lid shut!'],
+      bees: ['Who disturbed the grove hive?! Clear the benches!', 'Everybody step back from the oak trees!']
+    },
+    idle: [
+      'Pavilion, pond, lawn and grill. In that order.',
+      'Nobody reads the park bylaws anymore.',
+      'Why is everyone wearing office shirts outdoors?',
+      'Keep the ducks calm and the charcoal off the grass.'
+    ],
+    openers: [
+      '{other}. Are you in charge of this group?',
+      '{other}, step away from that pond please.',
+      'A quick word, {other}, for the permit log.',
+      '{other}. Have you seen the permit slip?'
+    ],
+    replies: {
+      warm: ['Thank you. That is helpful.', 'Finally someone reads the signs.', 'Noted in your favour.'],
+      cold: ['That sounds like an excuse, {other}.', 'Still going on the citation.', 'Tell it to Parks HQ, {other}.'],
+      neutral: ['Understood.', 'I see. Carry on.', 'Keep it orderly.']
+    },
+    announced: ['Someone using a megaphone without a sound permit?', 'Violation noted.', 'Turn that down.'],
+    whispered: ['{thought}. Bylaw says write it down.', '{thought}. Noted.']
+  }
+};
+
 /** Visitors' voices by their id on the floor. */
 export const VISITOR_VOICES: Record<string, VisitorVoice> = {
   'visitor:figgis': figgis,
-  'visitor:inspector': inspector
+  'visitor:inspector': inspector,
+  'visitor:ranger': ranger
 };

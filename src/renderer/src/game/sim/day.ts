@@ -2,7 +2,7 @@
 // around half past twelve, home time at five, and the end of the day once the
 // last person has walked off down the street (or 25 s after five).
 
-import { anchor, deskOf, feetOf } from '@/game/core/world';
+import { anchor, deskOf, feetOf, getWorldLocation } from '@/game/core/world';
 import { ARRIVE_FROM, DAY_END, DAY_START, LUNCH_FROM, LUNCH_TO } from './clock';
 import { cancelJob, makeJob, reserve } from './jobs';
 import { fallFrom } from './handling';
@@ -49,12 +49,13 @@ export function resetPersonForDay(core: SimCore, p: Person): void {
   p.intensity = 0.3;
   p.emotionUntil = 0;
   p.faceTo = null;
-  p.doing = 'on the way to work';
+  p.doing = getWorldLocation() === 'park' ? 'on the way to the park' : 'on the way to work';
   reserve(core, p, null);
   if (p.speech) core.hush(p.id);
 }
 
 export function startDay(core: SimCore, day: number): void {
+  const isPark = getWorldLocation() === 'park';
   core.chaosReg.endAll();
   core.scenes.closeAll();
   core.clockState.reset(day);
@@ -76,12 +77,16 @@ export function startDay(core: SimCore, day: number): void {
     p.lunchAt = core.rng() < 0.8 ? LUNCH_FROM + core.rng() * (LUNCH_TO - LUNCH_FROM) : Infinity;
     p.leaveAt = Infinity;
   });
-  core.narrate(`${core.weekday}, day ${day}. The staff are arriving for work.`, { kind: 'system' });
+  core.narrate(
+    isPark ? `${core.weekday}, day ${day}. The staff are arriving at Scranton Community Park.` : `${core.weekday}, day ${day}. The staff are arriving for work.`,
+    { kind: 'system' }
+  );
   core.bus.emit('dayStart', { day });
   core.sfx('dayStart');
 }
 
 function arrive(core: SimCore, p: Person): void {
+  const isPark = getWorldLocation() === 'park';
   const street = anchor('exit.street').tile;
   const at = core.nav.nearestFree(street, p.num, (x, y) => y >= street.y - 1, 6) ?? street;
   const f = feetOf(at);
@@ -97,8 +102,15 @@ function arrive(core: SimCore, p: Person): void {
   if (!p.def) return;
   const d = deskOf(p.def.id);
   core.startJob(p, makeJob('arrive', { kind: 'anchor', id: d.id }, {
-    doing: 'arriving for work',
-    act: { anim: 'type', seated: true, face: d.face, prop: null, doing: `settling in at ${p.his} desk`, seconds: core.rng.range(4, 10) }
+    doing: isPark ? 'arriving at the park' : 'arriving for work',
+    act: {
+      anim: isPark ? 'idle' : 'type',
+      seated: !isPark,
+      face: d.face,
+      prop: null,
+      doing: isPark ? 'settling into the park' : `settling in at ${p.his} desk`,
+      seconds: core.rng.range(4, 10)
+    }
   }));
   if (core.rng() < 0.35) core.bark(p.id, 'greeting');
 }

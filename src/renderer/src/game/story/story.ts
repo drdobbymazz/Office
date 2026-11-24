@@ -13,9 +13,10 @@ import { createRng } from '@/game/sim/rng';
 import { loadJson, removeKey, saveJson } from '@/game/storage';
 import { CHAPTER_DEFS } from './chapters';
 import { StoryDay, type StoryDayHooks } from './day';
+import { EPISODES, OFFICE_EPISODE, episodeById, type EpisodeDef } from './episodes';
 import { CHAPTERS, ENDING, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
 import { LEAK, endingText, epilogueLines } from './text';
-import type { ChapterDef, ChapterResult, SuggestIdea, WeekNotes } from './types';
+import type { ChapterDef, ChapterResult, EpisodeId, SuggestIdea, WeekNotes } from './types';
 
 export const STATE_KEY = 'story.state.v1';
 export const WORLD_KEY = 'story.world.v1';
@@ -52,8 +53,10 @@ export function memoryStore(): StoryStore & { data: Map<string, string> } {
 
 export interface StoryState {
   version: 1;
+  episodeId?: EpisodeId;
+  introSeen?: boolean;
   seed: number;
-  /** 1..5: the chapter being played, or just played. */
+  /** 1..N: the chapter being played, or just played. */
   chapter: number;
   /** 'day': the chapter is to be played; 'done': its result is in; 'ended': the week is over. */
   stage: 'day' | 'done' | 'ended';
@@ -84,35 +87,45 @@ export interface StorySaved {
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
-function cleanState(raw: unknown): StoryState | null {
+function cleanState(raw: unknown, ep: EpisodeDef = OFFICE_EPISODE): StoryState | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Partial<StoryState>;
   if (r.version !== 1) return null;
+  const count = ep.chapters.length;
   const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-  const chapter = Math.max(1, Math.min(CHAPTERS, Math.floor(num(r.chapter, 1))));
+  const chapter = Math.max(1, Math.min(count, Math.floor(num(r.chapter, 1))));
   const notes = (n: unknown): WeekNotes | null => {
     if (!n || typeof n !== 'object') return null;
     const w = n as WeekNotes;
-    return isCastId(w.leak) ? { ...w } : null;
+    if (ep.id === 'office') return isCastId(w.leak) ? { ...w } : null;
+    return { ...w };
   };
   const seed = Math.floor(num(r.seed, 1)) >>> 0 || 1;
-  const live = notes(r.notes) ?? { leak: pickLeak(seed) };
-  const results = Array.from({ length: CHAPTERS }, (_, i) => {
+  const parkNotes = (n: unknown): WeekNotes | null => {
+    if (!n || typeof n !== 'object') return null;
+    const w = n as Partial<WeekNotes>;
+    return { ...w, leak: typeof w.leak === 'string' && isCastId(w.leak) ? w.leak : pickLeak(seed) };
+  };
+  const readNotes = (n: unknown): WeekNotes | null => (ep.id === 'office' ? notes(n) : parkNotes(n));
+  const live = readNotes(r.notes) ?? { leak: pickLeak(seed) };
+  const results = Array.from({ length: count }, (_, i) => {
     const x = Array.isArray(r.results) ? r.results[i] : null;
     return x && typeof x === 'object' && typeof x.won === 'boolean' ? x : null;
   });
   return {
     version: 1,
+    episodeId: ep.id,
+    introSeen: typeof r.introSeen === 'boolean' ? r.introSeen : !ep.hasIntro,
     seed,
     chapter,
     stage: r.stage === 'done' || r.stage === 'ended' ? r.stage : 'day',
     // Standing is never capped (the report's arithmetic must add up); only absurd values are refused.
-    standing: Math.max(-200, Math.min(300, num(r.standing, STANDING_START))),
-    standingAtStart: Math.max(-200, Math.min(300, num(r.standingAtStart, num(r.standing, STANDING_START)))),
-    notesAtStart: notes(r.notesAtStart) ?? clone(live),
+    standing: Math.max(-200, Math.min(300, num(r.standing, ep.standingStart))),
+    standingAtStart: Math.max(-200, Math.min(300, num(r.standingAtStart, num(r.standing, ep.standingStart)))),
+    notesAtStart: readNotes(r.notesAtStart) ?? clone(live),
     notes: live,
     results,
-    tries: Array.from({ length: CHAPTERS }, (_, i) => {
+    tries: Array.from({ length: count }, (_, i) => {
       const t = Array.isArray(r.tries) ? Number(r.tries[i]) : 0;
       return Number.isFinite(t) && t > 0 ? Math.floor(t) : 0;
     })
@@ -128,53 +141,105 @@ export function pickLeak(seed: number): CastId {
 export class Story {
   private world: StoryWorld;
 
-  private constructor(private store: StoryStore, public state: StoryState, world?: StoryWorld) {
+  readonly episode: EpisodeDef;
+
+  private constructor(
+    private store: StoryStore,
+    public state: StoryState,
+    world?: StoryWorld,
+    episode: EpisodeDef = OFFICE_EPISODE,
+  ) {
+    this.episode = episode;
     this.world = world ?? { start: null, end: null };
   }
 
-  /** A new week from Monday morning. Replaces any story saved before. */
-  static create(store: StoryStore, seed: number): Story {
+  /** A new episode run from chapter 1. Replaces any save for this episode. */
+  static create(store: StoryStore, seed: number, episodeId: EpisodeId = 'office'): Story {
+    const ep = episodeById(episodeId);
+    const count = ep.chapters.length;
     const s = (Math.floor(seed) >>> 0) || 1;
     const notes: WeekNotes = { leak: pickLeak(s) };
-    const story = new Story(store, {
-      version: 1, seed: s, chapter: 1, stage: 'day', standing: STANDING_START, standingAtStart: STANDING_START,
-      notesAtStart: clone(notes), notes, results: Array.from({ length: CHAPTERS }, () => null),
-      tries: Array.from({ length: CHAPTERS }, () => 0)
-    });
+    const story = new Story(
+      store,
+      {
+        version: 1,
+        episodeId: ep.id,
+        introSeen: !ep.hasIntro,
+        seed: s,
+        chapter: 1,
+        stage: 'day',
+        standing: ep.standingStart,
+        standingAtStart: ep.standingStart,
+        notesAtStart: clone(notes),
+        notes,
+        results: Array.from({ length: count }, () => null),
+        tries: Array.from({ length: count }, () => 0),
+      },
+      undefined,
+      ep,
+    );
     story.save();
     return story;
   }
 
-  /** The saved story, or null when there is none (or it cannot be read). */
-  static load(store: StoryStore): Story | null {
-    const state = cleanState(store.load<unknown>(STATE_KEY));
+  /** The saved story for an episode, or null when there is none (or it cannot be read). */
+  static load(store: StoryStore, episodeId: EpisodeId = 'office'): Story | null {
+    const ep = episodeById(episodeId);
+    const state = cleanState(store.load<unknown>(ep.stateKey), ep);
     if (!state) return null;
-    const w = store.load<Partial<StoryWorld>>(WORLD_KEY);
-    return new Story(store, state, { start: w?.start ?? null, end: w?.end ?? null });
+    const w = store.load<Partial<StoryWorld>>(ep.worldKey);
+    return new Story(store, state, { start: w?.start ?? null, end: w?.end ?? null }, ep);
   }
 
-  /** For the title screen: the story waiting to be continued, or null. */
+  /** For the title screen: the Episode 1 story waiting to be continued, or null. */
   static peek(store: StoryStore): StorySaved | null {
-    const state = cleanState(store.load<unknown>(STATE_KEY));
-    if (!state || state.stage === 'ended') return null;
-    // A finished day carries on with the next one.
-    const ch = state.stage === 'done' && state.chapter < CHAPTERS ? state.chapter + 1 : state.chapter;
-    const def = CHAPTER_DEFS[ch - 1];
-    return { chapter: ch, chapters: CHAPTERS, title: def.title, weekday: def.weekday, standing: state.standing };
+    return Story.peekEpisode(store, 'office');
   }
 
-  static clear(store: StoryStore): void {
-    store.remove(STATE_KEY);
-    store.remove(WORLD_KEY);
+  /** Saved summary for any episode (or null when ended / absent). */
+  static peekEpisode(store: StoryStore, episodeId: EpisodeId): StorySaved | null {
+    const ep = episodeById(episodeId);
+    const state = cleanState(store.load<unknown>(ep.stateKey), ep);
+    if (!state || state.stage === 'ended') return null;
+    const count = ep.chapters.length;
+    // A finished day carries on with the next one.
+    const ch = state.stage === 'done' && state.chapter < count ? state.chapter + 1 : state.chapter;
+    const def = ep.chapters[ch - 1];
+    return { chapter: ch, chapters: count, title: def.title, weekday: def.weekday, standing: state.standing };
+  }
+
+  static peekAll(store: StoryStore): Record<EpisodeId, StorySaved | null> {
+    return {
+      office: Story.peekEpisode(store, 'office'),
+      park: Story.peekEpisode(store, 'park'),
+    };
+  }
+
+  needsIntro(): boolean {
+    return this.episode.hasIntro && !this.state.introSeen;
+  }
+
+  markIntroSeen(): void {
+    if (this.state.introSeen) return;
+    this.state.introSeen = true;
+    this.save();
+  }
+
+  static clear(store: StoryStore, episodeId?: EpisodeId): void {
+    const targets = episodeId ? [episodeById(episodeId)] : EPISODES;
+    for (const ep of targets) {
+      store.remove(ep.stateKey);
+      store.remove(ep.worldKey);
+    }
   }
 
   save(): void {
-    this.store.save(STATE_KEY, this.state);
-    this.store.save(WORLD_KEY, this.world);
+    this.store.save(this.episode.stateKey, this.state);
+    this.store.save(this.episode.worldKey, this.world);
   }
 
   get def(): ChapterDef {
-    return CHAPTER_DEFS[this.state.chapter - 1];
+    return this.episode.chapters[this.state.chapter - 1];
   }
 
   get chapter(): number {
@@ -234,7 +299,11 @@ export class Story {
     this.stopCounting = sim.bus.on('pickedUp', (e) => {
       if (isCastId(e.who)) this.carriedToday[e.who] = (this.carriedToday[e.who] ?? 0) + 1;
     });
-    const day = new StoryDay(sim, this.def, this.state.notes, { seed: this.state.seed, hooks });
+    const day = new StoryDay(sim, this.def, this.state.notes, {
+      seed: this.state.seed,
+      hooks,
+      weekFacts: this.episode.weekFacts,
+    });
     day.setup();
     return day;
   }
@@ -280,7 +349,7 @@ export class Story {
     // A day already counted as lost has had its try; a retry from the middle of a day counts as one.
     if (!(this.state.stage === 'done' && this.result && !this.result.won)) this.bumpTries();
     // Thursday again: someone else is the leak this time (the report may have named the last one).
-    if (this.state.chapter === LEAK_CHAPTER) {
+    if (this.episode.id === 'office' && this.state.chapter === LEAK_CHAPTER) {
       const was = this.state.notesAtStart.leak;
       const rng = createRng((this.state.seed ^ Math.imul(this.state.tries[LEAK_CHAPTER - 1] + 1, 0x2c1b3c6d)) >>> 0);
       this.state.notesAtStart.leak = rng.pick(LEAK.candidates.filter((id) => id !== was));
@@ -294,11 +363,11 @@ export class Story {
     return this.world.start;
   }
 
-  /** On from a finished day: the next chapter, or the end of the week. */
+  /** On from a finished day: the next chapter, or the end of the episode. */
   advance(): 'next' | 'ending' {
     if (this.state.stage === 'ended') return 'ending';
     if (this.state.stage !== 'done') return 'next';
-    if (this.state.chapter >= CHAPTERS) {
+    if (this.state.chapter >= this.episode.chapters.length) {
       this.state.stage = 'ended';
       this.save();
       return 'ending';
@@ -312,42 +381,24 @@ export class Story {
     return 'next';
   }
 
-  /** Friday's inspection passed (the best ending needs it). */
+  /** Final chapter passed (the best ending needs it). */
   get fridayWon(): boolean {
-    return !!this.state.results[CHAPTERS - 1]?.won;
+    return !!this.state.results[this.episode.chapters.length - 1]?.won;
   }
 
   endingId(): EndingId {
-    return endingFor(this.state.standing, this.fridayWon);
+    return this.episode.endingFor(this.state.standing, this.fridayWon);
   }
 
   ending(): { id: EndingId; title: string; text: string[]; epilogue: string[] } {
-    const id = this.endingId();
-    const n = this.state.notes;
-    const t = endingText(id, {
-      call: n.call, accounts: n.accounts, figgis: n.figgis, leakName: displayName(n.leak), leakFound: n.leakFound, inspection: n.inspection,
-      fridayWon: this.fridayWon, lostOnFriday: !this.fridayWon && this.state.standing >= ENDING.saved
-    });
-    const st = n.stats;
-    const most = st ? (Object.entries(st.carried) as [CastId, number][]).sort((a, b) => b[1] - a[1])[0] : undefined;
-    const epilogue = epilogueLines({
-      leakName: n.leakFound !== undefined ? displayName(n.leak) : undefined,
-      leakFound: n.leakFound,
-      accounts: n.accounts,
-      figgis: n.figgis,
-      speech: n.speech,
-      wrongedName: n.wronged?.length ? displayName(n.wronged[0]) : undefined,
-      carried: most ? { name: displayName(most[0]), times: most[1] } : undefined,
-      whispers: st?.whispers ?? 0,
-      announcements: st?.announcements ?? 0,
-      powers: st?.powers ?? 0
-    });
-    return { id, title: t.title, text: t.text, epilogue };
+    return this.episode.buildEnding(this.state.standing, this.fridayWon, this.state.notes);
   }
 
   /** Everything the screens need. `day` is the live day (null on the ending screen). */
   ui(day: StoryDay | null): StoryUi {
     const def = this.def;
+    const ep = this.episode;
+    const count = ep.chapters.length;
     const result = this.result;
     const goal = day ? day.goalUi() : {
       id: def.goal.id, title: def.goal.title, detail: def.goal.detail, icon: def.goal.icon,
@@ -357,10 +408,17 @@ export class Story {
       const done = !!result?.extras.includes(x.title);
       return { id: x.id, title: x.title, detail: x.detail, icon: x.icon, progress: done ? 1 : 0, status: '', state: result ? (done ? 'won' : 'lost') : 'open' } as StoryUi['side'][number];
     });
-    const budget = budgetFor(def.chapter);
+    const budget = def.budget ?? budgetFor(def.chapter);
     return {
+      episodeId: ep.id,
+      episodeName: ep.title,
+      episodeSubtitle: ep.subtitle,
+      unitLabel: ep.unitLabel,
+      standingLabel: ep.standingLabel,
+      standingNote: ep.standingNote,
+      endingRule: ep.endingRule,
       chapter: def.chapter,
-      chapters: CHAPTERS,
+      chapters: count,
       title: def.title,
       weekday: def.weekday,
       intro: [...def.intro],
@@ -376,7 +434,7 @@ export class Story {
         ? { won: result.won, text: [...result.text], changes: result.changes.map((c) => ({ ...c })), standingBefore: result.standingBefore, standingAfter: result.standingAfter }
         : null,
       ending: this.state.stage === 'ended' ? this.ending() : null,
-      week: CHAPTER_DEFS.map((d, i) => {
+      week: ep.chapters.map((d, i) => {
         const r = this.state.results[i];
         return { chapter: d.chapter, title: d.title, weekday: d.weekday, result: r ? (r.won ? 'won' : 'lost') : null };
       }),

@@ -9,6 +9,8 @@ import type { Rng } from '@/game/sim/rng';
 
 export type GoalState = 'open' | 'won' | 'lost';
 
+export type EpisodeId = 'office' | 'park';
+
 export interface GoalDef {
   id: string;
   title: string;
@@ -55,6 +57,11 @@ export interface WeekNotes {
   tour?: { of: number; fixed: number };
   /** The whole week, for the ending's epilogue: what the player used and who they carried. */
   stats?: WeekStats;
+  /** Episode 2 (Day in the Park) cross-act notes. */
+  parkRally?: boolean;
+  parkTruce?: boolean;
+  parkInspection?: number;
+  parkGrill?: boolean;
 }
 
 export interface WeekStats {
@@ -182,6 +189,8 @@ export interface ChapterDef {
    * `help` only after a failed try or a retry (it gives the day's answer away).
    */
   suggest?: { whisper?: SuggestIdea[]; announce?: SuggestIdea[] };
+  /** Daily influence budget override (falls back to BUDGETS[chapter - 1] when absent). */
+  budget?: number;
   /** Today's prices where they differ from the usual (rules.ts COSTS). */
   costs?: Partial<Record<ActionId, number>>;
   create(ctx: ChapterCtx): ChapterRun;

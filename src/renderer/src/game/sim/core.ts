@@ -9,7 +9,7 @@ import type {
 import { CAST_IDS, PLAN_KINDS, clamp, clamp01, isCastId } from '@/game/core/types';
 import { CAST, VISITORS, displayName, voiceOf, type FixSkill } from '@/game/core/cast';
 import {
-  ROOMS, TILE, WORLD_H, WORLD_W, anchor, deskOf, feetOf, findAnchor, roomAt, roomRectPx, tileAt
+  ROOMS, TILE, WORLD_H, WORLD_W, anchor, deskOf, feetOf, findAnchor, roomAt, roomRectPx, roomsFor, tileAt
 } from '@/game/core/world';
 import type { GameBus } from '@/game/core/bus';
 import type {
@@ -141,7 +141,7 @@ export class SimCore implements DirectorSimApi {
   }
 
   roomName(room: RoomId | string): string {
-    return ROOMS.find((r) => r.id === room)?.name ?? String(room);
+    return roomsFor().find((r) => r.id === room)?.name ?? ROOMS.find((r) => r.id === room)?.name ?? String(room);
   }
 
   feet(t: Tile): Vec {

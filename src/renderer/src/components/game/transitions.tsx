@@ -51,7 +51,8 @@ export function useScreenWipe(key: string, game: GameApi): { shown: string; wipe
 export function DayBand({ right, bottom }: { right: number; bottom: number }) {
   const st = useUi((s) => ({
     weekday: s.weekday, day: s.day,
-    chapter: s.story?.chapter ?? 0, chapters: s.story?.chapters ?? 0, title: s.story?.title ?? ''
+    chapter: s.story?.chapter ?? 0, chapters: s.story?.chapters ?? 0, title: s.story?.title ?? '',
+    unitLabel: s.story?.unitLabel ?? 'Day',
   }));
   return (
     <div aria-hidden style={{ position: 'absolute', left: 0, right, top: 0, bottom, pointerEvents: 'none', overflow: 'hidden', zIndex: 15 }}>
@@ -64,7 +65,7 @@ export function DayBand({ right, bottom }: { right: number; bottom: number }) {
           {st.weekday.toUpperCase()}
         </span>
         <span style={{ fontSize: 15, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>
-          {st.chapter ? `Day ${st.chapter} of ${st.chapters} · ${st.title}` : `Day ${st.day}`}
+          {st.chapter ? `${st.unitLabel} ${st.chapter} of ${st.chapters} · ${st.title}` : `Day ${st.day}`}
         </span>
       </div>
     </div>

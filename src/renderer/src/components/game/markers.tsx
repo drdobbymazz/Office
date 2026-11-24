@@ -13,7 +13,8 @@ const CLOSE_ZOOM = 2;
 export function StoryMarkers() {
   const game = useGame();
   const chapter = useUi((s) => (s.mode === 'story' && s.story && !s.story.saga ? s.story.chapter : 0));
-  const ids = useMemo(() => storyMarks(chapter), [chapter]);
+  const episodeId = useUi((s) => s.story?.episodeId ?? 'office');
+  const ids = useMemo(() => storyMarks(chapter, episodeId), [chapter, episodeId]);
   const names = useUi((s) => ids.map((id) => s.people.find((p) => p.id === id)?.name ?? '').join('|'));
   const refs = useRef<(HTMLDivElement | null)[]>([]);
 

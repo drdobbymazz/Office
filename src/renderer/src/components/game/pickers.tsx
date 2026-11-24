@@ -6,11 +6,11 @@ import type { PersonUi } from '@/game/app/gameApi';
 import type { AccentColorName } from '@/design/tokens';
 import type { CharId, TargetRoomId } from '@/game/core/types';
 import { TARGET_ROOMS } from '@/game/core/types';
-import { ROOMS } from '@/game/core/world';
+import { ROOMS, roomsFor, type WorldLocation } from '@/game/core/world';
 import { Head, usePress } from './kit';
 import { useGame, useUi, useViewport } from './ctx';
 import { sheetWidth } from './Dock';
-import { ROOM_SHORT, readableOnCream } from './words';
+import { readableOnCream, roomShortFor } from './words';
 
 const PLAN = ROOMS.filter((r) => (TARGET_ROOMS as readonly string[]).includes(r.id));
 const MIN_Y = Math.min(...PLAN.map((r) => r.rect.y));
@@ -30,9 +30,9 @@ for (const band of [TOP, BOTTOM]) {
   for (const r of band) { LAYOUT.set(r.id, { x: (x / total) * 100, w: (wOf(r) / total) * 100 }); x += wOf(r); }
 }
 
-function RoomCell({ id, name, rect, people, selected, accent, onPick }: {
+function RoomCell({ id, name, rect, people, selected, accent, loc, onPick }: {
   id: TargetRoomId; name: string; rect: { x: number; y: number; w: number; h: number }; people: PersonUi[];
-  selected: boolean; accent: AccentColorName; onPick: (r: TargetRoomId) => void;
+  selected: boolean; accent: AccentColorName; loc: WorldLocation; onPick: (r: TargetRoomId) => void;
 }) {
   const { pressed, handlers } = usePress();
   const lay = LAYOUT.get(id) ?? { x: 0, w: 10 };
@@ -50,7 +50,7 @@ function RoomCell({ id, name, rect, people, selected, accent, onPick }: {
         boxShadow: selected ? 'inset 0 0 0 3px var(--cth-ink-900)' : 'inset 0 0 0 2px var(--cth-ink-900)',
         display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', overflow: 'hidden', textAlign: 'left'
       }}>
-      <span style={{ fontSize: 11, lineHeight: '12px', color: 'var(--cth-ink-900)', padding: '1px 0 0', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden' }}>{ROOM_SHORT[id]}</span>
+      <span style={{ fontSize: 11, lineHeight: '12px', color: 'var(--cth-ink-900)', padding: '1px 0 0', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden' }}>{roomShortFor(id, loc)}</span>
       <span style={{ display: 'flex', flexWrap: 'wrap', gap: 1, maxWidth: '100%' }}>
         {shown.map((p) => <Head key={p.id} src={p.avatar} scale={1} box={12} ring={p.color} />)}
         {people.length > shown.length && <span style={{ fontSize: 12, lineHeight: '10px' }}>+{people.length - shown.length}</span>}
@@ -61,6 +61,8 @@ function RoomCell({ id, name, rect, people, selected, accent, onPick }: {
 
 export function RoomMap({ value, onPick, accent = 'coral' }: { value: TargetRoomId | null; onPick: (r: TargetRoomId) => void; accent?: AccentColorName }) {
   const people = useUi((s) => s.people);
+  const loc = useUi((s) => s.location);
+  const rooms = useMemo(() => roomsFor(loc).filter((r) => (TARGET_ROOMS as readonly string[]).includes(r.id)), [loc]);
   const byRoom = useMemo(() => {
     const m = new Map<string, PersonUi[]>();
     for (const p of people) if (p.present) m.set(p.room, [...(m.get(p.room) ?? []), p]);
@@ -72,9 +74,9 @@ export function RoomMap({ value, onPick, accent = 'coral' }: { value: TargetRoom
       background: 'var(--cth-ink-700)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)', padding: 2
     }}>
       <div style={{ position: 'absolute', inset: 2 }}>
-        {PLAN.map((r) => (
+        {rooms.map((r) => (
           <RoomCell key={r.id} id={r.id as TargetRoomId} name={r.name} rect={r.rect} people={byRoom.get(r.id) ?? []}
-            selected={value === r.id} accent={accent} onPick={onPick} />
+            selected={value === r.id} accent={accent} loc={loc} onPick={onPick} />
         ))}
       </div>
     </div>

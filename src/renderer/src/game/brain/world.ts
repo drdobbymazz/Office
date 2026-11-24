@@ -29,10 +29,13 @@ export interface BrainWorld {
 
 /** Groups of words that mean the same kind of room, for free text ("the kitchen" vs "the Break Room"). */
 const ROOM_SYNONYMS: readonly string[][] = [
-  ['kitchen', 'break', 'breakroom', 'canteen', 'coffee', 'fridge', 'microwave', 'pantry'],
-  ['meeting', 'boardroom', 'conference'],
+  ['kitchen', 'break', 'breakroom', 'canteen', 'coffee', 'fridge', 'microwave', 'pantry', 'bbq', 'barbecue', 'grill', 'snack'],
+  ['meeting', 'boardroom', 'conference', 'pavilion', 'picnic'],
   ['server', 'servers', 'it', 'racks'],
-  ['boss', 'director', 'manager', 'ceo'],
+  ['boss', 'director', 'manager', 'ceo', 'gazebo'],
+  ['accounts', 'accounting', 'grove'],
+  ['annex', 'pond', 'duck', 'dock', 'pier'],
+  ['bullpen', 'lawn', 'meadow'],
   ['lobby', 'reception', 'entrance', 'foyer'],
   ['copy', 'printer', 'photocopier', 'print', 'supply', 'closet'],
   ['roof', 'terrace', 'rooftop'],

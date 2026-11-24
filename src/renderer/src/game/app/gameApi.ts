@@ -9,8 +9,10 @@ import type { StoreApi, UseBoundStore } from 'zustand';
 import type {
   CastId, ChaosId, ChaosTarget, CharId, EmotionId, FeedItem, Plan, RoomId, StatusKind, TargetRoomId
 } from '@/game/core/types';
+import type { WorldLocation } from '@/game/core/world';
 import type { BrainSettings, BrainStatus, ProviderKind } from '@/game/brain/api';
 import type { AudioVolumes } from '@/game/audio/api';
+import type { EpisodeId } from '@/game/story/types';
 
 // ── State the UI renders ─────────────────────────────────────────────────────
 
@@ -48,6 +50,17 @@ export interface StandingChangeUi {
   text: string;
   /** Points of standing, + or -. */
   delta: number;
+}
+
+export interface EpisodeSavedUi {
+  id: EpisodeId;
+  number: number;
+  title: string;
+  subtitle: string;
+  tagline: string;
+  chapters: number;
+  unitLabel: string;
+  saved: { chapter: number; chapters: number; title: string; weekday: string; standing: number } | null;
 }
 
 export interface StoryUi {
@@ -112,6 +125,13 @@ export interface StoryUi {
   canFinish: boolean;
   /** Nothing needs the player until this time of day (clock minutes): they may skip ahead to it. Null otherwise. */
   skipTo?: number | null;
+  episodeId?: EpisodeId;
+  episodeName?: string;
+  episodeSubtitle?: string;
+  unitLabel?: string;
+  standingLabel?: string;
+  standingNote?: string;
+  endingRule?: string;
   /** Endless Saga metadata when running in `mode === 'saga'`; undefined in Classic Story mode. */
   saga?: {
     season: number;
@@ -340,16 +360,22 @@ export interface UiState {
   /** Running inside a claude.ai Artifact (no network: only Claude or instinct can be the brain). */
   inArtifact: boolean;
   mode: GameMode;
+  /** Active world map ('office' or 'park'). */
+  location: WorldLocation;
   /** Story mode state; null in the sandbox (used for both Classic Story and Endless Saga). */
   story: StoryUi | null;
   /** A story in progress that can be continued from the title screen, or null. */
   storySaved: { chapter: number; chapters: number; title: string; weekday: string; standing: number } | null;
+  /** Saved summaries & metadata for every Story Mode episode. */
+  episodes: EpisodeSavedUi[];
   /** An Endless Saga in progress that can be continued from the title screen, or null. */
   sagaSaved: { season: number; chapter: number; chapters: number; arcTitle: string; title: string; weekday: string; standing: number } | null;
   /** The newest story narration worth showing on the floor (story mode), or null. */
   beat: BeatUi | null;
   /** The newest big moment to stamp on screen, or null. Replaced by the next one. */
   ceremony: CeremonyUi | null;
+  /** Active bridge cinematic (Episode 2 Office -> Park), or null. */
+  intro: { caption: string; progress: number; canSkip: boolean } | null;
   /** The rest of the day is being run quickly to five o'clock (after finishDay), or the day is skipping ahead. */
   finishing: boolean;
   /** While skipping ahead: the time of day (clock minutes) being skipped to. Null otherwise. */
@@ -391,8 +417,8 @@ export interface GameApi {
   nextDay(): void;
 
   // ── story mode ──
-  /** From the title screen: play the story. fresh = start a new week even if one is saved. */
-  startStory(fresh?: boolean): void;
+  /** From the title screen: play a story episode. fresh = start from chapter 1 even if saved. */
+  startStory(fresh?: boolean, episodeId?: EpisodeId): void;
   /** From the title screen: play Endless Saga (weekly arcs with full sandbox freedom). fresh = start Season 1 anew. */
   startSaga(fresh?: boolean): void;
   /** Endless Saga, from a Friday season ending card: carry bonds & standing momentum into Season N+1. */
@@ -407,6 +433,8 @@ export interface GameApi {
   finishDay(): void;
   /** Story mode, when StoryUi.skipTo is set: run quickly to that time (it stops early if something happens). */
   skipAhead(): void;
+  /** Story mode, during an episode bridge intro: skip straight to chapter 1 briefing. */
+  skipIntro(): void;
   /** Story mode, during the finale: stop the last scene and show the ending card now. */
   skipFinale(): void;
   /** Story mode, when allowed (StoryUi.accuse): name someone. */

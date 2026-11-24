@@ -36,6 +36,7 @@ function rectOf(sel: string): DOMRect | null {
 export function StoryCoach() {
   const game = useGame();
   const nav = useNav();
+  const episodeId = useUi((s) => s.story?.episodeId ?? 'office');
   const chapter = useUi((s) => s.story?.chapter ?? 0);
   const goalTitle = useUi((s) => s.story?.goal.title ?? '');
   const done = useUi((s) => s.settings.storyCoachDone);
@@ -47,7 +48,7 @@ export function StoryCoach() {
   // The steps steer the panel through a ref, so a tab change does not restart the current step.
   const navRef = useRef(nav);
   navRef.current = nav;
-  const live = chapter === 1 && !done && !finishing;
+  const live = episodeId === 'office' && chapter === 1 && !done && !finishing;
 
   // Start once Michael is on the floor and can be seen.
   useEffect(() => {

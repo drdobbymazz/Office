@@ -28,6 +28,15 @@ describe('reading an announcement', () => {
     expect(invitesPeople('Come to the annex')).toBe(true);
   });
 
+  it('recognizes Scranton Community Park zones', () => {
+    expect(roomNamedIn('meet at the gazebo')).toBe('boss');
+    expect(roomNamedIn('gather at the picnic pavilion')).toBe('meeting');
+    expect(roomNamedIn('walk down to the duck pond')).toBe('annex');
+    expect(roomNamedIn('rest in the quiet grove')).toBe('accounts');
+    expect(roomNamedIn('circle up on the great lawn')).toBe('bullpen');
+    expect(roomNamedIn('grab a burger at the bbq stand')).toBe('kitchen');
+  });
+
   it('who listens: dutiful and kind people more than troublemakers; food pulls Kevin hardest', () => {
     expect(summonChance('toby', { food: false, named: false })).toBeGreaterThan(summonChance('creed', { food: false, named: false }));
     expect(summonChance('kevin', { food: true, named: false })).toBeGreaterThan(0.95);

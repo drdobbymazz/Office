@@ -14,11 +14,12 @@ import type {
 } from '@/game/view/api';
 import type { CharId, TargetRoomId, Vec } from '@/game/core/types';
 import { TARGET_ROOMS, isCastId } from '@/game/core/types';
-import { MAP_PX_H, MAP_PX_W, TILE, WORLD_H, roomRectPx, targetRoomAtPx } from '@/game/core/world';
+import { MAP_PX_H, MAP_PX_W, TILE, WORLD_H, type WorldLocation, roomRectPx, targetRoomAtPx } from '@/game/core/world';
 import { colors } from '@/design/tokens';
 import { loadOfficeMap } from '../mapLoader';
 import { FloorCamera } from './camera';
 import type { Insets } from './camera';
+import { createParkMap } from './parkMap';
 
 export interface FloorDeps {
   createActorView: CreateActorView;
@@ -63,6 +64,10 @@ export class GameFloor {
   private pulse = 0;
   private gripAt: Vec | null = null;
   private observer: ResizeObserver | null = null;
+  private officeVisuals: Container[];
+  private parkGround: Container;
+  private parkCanopy: Container;
+  private parkUpdate: (dt: number) => void;
   private w = 1;
   private h = 1;
   private resolution = 1;
@@ -79,18 +84,40 @@ export class GameFloor {
     const mapRoot = map.getContainer();
     this.sorted = map.getCharacterContainer();
     this.sorted.sortableChildren = true;
+    const officeTiles = mapRoot.children.filter((ch) => ch !== this.sorted);
     this.fx = deps.createFxView(app.renderer, this.sorted);
 
     // Draw order: see the comment at the top of game/view/api.ts.
     const sortedIndex = mapRoot.getChildIndex(this.sorted);
     mapRoot.addChildAt(this.shadows, sortedIndex);
     mapRoot.addChildAt(this.fx.floor, sortedIndex);
-    mapRoot.addChildAt(drawOfficeDecor(), mapRoot.getChildIndex(this.fx.floor));
-    mapRoot.addChildAt(drawSurroundings(), 0);
+    const officeDecor = drawOfficeDecor();
+    const officeSurroundings = drawSurroundings();
+    mapRoot.addChildAt(officeDecor, mapRoot.getChildIndex(this.fx.floor));
+    mapRoot.addChildAt(officeSurroundings, 0);
+    this.officeVisuals = [...officeTiles, officeDecor, officeSurroundings];
+
+    const park = createParkMap();
+    this.parkGround = park.ground;
+    this.parkCanopy = park.canopy;
+    this.parkUpdate = park.update;
+    this.parkGround.visible = false;
+    this.parkCanopy.visible = false;
+    mapRoot.addChildAt(this.parkGround, mapRoot.getChildIndex(this.shadows));
+    mapRoot.addChildAt(this.parkCanopy, mapRoot.getChildIndex(this.sorted) + 1);
+
     this.world.addChild(mapRoot, this.fx.air, this.marks);
     app.stage.addChild(this.world, this.fx.screen);
     app.stage.eventMode = 'none';
     app.stage.interactiveChildren = false;
+  }
+
+  /** Switch the visible floor backdrop between the Office building and Scranton Community Park. */
+  setLocation(loc: WorldLocation): void {
+    const isPark = loc === 'park';
+    for (const v of this.officeVisuals) v.visible = !isPark;
+    this.parkGround.visible = isPark;
+    this.parkCanopy.visible = isPark;
   }
 
   static async create(host: HTMLElement, deps: FloorDeps, quality: Quality = 'auto'): Promise<GameFloor> {
@@ -190,6 +217,7 @@ export class GameFloor {
 
     this.fx.sync(frame.effects);
     this.fx.update(simDt, { time: frame.time, people: this.fxPeople, view: this.camera.viewRect(), screenW: this.w, screenH: this.h });
+    if (this.parkGround.visible) this.parkUpdate(realDt);
 
     this.drawMarks(realDt);
     this.app.renderer.render(this.app.stage);

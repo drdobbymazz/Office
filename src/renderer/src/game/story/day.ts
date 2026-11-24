@@ -42,10 +42,15 @@ export class StoryDay {
   private incidents: number | null = null;
   private disposed = false;
 
-  constructor(sim: Sim, def: ChapterDef, private notes: WeekNotes, private opts: { seed: number; hooks?: StoryDayHooks } = { seed: 1 }) {
+  constructor(
+    sim: Sim,
+    def: ChapterDef,
+    private notes: WeekNotes,
+    private opts: { seed: number; hooks?: StoryDayHooks; weekFacts?: (notes: WeekNotes, chapter: number) => [string, string][] } = { seed: 1 },
+  ) {
     this.sim = sim;
     this.def = def;
-    const budget = budgetFor(def.chapter);
+    const budget = def.budget ?? budgetFor(def.chapter);
     this.influence = { left: budget, max: budget };
     for (const x of def.extras) this.extras.set(x.id, 'open');
     const rng = createRng((opts.seed ^ Math.imul(def.chapter, 0x9e3779b1)) >>> 0);
@@ -82,7 +87,8 @@ export class StoryDay {
   /** Right after the day begins: the chapter's rules, yesterday's news, today's set-up. */
   setup(): void {
     this.sim.setLocks(this.def.locked);
-    for (const [key, text] of weekFacts(this.notes, this.def.chapter)) this.sim.setFact(key, text);
+    const facts = this.opts.weekFacts ?? weekFacts;
+    for (const [key, text] of facts(this.notes, this.def.chapter)) this.sim.setFact(key, text);
     this.run.setup();
   }
 

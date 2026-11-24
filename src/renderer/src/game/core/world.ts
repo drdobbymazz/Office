@@ -38,6 +38,8 @@ import type { AnimId, CastId, Dir, RoomId, TargetRoomId, Tile, Vec } from './typ
 
 export const TILE = 16;
 
+export type WorldLocation = 'office' | 'park';
+
 interface RawLayer {
   name: string;
   type: string;
@@ -114,13 +116,29 @@ function sealUnreachable(grid: boolean[][], from: Tile): void {
 
 const BUILT = buildGrid();
 sealUnreachable(BUILT.grid, BUILT.spawns.get('entrance') ?? { x: 16, y: 20 });
-/** GRID[y][x] is true where people can walk. Every walkable tile can be reached from the front door. */
+/** GRID[y][x] is true where people can walk in the office. Every walkable tile can be reached from the front door. */
 export const GRID: readonly (readonly boolean[])[] = BUILT.grid;
 /** Named spawn points from the Tiled map, in tiles. */
 export const SPAWNS: ReadonlyMap<string, Tile> = BUILT.spawns;
 
+let activeLocation: WorldLocation = 'office';
+let parkGridCache: boolean[][] | null = null;
+
+function activeGrid(): readonly (readonly boolean[])[] {
+  return activeLocation === 'park' && parkGridCache ? parkGridCache : GRID;
+}
+
+export function setWorldLocation(loc: WorldLocation): void {
+  activeLocation = loc;
+}
+
+export function getWorldLocation(): WorldLocation {
+  return activeLocation;
+}
+
 export function isWalkable(x: number, y: number): boolean {
-  return y >= 0 && y < GRID_H && x >= 0 && x < GRID_W && GRID[y][x];
+  const g = activeGrid();
+  return y >= 0 && y < GRID_H && x >= 0 && x < GRID_W && g[y][x];
 }
 
 const WALKABLE = { width: GRID_W, height: GRID_H, isWalkable };
@@ -188,12 +206,31 @@ export const ROOMS: readonly RoomDef[] = [
   { id: 'outside', name: 'the pavement outside', rect: { x: 0, y: MAP_H, w: GRID_W, h: OUTSIDE_ROWS }, blurb: 'Outside the front door. Where everyone stands during a fire drill.' }
 ];
 
-const ROOM_BY_ID = new Map<RoomId, RoomDef>(ROOMS.map((r) => [r.id, r]));
+export const PARK_ROOMS: readonly RoomDef[] = [
+  { id: 'boss', name: 'the gazebo', rect: { x: 1, y: 3, w: 6, h: 5 }, blurb: 'A cedar gazebo Michael declared Team Building Command.' },
+  { id: 'meeting', name: 'the picnic pavilion', rect: { x: 9, y: 3, w: 9, h: 5 }, blurb: 'A covered timber pavilion with long picnic tables for group huddles.' },
+  { id: 'annex', name: 'the duck pond', rect: { x: 19, y: 3, w: 6, h: 8 }, blurb: 'A quiet duck pond with reeds, lily pads, and a short wooden dock.' },
+  { id: 'accounts', name: 'the quiet grove', rect: { x: 26, y: 3, w: 7, h: 6 }, blurb: 'Shady oak trees and park benches where people hide from team building.' },
+  { id: 'bullpen', name: 'the great lawn', rect: { x: 1, y: 11, w: 23, h: 10 }, blurb: 'Open sunlit park grass with picnic blankets, cones, and the park gate.' },
+  { id: 'kitchen', name: 'the BBQ & snack stand', rect: { x: 24, y: 11, w: 9, h: 10 }, blurb: 'Charcoal grill, checkered picnic tables, cooler chest, and hot-dog cart.' },
+  { id: 'outside', name: 'the park car park', rect: { x: 0, y: MAP_H, w: GRID_W, h: OUTSIDE_ROWS }, blurb: 'Gravel entrance path outside the park gate where the office cars are parked.' }
+];
 
-export function room(id: RoomId): RoomDef {
-  const r = ROOM_BY_ID.get(id);
+const ROOM_BY_ID = new Map<RoomId, RoomDef>(ROOMS.map((r) => [r.id, r]));
+const PARK_ROOM_BY_ID = new Map<RoomId, RoomDef>(PARK_ROOMS.map((r) => [r.id, r]));
+
+export function roomsFor(loc: WorldLocation = activeLocation): readonly RoomDef[] {
+  return loc === 'park' ? PARK_ROOMS : ROOMS;
+}
+
+export function roomInfo(id: RoomId, loc: WorldLocation = activeLocation): RoomDef {
+  const r = (loc === 'park' ? PARK_ROOM_BY_ID : ROOM_BY_ID).get(id);
   if (!r) throw new Error(`unknown room ${id}`);
   return r;
+}
+
+export function room(id: RoomId): RoomDef {
+  return roomInfo(id, activeLocation);
 }
 
 /** Which room a tile belongs to. Corridor tiles count as the room they lead down into. */
@@ -221,18 +258,23 @@ export function roomCentrePx(id: RoomId): Vec {
   return { x: q.x + q.w / 2, y: q.y + q.h / 2 };
 }
 
-const WALKABLE_BY_ROOM = new Map<RoomId, Tile[]>();
-/** Every walkable tile in a room (cached). */
+const WALKABLE_BY_LOC: Record<WorldLocation, Map<RoomId, Tile[]>> = {
+  office: new Map(),
+  park: new Map()
+};
+/** Every walkable tile in a room for the active location (cached). */
 export function walkableTilesIn(id: RoomId): readonly Tile[] {
-  let list = WALKABLE_BY_ROOM.get(id);
+  const byRoom = WALKABLE_BY_LOC[activeLocation];
+  let list = byRoom.get(id);
   if (!list) {
     list = [];
+    const g = activeGrid();
     for (let y = 0; y < GRID_H; y++) {
       for (let x = 0; x < GRID_W; x++) {
-        if (GRID[y][x] && roomAt({ x, y }) === id) list.push({ x, y });
+        if (g[y][x] && roomAt({ x, y }) === id) list.push({ x, y });
       }
     }
-    WALKABLE_BY_ROOM.set(id, list);
+    byRoom.set(id, list);
   }
   return list;
 }
@@ -389,6 +431,35 @@ function buildAnchors(): AnchorDef[] {
 
 export const ANCHORS: readonly AnchorDef[] = buildAnchors();
 const ANCHOR_BY_ID = new Map<string, AnchorDef>(ANCHORS.map((a) => [a.id, a]));
+
+function buildParkGrid(anchors: readonly AnchorDef[]): boolean[][] {
+  const g: boolean[][] = Array.from({ length: GRID_H }, () => Array<boolean>(GRID_W).fill(false));
+  for (let y = 3; y <= 20; y++) {
+    for (let x = 1; x <= 32; x++) g[y][x] = true;
+  }
+  // Park gate opening on row 21 + gravel car park rows below.
+  for (let x = 15; x <= 17; x++) g[21][x] = true;
+  for (let y = MAP_H; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) g[y][x] = true;
+  }
+  // Non-walkable visual park landmarks (pond water, pavilion table, grove trunks, gazebo posts, BBQ & snack stall).
+  for (let y = 4; y <= 6; y++) for (let x = 20; x <= 23; x++) g[y][x] = false;
+  for (let x = 11; x <= 15; x++) g[5][x] = false;
+  for (const [ox, oy] of [
+    [26, 4], [29, 3], [31, 4],
+    [1, 3], [6, 3],
+    [25, 14], [30, 13], [31, 13]
+  ] as const) {
+    g[oy][ox] = false;
+  }
+  // Ensure every named anchor stays walkable so sim navigation and spawning always work.
+  for (const a of anchors) g[a.tile.y][a.tile.x] = true;
+  sealUnreachable(g, { x: 16, y: 20 });
+  return g;
+}
+
+parkGridCache = buildParkGrid(ANCHORS);
+export const PARK_GRID: readonly (readonly boolean[])[] = parkGridCache;
 
 export function anchor(id: string): AnchorDef {
   const a = ANCHOR_BY_ID.get(id);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANCHORS, GRID_H, GRID_W, anchor, deskOf, findPath, isWalkable, roomAt, walkableTilesIn } from '@/game/core/world';
+import { ANCHORS, GRID_H, GRID_W, PARK_ROOMS, anchor, deskOf, findPath, isWalkable, roomAt, roomsFor, setWorldLocation, walkableTilesIn } from '@/game/core/world';
 import { CAST_IDS, TARGET_ROOMS } from '@/game/core/types';
 import { CAST, BOND_SEEDS } from '@/game/core/cast';
 import { CHAOS } from '@/game/core/chaos';
@@ -47,5 +47,25 @@ describe('the office map', () => {
     }
     for (const c of Object.values(CAST)) for (const h of c.haunts) expect(ANCHORS.some((a) => a.id === h), `${c.id} haunt ${h}`).toBe(true);
     expect(Object.keys(CHAOS).length).toBe(34);
+  });
+
+  it('supports Scranton Community Park zones with all anchors reachable', () => {
+    setWorldLocation('park');
+    try {
+      expect(roomsFor('park')).toEqual(PARK_ROOMS);
+      expect(PARK_ROOMS.length).toBe(7);
+      const gate = anchor('door.entrance').tile;
+      for (const r of TARGET_ROOMS) {
+        const tiles = walkableTilesIn(r);
+        expect(tiles.length, `park room ${r}`).toBeGreaterThan(5);
+        for (const t of tiles) expect(roomAt(t)).toBe(r);
+      }
+      for (const a of ANCHORS) {
+        expect(isWalkable(a.tile.x, a.tile.y), `park ${a.id}`).toBe(true);
+        expect(findPath(gate, a.tile), `park path to ${a.id}`).not.toBeNull();
+      }
+    } finally {
+      setWorldLocation('office');
+    }
   });
 });

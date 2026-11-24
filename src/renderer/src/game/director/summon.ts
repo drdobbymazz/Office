@@ -12,12 +12,12 @@ import { isCastId } from '@/game/core/types';
 import { CAST } from '@/game/core/cast';
 
 const ROOM_WORDS: [TargetRoomId, RegExp][] = [
-  ['boss', /\b(michael'?s office|the boss'?s office|boss'?s office|manager'?s office|the boss|boss)\b/i],
-  ['meeting', /\b(conference( room)?|meeting room|board ?room)\b/i],
-  ['kitchen', /\b(kitchen|break ?room|staff ?room)\b/i],
-  ['accounts', /\b(accounting|accounts|accountants'? corner)\b/i],
-  ['annex', /\bannex\b/i],
-  ['bullpen', /\b(bullpen|sales floor)\b/i]
+  ['boss', /\b(michael'?s office|the boss'?s office|boss'?s office|manager'?s office|the boss|boss|command gazebo|gazebo)\b/i],
+  ['meeting', /\b(conference( room)?|meeting room|board ?room|picnic pavilion|pavilion)\b/i],
+  ['kitchen', /\b(kitchen|break ?room|staff ?room|bbq(?: & snack stand| stand)?|barbecue|grill|snack stand|picnic tables?)\b/i],
+  ['accounts', /\b(accounting|accounts|accountants'? corner|quiet grove|shady grove|the grove|grove)\b/i],
+  ['annex', /\b(annex|duck pond|the pond|pond|wooden dock|pier)\b/i],
+  ['bullpen', /\b(bullpen|sales floor|great lawn|the lawn|lawn|meadow)\b/i]
 ];
 
 /** Asks people to go somewhere (or offers something worth going for). */

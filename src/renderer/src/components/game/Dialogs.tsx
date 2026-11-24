@@ -9,10 +9,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import gameLogo from '@/assets/logo/game-logo.png?url';
 import { PixelPanel } from '@/components/PixelPanel';
-import type { StoryUi } from '@/game/app/gameApi';
+import type { EpisodeSavedUi, StoryUi } from '@/game/app/gameApi';
 import type { EmotionId } from '@/game/core/types';
+import { EPISODES } from '@/game/story/episodes';
 import { EXTRA_INFLUENCE, STANDING } from '@/game/story/rules';
 import { STORY_TITLE } from '@/game/story/text';
+import type { EpisodeId } from '@/game/story/types';
 import { GIcon } from './icons';
 import { Btn, Head, IconTile, Label, Light, Pips, Portrait, StandingBar, standingWord } from './kit';
 import { useContent, useGame, useNow, useUi, type Viewport } from './ctx';
@@ -168,99 +170,163 @@ export function TitleCard({ vp }: { vp: Viewport }) {
   const day = useUi((s) => s.day);
   const mode = useUi((s) => s.mode);
   const saved = useUi((s) => s.storySaved);
+  const rawEpisodes = useUi((s) => s.episodes);
   const sagaSaved = useUi((s) => s.sagaSaved);
-  const [askNew, setAskNew] = useState(false);
+  const [pickingEpisodes, setPickingEpisodes] = useState(false);
+  const [askRestartEp, setAskRestartEp] = useState<EpisodeId | null>(null);
   const [askNewSaga, setAskNewSaga] = useState(false);
+  const episodes: EpisodeSavedUi[] = rawEpisodes.length
+    ? rawEpisodes
+    : EPISODES.map((ep) => ({
+        id: ep.id, number: ep.number, title: ep.title, subtitle: ep.subtitle, tagline: ep.tagline,
+        chapters: ep.chapters.length, unitLabel: ep.unitLabel, saved: ep.id === 'office' ? saved : null,
+      }));
   const side = !vp.portrait && vp.w >= 640;
   // The plate is 132 x 84 art pixels: twice that where there is room, else once.
   const logoScale = side && vp.h >= 340 ? 2 : 1;
   const faceScale = side && vp.h >= 380 ? 2 : 1;
   const go = (start: () => void) => { start(); game.goFullscreen(); };
   const rise = (i: number): React.CSSProperties => ({ animationDelay: `${120 + i * 60}ms` });
+  const anySavedEp = episodes.find((e) => e.saved);
   return (
     <div style={{ ...backdrop, background: 'rgba(26, 19, 32, 0.45)' }}>
       <div className="gu-scroll" style={{ width: side ? 'min(680px, 100%)' : 'min(420px, 100%)', maxHeight: '100%' }}>
         <PixelPanel variant="dialog" noPadding style={{ boxShadow: hardShadow }}>
-          <div style={{ display: 'flex', flexDirection: side ? 'row' : 'column', gap: side ? 18 : 10, padding: vp.h < 380 ? 12 : 16, alignItems: side ? 'center' : 'stretch' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-              <img src={gameLogo} alt="Munder Difflin, Inc. The living office" draggable={false} className="sc-drop"
-                width={132 * logoScale} height={84 * logoScale}
-                style={{ display: 'block', imageRendering: 'pixelated', boxShadow: '4px 4px 0 rgba(26, 19, 32, 0.25)' }} />
-              <div style={{ display: 'flex', gap: 2 }}>
-                {TITLE_FACES.map((id, i) => (
-                  <div key={id} className="sc-hop" style={{ animationDelay: `${200 + i * 70}ms` }}>
-                    <Portrait src={game.avatar(id)} scale={faceScale} />
-                  </div>
-                ))}
+          {pickingEpisodes ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: vp.h < 380 ? 12 : 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Btn variant="ghost" size="sm" icon="back" label="Back to title" onClick={() => { setAskRestartEp(null); setPickingEpisodes(false); }} sound="close" square />
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 13, lineHeight: '18px' }}>STORY MODE · EPISODES</span>
+                  <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>Choose an episode to start or continue</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {episodes.map((ep) => {
+                  const epSaved = ep.saved;
+                  const unitPlural = ep.chapters === 1 ? ep.unitLabel.toLowerCase() : `${ep.unitLabel.toLowerCase()}s`;
+                  return (
+                    <div key={ep.id} style={{
+                      display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-cream-50)',
+                      boxShadow: ep.id === 'park'
+                        ? 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-mint)'
+                        : 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-lemon)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, lineHeight: '14px', padding: '2px 5px 1px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
+                          EPISODE {ep.number}
+                        </span>
+                        <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 13, lineHeight: '18px' }}>{ep.title.toUpperCase()}</span>
+                        <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>{ep.subtitle} · {ep.chapters} {unitPlural}</span>
+                      </div>
+                      <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-700)' }}>{ep.tagline}</div>
+                      {epSaved && askRestartEp === ep.id ? (
+                        <Confirm
+                          text={`Restart Episode ${ep.number}: ${ep.title}? Saved progress (${ep.unitLabel} ${epSaved.chapter}, standing ${Math.round(epSaved.standing)}) is reset.`}
+                          keep="Keep it" go="Restart"
+                          onKeep={() => setAskRestartEp(null)}
+                          onGo={() => { setAskRestartEp(null); go(() => game.startStory(true, ep.id)); }}
+                        />
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <Btn variant="primary" size="md" icon="play" sound="confirm" onClick={() => go(() => game.startStory(false, ep.id))}>
+                            {epSaved ? `Continue: ${ep.unitLabel} ${epSaved.chapter}, ${epSaved.title}` : `Play Episode ${ep.number}`}
+                          </Btn>
+                          {epSaved && (
+                            <>
+                              <StandingBar value={epSaved.standing} w={48} h={9} marks={false} />
+                              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 17, lineHeight: '16px' }}>{Math.round(epSaved.standing)}</span>
+                              <span style={{ flex: 1 }} />
+                              <Btn variant="ghost" size="sm" icon="refresh" onClick={() => setAskRestartEp(ep.id)} sound="open">Restart</Btn>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
-              <p className="sc-rise" style={{ margin: 0, fontSize: 16, lineHeight: '20px', ...rise(0) }}>
-                Fifteen office workers with minds of their own. You are the unseen force that makes their day strange.
-              </p>
-              <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5, ...rise(1) }}>
-                <Btn variant="primary" size="lg" full icon="play" sound="confirm" style={{ height: 'auto', minHeight: 50, padding: '6px 14px' }}
-                  onClick={() => go(() => game.startStory())}>
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
-                    <span style={{ fontSize: 17, lineHeight: '20px' }}>{saved ? `Continue Story: Day ${saved.chapter}, ${saved.title}` : 'Play the story'}</span>
-                    <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-cream-300)' }}>
-                      {saved ? `Closing Time · ${saved.weekday} starts from the morning` : 'Closing Time: one curated week to save the branch'}
-                    </span>
-                  </span>
-                </Btn>
-                {saved && !askNew && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34 }}>
-                    <GIcon name="branch" px={16} title="Branch standing" />
-                    <StandingBar value={saved.standing} w={56} h={9} marks={false} />
-                    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px' }}>{Math.round(saved.standing)}</span>
-                    <span className="gu-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>Standing</span>
-                    <span style={{ flex: 1 }} />
-                    <Btn variant="ghost" size="sm" icon="refresh" onClick={() => setAskNew(true)} sound="open">New story</Btn>
-                  </div>
-                )}
-                {saved && askNew && (
-                  <Confirm text={`Start a new week from Monday? The saved week (Day ${saved.chapter}, standing ${Math.round(saved.standing)}) is lost.`}
-                    keep="Keep it" go="New week" onKeep={() => setAskNew(false)} onGo={() => { setAskNew(false); go(() => game.startStory(true)); }} />
-                )}
+          ) : (
+            <div style={{ display: 'flex', flexDirection: side ? 'row' : 'column', gap: side ? 18 : 10, padding: vp.h < 380 ? 12 : 16, alignItems: side ? 'center' : 'stretch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <img src={gameLogo} alt="Munder Difflin, Inc. The living office" draggable={false} className="sc-drop"
+                  width={132 * logoScale} height={84 * logoScale}
+                  style={{ display: 'block', imageRendering: 'pixelated', boxShadow: '4px 4px 0 rgba(26, 19, 32, 0.25)' }} />
+                <div style={{ display: 'flex', gap: 2 }}>
+                  {TITLE_FACES.map((id, i) => (
+                    <div key={id} className="sc-hop" style={{ animationDelay: `${200 + i * 70}ms` }}>
+                      <Portrait src={game.avatar(id)} scale={faceScale} />
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5, ...rise(2) }}>
-                <Btn variant="accent" accent="lilac" size="lg" full icon="branch" sound="confirm" style={{ height: 'auto', minHeight: 50, padding: '6px 14px' }}
-                  onClick={() => go(() => game.startSaga())}>
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
-                    <span style={{ fontSize: 17, lineHeight: '20px' }}>
-                      {sagaSaved ? `Continue Saga: S${sagaSaved.season} · ${sagaSaved.title}` : 'Endless Saga'}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+                <p className="sc-rise" style={{ margin: 0, fontSize: 16, lineHeight: '20px', ...rise(0) }}>
+                  Fifteen office workers with minds of their own. You are the unseen force that makes their day strange.
+                </p>
+                <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5, ...rise(1) }}>
+                  <Btn variant="primary" size="lg" full icon="play" sound="open" style={{ height: 'auto', minHeight: 50, padding: '6px 14px' }}
+                    onClick={() => setPickingEpisodes(true)}>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
+                      <span style={{ fontSize: 17, lineHeight: '20px' }}>Story Mode · Episodes</span>
+                      <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-cream-300)' }}>
+                        {anySavedEp
+                          ? `Continue Ep ${anySavedEp.number} (${anySavedEp.title}) · Ep 1 Office · Ep 2 Park`
+                          : 'Ep 1: Office · Ep 2: Day in the Park'}
+                      </span>
                     </span>
-                    <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-700)' }}>
-                      {sagaSaved ? `${sagaSaved.arcTitle} · ${sagaSaved.weekday}` : 'Overarching weekly arcs + full sandbox freedom'}
+                  </Btn>
+                  {anySavedEp?.saved && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 32 }}>
+                      <Btn variant="ghost" size="sm" icon="play" sound="confirm" onClick={() => go(() => game.startStory(false, anySavedEp.id))}>
+                        Continue Ep {anySavedEp.number}: {anySavedEp.unitLabel} {anySavedEp.saved.chapter}
+                      </Btn>
+                      <span style={{ flex: 1 }} />
+                      <StandingBar value={anySavedEp.saved.standing} w={48} h={9} marks={false} />
+                      <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 17, lineHeight: '16px' }}>{Math.round(anySavedEp.saved.standing)}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="sc-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5, ...rise(2) }}>
+                  <Btn variant="accent" accent="lilac" size="lg" full icon="branch" sound="confirm" style={{ height: 'auto', minHeight: 50, padding: '6px 14px' }}
+                    onClick={() => go(() => game.startSaga())}>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
+                      <span style={{ fontSize: 17, lineHeight: '20px' }}>
+                        {sagaSaved ? `Continue Saga: S${sagaSaved.season} · ${sagaSaved.title}` : 'Endless Saga'}
+                      </span>
+                      <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-ink-700)' }}>
+                        {sagaSaved ? `${sagaSaved.arcTitle} · ${sagaSaved.weekday}` : 'Overarching weekly arcs + full sandbox freedom'}
+                      </span>
                     </span>
-                  </span>
-                </Btn>
-                {sagaSaved && !askNewSaga && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34 }}>
-                    <GIcon name="branch" px={16} title="Saga branch standing" />
-                    <StandingBar value={sagaSaved.standing} w={56} h={9} marks={false} />
-                    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px' }}>{Math.round(sagaSaved.standing)}</span>
-                    <span className="gu-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>S{sagaSaved.season}</span>
-                    <span style={{ flex: 1 }} />
-                    <Btn variant="ghost" size="sm" icon="refresh" onClick={() => setAskNewSaga(true)} sound="open">New saga</Btn>
-                  </div>
-                )}
-                {sagaSaved && askNewSaga && (
-                  <Confirm text={`Start a new Endless Saga from Season 1? Current progress (Season ${sagaSaved.season}, standing ${Math.round(sagaSaved.standing)}) is reset.`}
-                    keep="Keep it" go="New saga" onKeep={() => setAskNewSaga(false)} onGo={() => { setAskNewSaga(false); go(() => game.startSaga(true)); }} />
-                )}
+                  </Btn>
+                  {sagaSaved && !askNewSaga && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34 }}>
+                      <GIcon name="branch" px={16} title="Saga branch standing" />
+                      <StandingBar value={sagaSaved.standing} w={56} h={9} marks={false} />
+                      <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 18, lineHeight: '16px' }}>{Math.round(sagaSaved.standing)}</span>
+                      <span className="gu-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>S{sagaSaved.season}</span>
+                      <span style={{ flex: 1 }} />
+                      <Btn variant="ghost" size="sm" icon="refresh" onClick={() => setAskNewSaga(true)} sound="open">New saga</Btn>
+                    </div>
+                  )}
+                  {sagaSaved && askNewSaga && (
+                    <Confirm text={`Start a new Endless Saga from Season 1? Current progress (Season ${sagaSaved.season}, standing ${Math.round(sagaSaved.standing)}) is reset.`}
+                      keep="Keep it" go="New saga" onKeep={() => setAskNewSaga(false)} onGo={() => { setAskNewSaga(false); go(() => game.startSaga(true)); }} />
+                  )}
+                </div>
+                <div className="sc-rise" style={rise(2)}>
+                  <Btn variant="secondary" size="md" full icon="powers" onClick={() => go(() => game.startSandbox())}>
+                    Sandbox
+                    <span style={{ color: 'var(--cth-ink-500)' }}>{mode === 'sandbox' && day > 1 ? `· day ${day}` : '· pure free play'}</span>
+                  </Btn>
+                </div>
+                {/* On a short screen the tip makes way for the choices. */}
+                {vp.h >= 420 && <div className="sc-rise" style={rise(3)}><RotatingTip /></div>}
+                <div className="sc-rise" style={rise(3)}><ModelLine /></div>
               </div>
-              <div className="sc-rise" style={rise(2)}>
-                <Btn variant="secondary" size="md" full icon="powers" onClick={() => go(() => game.startSandbox())}>
-                  Sandbox
-                  <span style={{ color: 'var(--cth-ink-500)' }}>{mode === 'sandbox' && day > 1 ? `· day ${day}` : '· pure free play'}</span>
-                </Btn>
-              </div>
-              {/* On a short screen the tip makes way for the choices. */}
-              {vp.h >= 420 && <div className="sc-rise" style={rise(3)}><RotatingTip /></div>}
-              <div className="sc-rise" style={rise(3)}><ModelLine /></div>
             </div>
-          </div>
+          )}
         </PixelPanel>
       </div>
     </div>
@@ -269,11 +335,11 @@ export function TitleCard({ vp }: { vp: Viewport }) {
 
 // ── Story & Saga: the chapter card ──
 
-function DayFaces({ chapter, saga, scale }: { chapter: number; saga?: StoryUi['saga']; scale: number }) {
+function DayFaces({ chapter, episodeId, saga, scale }: { chapter: number; episodeId?: EpisodeId; saga?: StoryUi['saga']; scale: number }) {
   const game = useGame();
   const pic = saga
     ? (saga.icon ? { faces: [] as { id: string; face: EmotionId }[], icon: saga.icon } : { faces: saga.faces })
-    : dayPicture(chapter);
+    : dayPicture(chapter, episodeId);
   if (pic.icon) {
     return (
       <div className="sc-hop" style={{ animationDelay: '120ms' }}>
@@ -322,39 +388,44 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
   const { hook, rest } = splitHook(story.intro);
   const type = bodyType(vp);
   const saga = story.saga;
+  const isPark = story.episodeId === 'park';
+  const unit = story.unitLabel ?? 'Day';
+  const unitUpper = unit.toUpperCase();
   const first = !saga && story.chapter === 1;
   const big = two && vp.h >= 380;
-  const picCount = saga ? saga.faces.length : dayPicture(story.chapter).faces.length;
+  const picCount = saga ? saga.faces.length : dayPicture(story.chapter, story.episodeId).faces.length;
   const n = Math.max(1, picCount);
   const scale = n <= 3 && big ? 3 : 2;
   // The picture's column: wide enough for the faces side by side at their scale.
   const col = Math.max(156, n * 18 * scale + (n - 1) * 4 + 16);
   const short = vp.h < 420;
   return (
-    <Card fit vp={vp} band={saga ? 'var(--cth-lilac)' : 'var(--cth-lemon)'}
-      head={saga ? `S${saga.season} DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}` : `DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`}
-      sub={saga ? saga.arcTitle : `Chapter ${story.chapter} of ${story.chapters}`}
+    <Card fit vp={vp} band={saga ? 'var(--cth-lilac)' : isPark ? 'var(--cth-mint)' : 'var(--cth-lemon)'}
+      head={saga ? `S${saga.season} DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}` : `${unitUpper} ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`}
+      sub={saga ? saga.arcTitle : `${unit} ${story.chapter} of ${story.chapters}`}
       footer={
         <>
           <Btn variant="ghost" size={short ? 'md' : 'lg'} icon="back" label="Back to the title" onClick={() => game.toTitle()} sound="close">Title</Btn>
           <span style={{ flex: 1 }} />
-          <Btn variant="primary" size={short ? 'md' : 'lg'} icon="arrow-right" onClick={onNext} sound="tap">Today's goal</Btn>
+          <Btn variant="primary" size={short ? 'md' : 'lg'} icon="arrow-right" onClick={onNext} sound="tap">{unit === 'Act' ? 'Act goal' : "Today's goal"}</Btn>
         </>
       }>
       <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: two ? 'row' : 'column', gap: 16, padding: two ? '12px 0 0 16px' : '10px 0 0 12px', minWidth: 0 }}>
         {two && (
           <div style={{ width: col, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 12 }}>
-            <DayFaces chapter={story.chapter} saga={saga} scale={scale} />
+            <DayFaces chapter={story.chapter} episodeId={story.episodeId} saga={saga} scale={scale} />
           </div>
         )}
         <ScrollArea style={{ flex: '1 1 auto' }} inner={{ gap: 10, padding: two ? '0 16px 14px 0' : '0 12px 14px 0' }}>
           {first && (
-            // A new week starts here: the story's own title, before the day's.
+            // A new episode starts here: its title banner before chapter 1.
             <div className="sc-drop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '16px', padding: '4px 6px 2px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
-                {STORY_TITLE.toUpperCase()}
+                {(isPark ? (story.episodeName ?? 'DAY IN THE PARK') : STORY_TITLE).toUpperCase()}
               </span>
-              <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>A story in five days, Monday to Friday</span>
+              <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>
+                {isPark ? 'An outdoor outing in three acts' : 'A story in five days, Monday to Friday'}
+              </span>
             </div>
           )}
           {saga && (
@@ -373,7 +444,7 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
           <h2 className="sc-drop" style={{ margin: 0, fontFamily: 'var(--cth-font-display)', fontWeight: 400, fontSize: big ? 24 : 16, lineHeight: big ? '32px' : '24px', flexShrink: 0 }}>
             {story.title.toUpperCase()}
           </h2>
-          {!two && <div style={{ flexShrink: 0 }}><DayFaces chapter={story.chapter} saga={saga} scale={2} /></div>}
+          {!two && <div style={{ flexShrink: 0 }}><DayFaces chapter={story.chapter} episodeId={story.episodeId} saga={saga} scale={2} /></div>}
           {story.recap && (
             <div className="sc-rise" style={{
               display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 10px 6px 12px', background: 'var(--cth-cream-100)', flexShrink: 0,
@@ -467,17 +538,20 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
     </>
   );
   const saga = story.saga;
+  const unit = story.unitLabel ?? 'Day';
+  const unitLower = unit.toLowerCase();
+  const isPark = story.episodeId === 'park';
   return (
-    <Card vp={vp} band={saga ? 'var(--cth-lilac)' : 'var(--cth-lemon)'}
-      head={saga ? `S${saga.season} · ${story.title.toUpperCase()}` : `DAY ${story.chapter} · ${story.title.toUpperCase()}`}
-      sub={saga ? `${saga.arcTitle} · Day ${story.chapter}` : `Chapter ${story.chapter} of ${story.chapters}`}
+    <Card vp={vp} band={saga ? 'var(--cth-lilac)' : isPark ? 'var(--cth-mint)' : 'var(--cth-lemon)'}
+      head={saga ? `S${saga.season} · ${story.title.toUpperCase()}` : `${unit.toUpperCase()} ${story.chapter} · ${story.title.toUpperCase()}`}
+      sub={saga ? `${saga.arcTitle} · Day ${story.chapter}` : `${unit} ${story.chapter} of ${story.chapters}`}
       footer={
         <>
           <FooterMeters story={story} vp={vp} />
           <span style={{ flex: 1 }} />
           <span style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
             <Btn variant="ghost" size={short ? 'md' : 'lg'} icon="back" label="Back to the story" onClick={onBack} sound="close" square />
-            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => { game.beginChapter(); game.goFullscreen(); }}>Start the day</Btn>
+            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => { game.beginChapter(); game.goFullscreen(); }}>Start the {unitLower}</Btn>
           </span>
         </>
       }>
@@ -517,8 +591,8 @@ function FooterMeters({ story, vp }: { story: StoryUi; vp: Viewport }) {
           </div>
         </div>
       )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} title={`Branch standing ${Math.round(story.standing)} of 100`}>
-        <Label>Standing</Label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} title={`${story.standingLabel ?? 'Branch standing'} ${Math.round(story.standing)} of 100`}>
+        <Label>{story.standingLabel ?? 'Standing'}</Label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 20 }}>
           <GIcon name="branch" px={16} />
           <StandingBar value={story.standing} w={52} h={10} />
@@ -526,7 +600,7 @@ function FooterMeters({ story, vp }: { story: StoryUi; vp: Viewport }) {
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: 150 }}>
-        <Label>The week</Label>
+        <Label>{story.episodeId === 'park' ? 'The outing' : 'The week'}</Label>
         <WeekStrip week={story.week} current={story.chapter} compact />
       </div>
     </div>
@@ -728,7 +802,9 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
   const short = vp.h < 420;
   const delta = Math.round(result.standingAfter - result.standingBefore);
   const go = (p: number) => { if (p !== page) { game.uiSound('card'); setPage(p); } };
-  const act = reportActions(won, lastDay);
+  const unit = story.unitLabel ?? 'Day';
+  const unitLower = unit.toLowerCase();
+  const act = reportActions(won, lastDay, unit);
   const nextLabel = story.saga && lastDay ? 'See season finale' : act.nextLabel;
   const retry = () => {
     if (act.confirmRetry) { setAskRetry(true); return; }
@@ -736,7 +812,7 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
   };
   const size = short ? 'md' : 'lg';
   const buttons = askRetry ? (
-    <Confirm text={`Play ${story.weekday} again from the morning? Today's win and its ${delta >= 0 ? '+' : ''}${delta} standing are undone until you win it again.`}
+    <Confirm text={`Play ${story.weekday} again from the start? This ${unitLower}'s win and its ${delta >= 0 ? '+' : ''}${delta} standing are undone until you win it again.`}
       keep="Keep the win" go="Play it again" danger={false}
       onKeep={() => setAskRetry(false)} onGo={() => { setAskRetry(false); game.retryDay(); }} />
   ) : (
@@ -744,7 +820,7 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
       {act.lead === 'next' ? (
         <>
           <Btn variant="secondary" size={size} icon="refresh" onClick={retry} style={{ flexShrink: 1, minWidth: 0 }}>
-            {vp.w < 560 ? 'Again' : 'Try the day again'}
+            {vp.w < 560 ? 'Again' : `Try the ${unitLower} again`}
           </Btn>
           <Btn variant="primary" size={size} icon="arrow-right" sound="confirm" onClick={() => game.nextDay()} style={{ flexShrink: 1, minWidth: 0 }}>{nextLabel}</Btn>
         </>
@@ -754,15 +830,15 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
           <Btn variant="secondary" size={size} icon="arrow-right" onClick={() => game.nextDay()} style={{ flexShrink: 1, minWidth: 0 }}>
             {vp.w < 560 && !lastDay ? 'Move on' : nextLabel}
           </Btn>
-          <Btn variant="primary" size={size} icon="play" sound="confirm" onClick={retry} style={{ flexShrink: 1, minWidth: 0 }}>Try the day again</Btn>
+          <Btn variant="primary" size={size} icon="play" sound="confirm" onClick={retry} style={{ flexShrink: 1, minWidth: 0 }}>Try the {unitLower} again</Btn>
         </>
       )}
     </span>
   );
   return (
-    <Card vp={vp} band={story.saga ? 'var(--cth-lilac)' : 'var(--cth-lemon)'}
-      head={story.saga ? `S${story.saga.season} · DAY ${story.chapter} · ${story.weekday.toUpperCase()}` : `DAY ${r.day} · ${story.weekday.toUpperCase()}`}
-      sub={story.saga ? story.saga.arcTitle : 'End of day report'}
+    <Card vp={vp} band={story.saga ? 'var(--cth-lilac)' : story.episodeId === 'park' ? 'var(--cth-mint)' : 'var(--cth-lemon)'}
+      head={story.saga ? `S${story.saga.season} · DAY ${story.chapter} · ${story.weekday.toUpperCase()}` : `${unit.toUpperCase()} ${story.chapter} · ${story.weekday.toUpperCase()}`}
+      sub={story.saga ? story.saga.arcTitle : `End of ${unitLower} report`}
       footer={
         <>
           {!askRetry && (
@@ -899,6 +975,36 @@ function ChangeRow({ text, delta }: { text: string; delta: number }) {
 const ENDING_ACCENT: Record<'saved' | 'scraped' | 'closed', string> = { saved: 'var(--cth-mint)', scraped: 'var(--cth-lemon)', closed: 'var(--cth-coral)' };
 const ENDING_FACE: Record<'saved' | 'scraped' | 'closed', EmotionId> = { saved: 'happy', scraped: 'nervous', closed: 'sad' };
 
+/** Live Office -> Park bridge cinematic banner & skip control. */
+export function IntroSkip() {
+  const game = useGame();
+  const intro = useUi((s) => s.intro);
+  if (!intro) return null;
+  return (
+    <>
+      <div style={{
+        position: 'absolute', left: '50%', top: 'max(10px, env(safe-area-inset-top))', transform: 'translateX(-50%)',
+        maxWidth: 'min(520px, calc(100% - 24px))', zIndex: 20, pointerEvents: 'none',
+        padding: '7px 12px', background: 'var(--cth-cream-50)', boxShadow: hardShadow,
+        display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center', textAlign: 'center',
+      }}>
+        <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, lineHeight: '12px', color: 'var(--cth-ink-500)' }}>
+          EPISODE 2 · DAY IN THE PARK
+        </span>
+        <span style={{ fontSize: 15, lineHeight: '19px', color: 'var(--cth-ink-900)' }}>{intro.caption}</span>
+        <div style={{ width: '100%', maxWidth: 260, height: 4, background: 'var(--cth-cream-300)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' }}>
+          <div style={{ width: `${Math.round(intro.progress * 100)}%`, height: '100%', background: 'var(--cth-mint)' }} />
+        </div>
+      </div>
+      {intro.canSkip && (
+        <div style={{ position: 'absolute', right: 'max(12px, env(safe-area-inset-right))', bottom: 'max(12px, env(safe-area-inset-bottom))', zIndex: 20, pointerEvents: 'auto' }}>
+          <Btn variant="secondary" size="md" icon="ff" onClick={() => game.skipIntro()} sound="tap">Skip intro</Btn>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** While the week's last scene plays on the floor: only a way to skip it. */
 export function FinaleSkip() {
   const game = useGame();
@@ -923,6 +1029,9 @@ export function EndingCard({ vp }: { vp: Viewport }) {
   if (!story || !story.ending) return null;
   const e = story.ending;
   const saga = story.saga;
+  const isPark = story.episodeId === 'park';
+  const unitLower = (story.unitLabel ?? 'Day').toLowerCase();
+  const epId = story.episodeId ?? 'office';
   const two = !vp.portrait && vp.w >= 700;
   const short = vp.h < 420;
   const type = bodyType(vp);
@@ -952,16 +1061,16 @@ export function EndingCard({ vp }: { vp: Viewport }) {
     <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8, width: two ? undefined : '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <GIcon name="branch" px={16} />
-        <Label style={{ flex: 1 }}>Final standing</Label>
+        <Label style={{ flex: 1 }}>{story.standingLabel ?? 'Final standing'}</Label>
         <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 34, lineHeight: '24px', color: 'var(--cth-ink-900)' }}>{Math.round(story.standing)}</span>
       </div>
       <StandingBar value={story.standing} h={16} />
       <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-        {STANDING_NOTE}. {MARKS_NOTE}
+        {story.standingNote ?? `${STANDING_NOTE}. ${MARKS_NOTE}`}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-        <Label style={{ flex: 1 }}>{saga ? `Season ${saga.season}` : 'The week'}</Label>
-        <span style={{ fontSize: 13, color: 'var(--cth-ink-700)' }}>{won} of {story.week.length} days won</span>
+        <Label style={{ flex: 1 }}>{saga ? `Season ${saga.season}` : isPark ? 'The outing' : 'The week'}</Label>
+        <span style={{ fontSize: 13, color: 'var(--cth-ink-700)' }}>{won} of {story.week.length} {unitLower}s won</span>
       </div>
       <WeekStrip week={story.week} titles />
       {saga && saga.history.length > 0 && (
@@ -980,8 +1089,8 @@ export function EndingCard({ vp }: { vp: Viewport }) {
   );
   return (
     <Card vp={vp} band={ENDING_ACCENT[e.id]}
-      head={saga ? `SEASON ${saga.season} FINALE` : 'FRIDAY, 17:00'}
-      sub={saga ? saga.arcTitle : 'The week is over'}
+      head={saga ? `SEASON ${saga.season} FINALE` : isPark ? 'LATE AFTERNOON' : 'FRIDAY, 17:00'}
+      sub={saga ? saga.arcTitle : isPark ? 'Outing complete' : 'The week is over'}
       footer={
         <>
           <Btn variant="secondary" size={short ? 'md' : 'lg'} icon="back" onClick={() => game.toTitle()} sound="close" style={{ flexShrink: 1, minWidth: 0 }}>
@@ -997,10 +1106,19 @@ export function EndingCard({ vp }: { vp: Viewport }) {
             <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.nextSeason()} style={{ flexShrink: 1, minWidth: 0 }}>
               Start Season {saga.season + 1}
             </Btn>
-          ) : (
-            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.startStory(true)} style={{ flexShrink: 1, minWidth: 0 }}>
+          ) : isPark ? (
+            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.startStory(true, 'park')} style={{ flexShrink: 1, minWidth: 0 }}>
               Play again
             </Btn>
+          ) : (
+            <span style={{ display: 'flex', gap: 6, flexShrink: 1, minWidth: 0 }}>
+              <Btn variant="secondary" size={short ? 'md' : 'lg'} icon="refresh" sound="confirm" onClick={() => game.startStory(true, epId)} style={{ flexShrink: 1, minWidth: 0 }}>
+                Play again
+              </Btn>
+              <Btn variant="primary" size={short ? 'md' : 'lg'} icon="arrow-right" sound="confirm" onClick={() => game.startStory(true, 'park')} style={{ flexShrink: 1, minWidth: 0 }}>
+                Next: Day in the Park
+              </Btn>
+            </span>
           )}
         </>
       }>

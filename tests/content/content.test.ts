@@ -127,8 +127,8 @@ describe('voice banks', () => {
 });
 
 describe('visitor voices', () => {
-  it('Mr Figgis and the inspector have voices, handed to the brain with the staff', () => {
-    expect(Object.keys(VISITOR_VOICES).sort()).toEqual(['visitor:figgis', 'visitor:inspector']);
+  it('Mr Figgis, the inspector and Ranger Miller have voices, handed to the brain with the staff', () => {
+    expect(Object.keys(VISITOR_VOICES).sort()).toEqual(['visitor:figgis', 'visitor:inspector', 'visitor:ranger']);
     for (const [id, v] of Object.entries(VISITOR_VOICES)) {
       expect((VOICES as Record<string, unknown>)[id]).toBe(v.bank);
       expect(v.speech.trim().length).toBeGreaterThan(10);
