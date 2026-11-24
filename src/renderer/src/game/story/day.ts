@@ -313,6 +313,19 @@ export class StoryDay {
     return !!this.run.pinned?.(who);
   }
 
+  /** A time worth skipping ahead to (at least a quarter of an hour off), while the day's job is still open; else null. */
+  nextBeat(): number | null {
+    if (this.disposed || this.resolvedAt5 || this.mainState !== 'open') return null;
+    // Not before everyone is in and the morning's opening captions have been shown.
+    if (this.sim.clock < 9 * 60 + 5) return null;
+    try {
+      const t = this.run.nextBeat?.();
+      return typeof t === 'number' && Number.isFinite(t) && t - this.sim.clock >= 15 && t < FIVE ? t : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** How long people summoned to a room wait there today (sim seconds), or undefined for the usual. */
   summonStay(room: RoomId): number | undefined {
     if (this.disposed || this.resolvedAt5) return undefined;

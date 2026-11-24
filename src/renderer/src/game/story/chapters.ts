@@ -438,6 +438,14 @@ class MemoRun implements ChapterRun {
     return who === 'michael' && this.holds();
   }
 
+  /** Quiet stretches: before Creed goes to the bin, and from then until half an hour before the call window. */
+  nextBeat(): number | null {
+    const clock = this.c.sim.clock;
+    if (this.bin === 'waiting' && clock < BIN_AT - 5) return BIN_AT - 5;
+    if (this.bin !== 'going' && this.bin !== 'searching' && clock < DAY(13, 30)) return DAY(13, 30);
+    return null;
+  }
+
   topics(): string[] {
     if (this.c.main() !== 'open') return [MEMO.closure];
     const out: string[] = [];
@@ -884,6 +892,11 @@ class ClientRun implements ChapterRun {
     // Michael's idea of a welcome: balloons by the front door (and a line saying whose idea they were).
     this.c.sim.addEffect({ id: BALLOONS_FX, kind: 'balloons', room: 'bullpen', count: 5 });
     this.c.after(16, () => this.c.sim.narrate(CLIENT.balloons, { beat: true, icon: 'party', room: 'bullpen' }));
+  }
+
+  /** Nothing happens until Mr Figgis walks in at 10:30. */
+  nextBeat(): number | null {
+    return !this.spawned && this.c.sim.clock < DAY(10, 25) ? DAY(10, 25) : null;
   }
 
   private figgis(): SimPerson | undefined {
@@ -2270,6 +2283,11 @@ class VerdictRun implements ChapterRun {
     if (!this.started) return { progress: 0, status: VERDICT.before };
     const done = this.scores.filter((v) => v !== null).length;
     return { progress: done / 3, status: VERDICT.stop(Math.min(3, done + 1)) };
+  }
+
+  /** The morning is quiet until just before the tour's troubles start at half past twelve. */
+  nextBeat(): number | null {
+    return !this.started && this.c.sim.clock < DAY(12, 25) ? DAY(12, 25) : null;
   }
 
   /** Nothing left to change, unless Michael's speech after the tour is still to come. */

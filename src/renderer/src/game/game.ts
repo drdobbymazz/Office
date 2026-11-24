@@ -110,6 +110,15 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   const today = (): StoryDay | null => day;
   /** finishDay: the rest of the day runs at FINISH_SPEED with no new scenes, voices or banners. */
   let finishing = false;
+  /** Skipping ahead in a story day: the clock time to stop at (finishing is true meanwhile). */
+  let skipUntil: number | null = null;
+  /** Back to normal play after a skip (it reached its time, or something happened on the way). */
+  const stopSkip = (): void => {
+    if (skipUntil === null) return;
+    skipUntil = null;
+    finishing = false;
+    store.setState({ finishing: false, skippingTo: null, speed: 1 });
+  };
   /** A story/saga day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
   let holdDayStart = false;
   /** The week's last scene, playing on the floor while UiState.finale is true. */
@@ -232,6 +241,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       if (item.kind === 'say') linesToday += 1;
       // Story & Saga narration worth seeing on the floor, not only in the Log.
       // A story moment that needs the player (Mr Figgis walking in) brings the game back to normal speed.
+      // Something worth seeing happened while skipping ahead: the skip ends here.
+      if (item.beat && skipUntil !== null) stopSkip();
       if (item.slow && (mode === 'story' || mode === 'saga') && !finishing && get().speed > 1) {
         set({ speed: 1 });
         toast('Back to normal speed: this needs you.', 'info', 'ff');
@@ -402,8 +413,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       saga.finishDay(activeSagaDay, sim.serialize());
       set({ sagaSaved: Saga.peek(browserStore) });
     }
+    skipUntil = null;
     finishing = false;
-    set({ phase: 'report', report: base, caption: null, beat: null, finishing: false });
+    set({ phase: 'report', report: base, caption: null, beat: null, finishing: false, skippingTo: null });
     pushStory();
     const storyResult =
       mode === 'story' && story ? story.result
@@ -523,8 +535,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     sagaDay?.dispose();
     sagaDay = null;
     feedBuffer = [];
+    skipUntil = null;
     finishing = false;
-    set({ feed: [], beat: null, ceremony: null, finishing: false });
+    set({ feed: [], beat: null, ceremony: null, finishing: false, skippingTo: null });
     holdDayStart = true;
   }
 
@@ -750,6 +763,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
         } else if (finale) finaleScene?.update(dt);
       }
       if (finale && finaleScene?.done) endFinale();
+      if (skipUntil !== null && (sim.clock >= skipUntil || s.phase !== 'playing')) stopSkip();
     }
     input.update(real);
     floor.render(sim.frame(), simDt, real);
@@ -1013,8 +1027,20 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     skipFinale() {
       if (get().phase === 'ending' && get().finale) endFinale();
     },
+    skipAhead() {
+      if (mode !== 'story' || !day || get().phase !== 'playing' || finishing) return;
+      const t = day.nextBeat();
+      if (t === null) return;
+      skipUntil = t;
+      finishing = true;
+      select(null);
+      beginTargeting(null);
+      set({ finishing: true, skippingTo: t, paused: false, caption: null });
+      audio.sfx('whoosh');
+    },
     finishDay() {
       const activeDay = mode === 'story' && story ? day : mode === 'saga' && saga ? sagaDay : null;
+      if (skipUntil !== null) stopSkip();
       if (!activeDay || get().phase !== 'playing' || finishing) return;
       if (!activeDay.settled) return;
       finishing = true;
@@ -1032,6 +1058,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       pushUi();
     },
     toTitle() {
+      skipUntil = null;
       finishing = false;
       finaleScene = null;
       set({ finishing: false, beat: null, ceremony: null, finale: false });

@@ -134,6 +134,11 @@ export interface ChapterRun {
   pinned?(who: CharId): boolean;
   /** How long (sim seconds) people an announcement sends to this room wait there today; undefined for the usual. */
   summonStay?(room: RoomId): number | undefined;
+  /**
+   * The next time of day (clock minutes) worth being at normal speed for, when nothing that needs
+   * the player happens before it: the player may skip ahead to it. Null when there is nothing to skip to.
+   */
+  nextBeat?(): number | null;
   /** What the office is talking about right now (plain sentences); small talk picks from these. */
   topics?(): string[];
   /** Side effects to warn about before the player confirms an action ("Using a power fails Quiet hands"). */

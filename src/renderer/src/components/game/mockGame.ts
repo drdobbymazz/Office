@@ -558,6 +558,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       results[run.chapter - 1] = null;
       toBriefing(run.chapter, results);
     },
+    skipAhead() {
+      // The mock has no day to run.
+    },
     skipFinale() {
       store.setState({ finale: false });
     },

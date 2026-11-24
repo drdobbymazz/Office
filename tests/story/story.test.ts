@@ -269,3 +269,34 @@ describe('the ending', () => {
     expect(scene.done).toBe(true);
   });
 });
+
+describe('skipping ahead through a quiet stretch', () => {
+  it('each day says when the player is next needed, and never offers a skip of under a quarter of an hour', async () => {
+    // Monday: until just before Creed goes to the bin, then until half an hour before the call window.
+    const mon = play(storyAt(1, 21));
+    await mon.toClock(9, 10);
+    expect(mon.day.nextBeat()).toBe(10 * 60 + 15);
+    await mon.toClock(10, 5);
+    expect(mon.day.nextBeat()).toBeNull();
+    await mon.toClock(11, 30);
+    expect(mon.day.nextBeat()).toBe(13 * 60 + 30);
+    await mon.toClock(13, 40);
+    expect(mon.day.nextBeat()).toBeNull();
+    // Tuesday is the player's to drive from the start: nothing to skip to.
+    const tue = play(storyAt(2, 31));
+    await tue.toClock(9, 10);
+    expect(tue.day.nextBeat()).toBeNull();
+    // Wednesday: until Mr Figgis is about to walk in.
+    const wed = play(storyAt(3, 41));
+    await wed.toClock(9, 10);
+    expect(wed.day.nextBeat()).toBe(10 * 60 + 25);
+    await wed.toClock(10, 40);
+    expect(wed.day.nextBeat()).toBeNull();
+    // Friday: until just before the tour's troubles begin.
+    const fri = play(storyAt(5, 51));
+    await fri.toClock(9, 30);
+    expect(fri.day.nextBeat()).toBe(12 * 60 + 25);
+    await fri.toClock(12, 40);
+    expect(fri.day.nextBeat()).toBeNull();
+  });
+});

@@ -384,6 +384,7 @@ export class Story {
       help: (this.state.tries[def.chapter - 1] ?? 0) > 0 ? [...(def.help ?? [])] : [],
       warns: day ? day.warnsUi() : {},
       ...this.suggestUi(def),
+      skipTo: day && this.state.stage === 'day' ? day.nextBeat() : null,
       canFinish: !!day && this.state.stage === 'day' && day.settled
     };
   }

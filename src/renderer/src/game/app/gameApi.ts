@@ -110,6 +110,8 @@ export interface StoryUi {
   suggestFor?: Partial<Record<string, string[]>>;
   /** Today's main goal is settled and nothing left today changes the result: the player may finish the day now. */
   canFinish: boolean;
+  /** Nothing needs the player until this time of day (clock minutes): they may skip ahead to it. Null otherwise. */
+  skipTo?: number | null;
   /** Endless Saga metadata when running in `mode === 'saga'`; undefined in Classic Story mode. */
   saga?: {
     season: number;
@@ -348,8 +350,10 @@ export interface UiState {
   beat: BeatUi | null;
   /** The newest big moment to stamp on screen, or null. Replaced by the next one. */
   ceremony: CeremonyUi | null;
-  /** The rest of the day is being run quickly to five o'clock (after finishDay). */
+  /** The rest of the day is being run quickly to five o'clock (after finishDay), or the day is skipping ahead. */
   finishing: boolean;
+  /** While skipping ahead: the time of day (clock minutes) being skipped to. Null otherwise. */
+  skippingTo?: number | null;
   /** Story mode, phase 'ending': the week's last scene is playing on the floor; the ending card waits until it is over. */
   finale: boolean;
 }
@@ -401,6 +405,8 @@ export interface GameApi {
   retryDay(): void;
   /** Story mode, when StoryUi.canFinish: run the rest of the day quickly to five o'clock and the report. */
   finishDay(): void;
+  /** Story mode, when StoryUi.skipTo is set: run quickly to that time (it stops early if something happens). */
+  skipAhead(): void;
   /** Story mode, during the finale: stop the last scene and show the ending card now. */
   skipFinale(): void;
   /** Story mode, when allowed (StoryUi.accuse): name someone. */

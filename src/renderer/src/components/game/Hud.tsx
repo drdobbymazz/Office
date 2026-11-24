@@ -227,15 +227,19 @@ export function MissionChip({ left, onOpen }: { left: string; onOpen: () => void
   const g = useUi((st) => st.story?.goal ?? null);
   const canFinish = useUi((st) => !!st.story?.canFinish);
   const finishing = useUi((st) => st.finishing);
+  const skipTo = useUi((st) => st.story?.skipTo ?? null);
+  const skippingTo = useUi((st) => st.skippingTo ?? null);
   const { pressed, handlers } = usePress();
   if (!g) return null;
   const lost = g.state === 'lost';
   const settled = canFinish && !finishing;
-  const text = finishing ? "Running to five o'clock..." : g.status || g.title;
+  // Nothing needs the player for a while: one tap runs the office quickly to the next moment that does.
+  const canSkip = !settled && !finishing && skipTo !== null && g.state === 'open';
+  const text = skippingTo !== null ? `Skipping to ${formatClock(skippingTo)}...` : finishing ? "Running to five o'clock..." : g.status || g.title;
   return (
     <div data-avoid style={{
       position: 'absolute', top: CHIP_TOP, left, width: STRIP_W, height: CHIP_H, display: 'flex', alignItems: 'center', gap: 4,
-      paddingRight: settled ? 4 : 0, ...chipPanel,
+      paddingRight: settled || canSkip ? 4 : 0, ...chipPanel,
       boxShadow: pressed ? 'var(--cth-panel-border), 2px 2px 0 rgba(26, 19, 32, 0.25)' : chipPanel.boxShadow,
       transform: pressed ? 'translate(2px, 2px)' : 'none'
     }}>
@@ -252,6 +256,7 @@ export function MissionChip({ left, onOpen }: { left: string; onOpen: () => void
           {g.state === 'open' && g.progress > 0 && !finishing && <Bar value={g.progress} color="var(--cth-peach)" h={6} segments={10} />}
         </span>
       </button>
+      {canSkip && <RowBtn icon="ff" label={formatClock(skipTo!)} title={`Skip ahead to ${formatClock(skipTo!)}: nothing needs you before then`} onClick={() => game.skipAhead()} />}
       {settled && lost && <RowBtn label="Try again" title="Try the day again now" onClick={() => game.retryDay()} />}
       {settled && <RowBtn icon="ff" label={lost ? 'Finish' : 'Finish the day'} title="Finish the day: run quickly to five o'clock and the report" primary onClick={() => game.finishDay()} />}
     </div>
