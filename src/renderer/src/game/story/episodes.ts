@@ -2,6 +2,8 @@ import { displayName } from '@/game/core/cast';
 import type { CastId } from '@/game/core/types';
 import type { WorldLocation } from '@/game/core/world';
 import { CHAPTER_DEFS, weekFacts } from './chapters';
+import { HEIST_CHAPTER_DEFS, heistWeekFacts } from './heistChapters';
+import { HEIST_ENDING_RULE, HEIST_META, heistEndingText, heistEpilogueLines } from './heistText';
 import { PARK_CHAPTER_DEFS, parkWeekFacts } from './parkChapters';
 import { PARK_ENDING_RULE, PARK_EPISODE_META, parkEndingText, parkEpilogueLines } from './parkText';
 import { ENDING, STANDING_START, endingFor, type EndingId } from './rules';
@@ -49,6 +51,8 @@ export interface EpisodeDef {
   /** The last report's button to the ending. */
   readonly endNextLabel: string;
   readonly chapters: readonly ChapterDef[];
+  /** The simulation's day number for chapter 1 (the clock shows its weekday). Default 1, a Monday. */
+  readonly firstDay?: number;
   readonly weekFacts: (notes: WeekNotes, chapter: number) => [string, string][];
   /** Which ending the episode earns. `notes` lets an episode decide by what happened, not only by the number. */
   readonly endingFor: (standing: number, lastWon: boolean, notes?: WeekNotes) => EndingId;
@@ -143,8 +147,53 @@ export const PARK_EPISODE: EpisodeDef = {
   },
 };
 
+/**
+ * Episode 3's ending: what happened decides first, then Cover. The wrong tape at the screening is
+ * always caught; the right tape with two or more talkers is decided by Cover (under 40 closed);
+ * Friday won is a clean getaway with 60 or more and a near thing below.
+ */
+export function heistEndingFor(standing: number, lastWon: boolean, notes?: WeekNotes): EndingId {
+  if (!lastWon) {
+    if (!notes?.heistSwitched) return 'closed';
+    return standing < 40 ? 'closed' : 'scraped';
+  }
+  return standing >= 60 ? 'saved' : 'scraped';
+}
+
+export const HEIST_EPISODE: EpisodeDef = {
+  id: 'heist',
+  number: 3,
+  title: HEIST_META.title,
+  subtitle: HEIST_META.subtitle,
+  tagline: HEIST_META.tagline,
+  location: 'office',
+  hasIntro: true,
+  unitLabel: HEIST_META.unitLabel,
+  standingLabel: HEIST_META.standingLabel,
+  standingNote: HEIST_META.standingNote,
+  endingRule: HEIST_ENDING_RULE,
+  standingStart: STANDING_START,
+  stateKey: 'story.heist.state.v1',
+  worldKey: 'story.heist.world.v1',
+  blurb: HEIST_META.blurb,
+  spanLabel: HEIST_META.spanLabel,
+  band: 'var(--cth-coral)',
+  endHead: HEIST_META.endHead,
+  endSub: HEIST_META.endSub,
+  endNextLabel: HEIST_META.endNextLabel,
+  chapters: HEIST_CHAPTER_DEFS,
+  firstDay: 3,
+  weekFacts: heistWeekFacts,
+  endingFor: heistEndingFor,
+  buildEnding: (standing, lastWon, notes) => {
+    const id = heistEndingFor(standing, lastWon, notes);
+    const t = heistEndingText(id, notes);
+    return { id, title: t.title, text: t.text, epilogue: heistEpilogueLines(id, notes) };
+  },
+};
+
 /** Every episode, in play order. Adding one here is all the title screen and the saves need. */
-export const EPISODES: readonly EpisodeDef[] = [OFFICE_EPISODE, PARK_EPISODE];
+export const EPISODES: readonly EpisodeDef[] = [OFFICE_EPISODE, PARK_EPISODE, HEIST_EPISODE];
 
 export function episodeById(id: EpisodeId): EpisodeDef {
   return EPISODES.find((e) => e.id === id) ?? OFFICE_EPISODE;

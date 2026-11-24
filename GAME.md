@@ -84,6 +84,25 @@ While you play:
 The story saves itself separately from the sandbox. Announcements that name a room send people there, and
 people you drop stay put for a while: both work in the sandbox too.
 
+### Episode 3: Inside Job
+
+A caper in the ordinary office, Wednesday to Friday. Michael posted Corporate the wrong tape for its "Why
+Scranton" video: the one where he practises firing the vice president. Ms Vane from Corporate keeps it in a
+locked briefcase in the conference room, and on Friday at two the vice president watches it by video link.
+A short opening scene plays first (skippable). The number to watch is **Cover**, which starts at 40 and moves
+like Branch Standing.
+
+| Day | Chapter | The job | How it works |
+|---|---|---|---|
+| Wednesday | The Combination | Learn the lock's three numbers before five. | Ms Vane opens the case at about 10:15 (break room), 11:45 (conference room), 13:30 (copier in the annex) and 15:00 (Michael's office). Exactly one person standing close to her sees a number; two or more and she turns her back; the same person twice is "caught hovering". Michael never counts. Truth Serum on her makes her read the next number out loud. |
+| Thursday | The Switch | Swap the tapes before five. | Michael starts with the right tape. Drop someone beside the holder (or whisper to them to take the tape) to pass it on. She leaves the room at about 10:30, 12:30 and 14:30; the holder must stand beside the case, with at most one other person in the room, for 10 seconds with the code or 26 without (Dwight and Creed are quicker, Kevin and Michael slower, espresso helps). Someone you put next to her when she turns back keeps her talking 13 seconds more. Caught at it twice and the case goes to her hotel. Extra: take the wrong tape into the annex to shred it. |
+| Friday | The Screening | The right tape plays at 14:00 and no more than one person talks. | She questions five people (09:45, 10:45, 11:45, 12:45, 13:20, Michael last); the Log names each a few minutes ahead. Nervous, scared, sad or grumpy people talk, and so do weak nerves unless whispered to or in a good mood. Carry the one she wants away and she settles for whoever is nearest her. If Thursday failed, the switch is still possible while she is out questioning. |
+
+After Friday: the wrong tape playing ends the job badly whatever the Cover. The right tape with at most one
+talker is a clean getaway with Cover 60 or more and a near thing below that. The right tape with two or more
+talkers is a near thing with Cover 40 or more and the whole story out below that. The tuning numbers sit at
+the top of each day in `story/heistChapters.ts`; all the words are in `story/heistText.ts`.
+
 ### Touch controls
 
 | Gesture | What it does |

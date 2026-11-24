@@ -1,5 +1,5 @@
-// Visitors who matter to the story: Mr Figgis (Wednesday's client) and the inspector from
-// Corporate (Friday). Each has a small bank for the no-model brain, plus how they talk and a few
+// Visitors who matter to the story: Mr Figgis (Wednesday's client), the inspector from
+// Corporate (Friday), Ranger Miller (Episode 2) and Ms Vane (Episode 3). Each has a small bank for the no-model brain, plus how they talk and a few
 // example lines for the model's prompt. Anything missing falls back to the generic voice.
 import type { VisitorVoice } from '../types';
 
@@ -196,9 +196,75 @@ export const ranger: VisitorVoice = {
   }
 };
 
+/** Ms Vane from Corporate Communications: brisk, polite, misses nothing, never lets go of her case. */
+export const vane: VisitorVoice = {
+  speech: 'Brisk and polite. Short questions. Notices everything and says so, kindly.',
+  examples: ['Good morning. Please carry on as normal.', 'Nobody touches this case.', 'Interesting. Thank you very much.'],
+  bank: {
+    story: {
+      inspection: [
+        'I am only here until Friday. Please carry on as normal.',
+        'Corporate asked for a short video. I am making sure it arrives safely.',
+        'The case stays with me. That is all anyone needs to know.',
+        'I notice things. It is my job, and I am very good at it.'
+      ],
+      waiting: [
+        'Friday at two. Then I am out of your hair.',
+        'The screening is a formality. I like formalities.',
+        'Until Friday, this case does not leave my sight.'
+      ]
+    },
+    barks: {
+      scared: ['Not near the case!', 'Is this building safe?', 'Goodness.'],
+      startled: ['Oh!', 'What was that?', 'Excuse me?'],
+      angry: ['That is quite enough.', 'I will be noting that.', 'Unacceptable.'],
+      delighted: ['How lovely.', 'Well. That is nice.', 'Thank you.'],
+      disgusted: ['Not in front of me.', 'Please tidy that.', 'Goodness, no.'],
+      hurt: ['Ow. Careful.', 'Mind the case!', 'That hurt.'],
+      confused: ['I beg your pardon?', 'Is this normal here?', 'Explain that, please.'],
+      greeting: ['Good morning.', 'Ms Vane, from Corporate.', 'Hello again.'],
+      goodbye: ['Until tomorrow.', 'Good evening.', 'Thank you, Scranton.'],
+      bored: ['Is there anything else?', 'Hm.', 'I can wait.'],
+      pickedUp: ['Put me down at once!', 'Not with the case!', 'This is irregular!'],
+      dropped: ['My case!', 'That will be noted.', 'Careful!'],
+      poked: ['Hands to yourself.', 'Please do not.', 'I felt that.']
+    },
+    chaos: {
+      fire: ['The case comes with me.', 'Everybody out, calmly.'],
+      fireDrill: ['A drill. The case comes too.', 'I never leave it behind.'],
+      pizza: ['One slice, then back to work.', 'Pizza at this hour? Fine.'],
+      meeting: ['A meeting in my room? How cosy.', 'I will observe from here.'],
+      puppy: ['A dog. Keep it away from the case.', 'Hello, you. Not on the case.'],
+      inspector: ['Another visitor from Corporate? Nobody told me.', 'We seem to be very popular.'],
+      truth: ['I really should not say this out loud.', 'My goodness. I cannot stop talking.'],
+      sleep: ['Just resting my eyes.', 'Five minutes, no more.']
+    },
+    idle: [
+      'Friday at two. Not a minute later.',
+      'Everything in its place.',
+      'Such an interesting little branch.',
+      'I do like a quiet office.'
+    ],
+    openers: [
+      '{other}. A quick word, please.',
+      '{other}, where were you this morning?',
+      'Ah, {other}. Just the person.',
+      '{other}. Have you been near my case?'
+    ],
+    replies: {
+      warm: ['Thank you, {other}. That is helpful.', 'How kind.', 'Lovely. Thank you.'],
+      cold: ['Interesting. Not in a good way.', 'I will remember that, {other}.', 'Is that so?'],
+      neutral: ['I see.', 'Noted.', 'Go on.']
+    },
+    announced: ['Is that a regular announcement?', 'How very loud.', 'Noted.'],
+    whispered: ['{thought}. How interesting.', '{thought}. I will keep that in mind.']
+  }
+};
+
 /** Visitors' voices by their id on the floor. */
 export const VISITOR_VOICES: Record<string, VisitorVoice> = {
   'visitor:figgis': figgis,
   'visitor:inspector': inspector,
-  'visitor:ranger': ranger
+  'visitor:ranger': ranger,
+  'visitor:vane': vane
 };

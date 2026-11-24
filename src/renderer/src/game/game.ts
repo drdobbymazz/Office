@@ -26,8 +26,8 @@ import { FloorInput } from '@/scene/office/floor/input';
 import { Director } from '@/game/director/director';
 import type { Sim, SimOptions } from '@/game/sim';
 import {
-  EPISODES, EXTRA_INFLUENCE, PARK_INTRO_PREROLL, ParkFinaleScene, ParkIntroScene, Story, StoryDay, browserStore,
-  type EndingId, type EpisodeId, type PlayerAction
+  EPISODES, EXTRA_INFLUENCE, HEIST_INTRO, HEIST_INTRO_PREROLL, HeistFinaleScene, HeistIntroScene, PARK_INTRO_PREROLL,
+  ParkFinaleScene, ParkIntroScene, Story, StoryDay, browserStore, type EndingId, type EpisodeId, type PlayerAction
 } from '@/game/story';
 import { PARK_INTRO } from '@/game/story/parkText';
 import { FINALE_PREROLL, FinaleScene } from '@/game/story/finale';
@@ -143,9 +143,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   /** A story/saga day's office is built behind its chapter card: hold its morning jingle until "Start the day". */
   let holdDayStart = false;
   /** The week's last scene, playing on the floor while UiState.finale is true. */
-  let finaleScene: FinaleScene | ParkFinaleScene | null = null;
-  /** Active Office -> Park bridge cinematic before Act 1. */
-  let introScene: ParkIntroScene | null = null;
+  let finaleScene: FinaleScene | ParkFinaleScene | HeistFinaleScene | null = null;
+  /** The episode's opening scene before its first day (Office -> Park for Episode 2, the wrong tape for Episode 3). */
+  let introScene: ParkIntroScene | HeistIntroScene | null = null;
 
   const instinct = parts.createBrain({ ...settings.brain, provider: 'instinct' }, { bank: parts.bank, world });
   let brain: Brain = parts.createBrain(settings.brain, { bank: parts.bank, world });
@@ -580,7 +580,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     resetDayOverlay();
     applyLocation(story.episode.location);
     const next = buildSim({ save: story.daySave(), dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: story.simSeed() });
-    if (next.day !== story.chapter) next.beginDay(story.chapter);
+    if (next.day !== story.simDay()) next.beginDay(story.simDay());
     // Building the office announces the day it was saved on before today begins: only today belongs in today's Log.
     feedBuffer = feedBuffer.filter((f) => f.day === next.day);
     story.recordStart(next.serialize());
@@ -598,8 +598,12 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     pushUi();
   }
 
-  /** Play the Office -> Park bridge cinematic before Act 1 briefing. */
+  /** The episode's opening scene, before its first day's card. */
   function startIntroCinematic(s: Story): void {
+    if (s.episode.id === 'heist') {
+      startHeistIntro(s);
+      return;
+    }
     resetDayOverlay();
     applyLocation('office');
     const next = buildSim({ dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: s.simSeed() });
@@ -634,6 +638,37 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       report: null,
       feed: [],
       intro: { caption: PARK_INTRO.beats[0], progress: 0, canSkip: true },
+      story: s.ui(null),
+      storySaved: Story.peek(browserStore),
+      episodes: episodesUi(),
+    });
+    audio.setMusicMood({ menu: false });
+    pushUi();
+  }
+
+  /** Episode 3's opening, on the office floor of its first morning (no change of place). */
+  function startHeistIntro(s: Story): void {
+    resetDayOverlay();
+    applyLocation('office');
+    const next = buildSim({ dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: s.simSeed() });
+    finishing = true;
+    next.beginDay(s.simDay());
+    for (let t = 0; t < HEIST_INTRO_PREROLL; t += 0.25) next.update(0.25);
+    finishing = false;
+    feedBuffer = [];
+    mode = 'story';
+    swapWorld(next);
+    floor.camera.frame(roomRectPx('bullpen'));
+    introScene = new HeistIntroScene(sim, (caption) => {
+      set((st) => (st.intro ? { intro: { ...st.intro, caption, progress: introScene?.progress ?? st.intro.progress } } : {}));
+    });
+    set({
+      mode: 'story',
+      phase: 'playing',
+      paused: false,
+      report: null,
+      feed: [],
+      intro: { caption: HEIST_INTRO.beats[0], progress: 0, canSkip: true },
       story: s.ui(null),
       storySaved: Story.peek(browserStore),
       episodes: episodesUi(),
@@ -706,14 +741,14 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
   }
 
   /** The map for the last scene (everyone in, quietly), with the scene on top. Null if it cannot be built. */
-  function buildFinale(ending: EndingId): FinaleScene | ParkFinaleScene | null {
+  function buildFinale(ending: EndingId): FinaleScene | ParkFinaleScene | HeistFinaleScene | null {
     if (!story) return null;
     try {
       applyLocation(story.episode.location);
       const next = buildSim({ save: story.endSnapshot, dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: (story.simSeed() ^ 0x5eed) >>> 0 || 1 });
       // Arrivals happen off stage: no greetings, footsteps or jingles while the staff come in.
       finishing = true;
-      next.beginDay(story.chapter);
+      next.beginDay(story.simDay());
       for (let t = 0; t < FINALE_PREROLL; t += 0.25) next.update(0.25);
       finishing = false;
       feedBuffer = [];
@@ -721,7 +756,9 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       set({ feed: [] });
       const scene = story.episode.id === 'park'
         ? new ParkFinaleScene(sim, ending, story.state.notes)
-        : new FinaleScene(sim, ending, story.state.notes);
+        : story.episode.id === 'heist'
+          ? new HeistFinaleScene(sim, ending, story.state.notes)
+          : new FinaleScene(sim, ending, story.state.notes);
       floor.camera.frame('frame' in scene && scene.frame ? scene.frame : roomRectPx(scene.room));
       return scene;
     } catch (err) {
