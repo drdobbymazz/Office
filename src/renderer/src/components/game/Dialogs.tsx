@@ -912,7 +912,7 @@ function ResultPage({ vp, story }: { vp: Viewport; story: StoryUi }) {
       {resultLines(result.text, vp.h).shown.map((t, i) => (
         <p key={i} style={{ margin: 0, ...(vp.h < 420 ? { fontSize: 15, lineHeight: '19px' } : type), color: i === 0 ? 'var(--cth-ink-900)' : 'var(--cth-ink-700)' }}>{t}</p>
       ))}
-      {n > 0 && <Label style={{ marginTop: 2 }}>Changes to standing</Label>}
+      {n > 0 && <Label style={{ marginTop: 2 }}>{`Changes to ${story.standingMeaning ? (story.standingLabel ?? 'standing').toLowerCase() : 'standing'}`}</Label>}
       {result.changes.map((c, i) => (
         <div key={i} className={i < rows && !seen ? 'sc-rise' : undefined} style={{ visibility: i < rows ? 'visible' : 'hidden' }}>
           <ChangeRow text={c.text} delta={c.delta} />

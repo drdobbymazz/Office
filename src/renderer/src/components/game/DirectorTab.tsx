@@ -137,7 +137,10 @@ function MissionSection({ story }: { story: StoryUi }) {
           </>
         )}
         <Rule />
-        <StandingMeter value={story.standing} />
+        {/* Episode 1 keeps its own wording; other episodes name their number and say what it means. */}
+        {story.standingMeaning
+          ? <StandingMeter value={story.standing} label={story.standingLabel} noteText={`${story.standingMeaning}. ${story.endingRule ?? ''}`} />
+          : <StandingMeter value={story.standing} />}
         {!saga && <InfluenceLine left={story.influence.left} max={story.influence.max} />}
         {story.hints.length > 0 && (
           <>
