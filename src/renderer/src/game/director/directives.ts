@@ -340,7 +340,9 @@ export class Directives {
     sim.feel(a.id, st.feel, 0.85, 8);
     const rName = roomDef(targetRoom).name;
     const command = normalizeDelegatedCommand(rawAction, a.name);
-    sim.narrate(`${a.name} ${st.third} everyone in ${rName} to ${rawAction}!`, {
+    // "tell everyone the call is at two" passes on news, not an order: no "to" in front of it.
+    const news = /^(that|the|a|an|there|it|he|she|they|we|this|today|tomorrow|corporate|[a-z]+(?:'s)?\s+(?:is|are|was|were|has|have|will|can))\b/i.test(rawAction.trim());
+    sim.narrate(news ? `${a.name} ${st.third} everyone in ${rName}: ${rawAction.trim()}!` : `${a.name} ${st.third} everyone in ${rName} to ${rawAction}!`, {
       kind: 'event',
       icon: 'tell',
       room: targetRoom,

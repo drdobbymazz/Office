@@ -431,7 +431,9 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
         display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: 0,
         border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left'
       }}>
-        <Label style={{ cursor: 'pointer' }}>How the week works {howOpen ? '▾' : '▸'}</Label>
+        <Label style={{ cursor: 'pointer' }}>How the week works</Label>
+        {/* The pixel heading font has no triangle glyphs: the kit's chevron, turned down when open. */}
+        <GIcon name="chev-right" px={12} style={{ transform: howOpen ? 'rotate(90deg)' : 'none' }} />
       </button>
       {howOpen && (
         story.saga ? (
@@ -443,7 +445,7 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <GIcon name="branch" px={16} style={{ marginTop: 1 }} />
               <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
-                Bonus goals (+3 standing) and your chaos twist Standing and tomorrow's episode. After Friday's finale, continue directly into Season {story.saga.season + 1}.
+                Bonus goals (+3 standing each) and the chaos you cause change Standing and shape tomorrow's episode. After Friday's finale, the story carries straight on into Season {story.saga.season + 1}.
               </span>
             </div>
           </>

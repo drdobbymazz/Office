@@ -43,7 +43,7 @@ export const MEMO = {
   ],
   extras: [
     { id: 'quiet', title: 'Quiet hands', icon: 'poke', detail: 'Win the call using only whispers, announcements and your own hand. No powers, no typed events and no orders.' },
-    { id: 'full', title: 'Full room', icon: 'people', detail: 'Have at least 12 others in the room with Michael when the phone rings.' }
+    { id: 'full', title: 'Full room', icon: 'people', detail: '12 or more others in the room when the phone rings.' }
   ],
   locked: { meeting: 'Michael has cancelled every meeting today.' },
   conviction: 'If I stay in my office, nothing bad can happen this week.',
