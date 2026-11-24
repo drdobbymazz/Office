@@ -15,7 +15,7 @@ import { CHAPTER_DEFS } from './chapters';
 import { StoryDay, type StoryDayHooks } from './day';
 import { CHAPTERS, ENDING, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
 import { LEAK, endingText, epilogueLines } from './text';
-import type { ChapterDef, ChapterResult, WeekNotes } from './types';
+import type { ChapterDef, ChapterResult, SuggestIdea, WeekNotes } from './types';
 
 export const STATE_KEY = 'story.state.v1';
 export const WORLD_KEY = 'story.world.v1';
@@ -383,8 +383,22 @@ export class Story {
       recap: this.safe(() => def.recap?.(this.state.notes) ?? null, null),
       help: (this.state.tries[def.chapter - 1] ?? 0) > 0 ? [...(def.help ?? [])] : [],
       warns: day ? day.warnsUi() : {},
-      suggest: { whisper: [...(def.suggest?.whisper ?? [])], announce: [...(def.suggest?.announce ?? [])] },
+      ...this.suggestUi(def),
       canFinish: !!day && this.state.stage === 'day' && day.settled
+    };
+  }
+
+  /** The day's suggestions: those for anyone, and those that fit one person. Answers wait for a failed try. */
+  private suggestUi(def: ChapterDef): Pick<StoryUi, 'suggest' | 'suggestFor'> {
+    const helpOn = (this.state.tries[def.chapter - 1] ?? 0) > 0;
+    const open = (ideas: SuggestIdea[] | undefined): { text: string; for?: string[] }[] =>
+      (ideas ?? []).map((i) => (typeof i === 'string' ? { text: i } : i)).filter((i) => !('help' in i && i.help) || helpOn);
+    const whisper = open(def.suggest?.whisper);
+    const suggestFor: Record<string, string[]> = {};
+    for (const i of whisper) for (const who of i.for ?? []) (suggestFor[who] ??= []).push(i.text);
+    return {
+      suggest: { whisper: whisper.filter((i) => !i.for).map((i) => i.text), announce: open(def.suggest?.announce).map((i) => i.text) },
+      suggestFor
     };
   }
 

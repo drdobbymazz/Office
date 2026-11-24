@@ -160,7 +160,8 @@ export class StoryDay {
     if (this.extras.get(id) !== 'open') return;
     this.extras.set(id, state);
     if (state === 'won') this.influence.left += EXTRA_INFLUENCE;
-    if (quietly) return;
+    // With the day's job lost, an extra that fell with it is not announced as a second failure.
+    if (quietly || (state === 'lost' && this.mainState === 'lost')) return;
     const def = this.def.extras.find((x) => x.id === id);
     this.opts.hooks?.onGoal?.({ id, title: def?.title ?? id, state, main: false });
   }

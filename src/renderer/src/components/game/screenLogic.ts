@@ -33,6 +33,21 @@ export function dayPicture(chapter: number): DayPicture {
 }
 
 /**
+ * Whose name is tagged on the floor while the camera is zoomed out: the people the day's job is
+ * about. Not the card's portraits (Wednesday pictures two salespeople, and tagging them would
+ * answer "who should pitch?"), and nobody on Thursday, when finding the right person is the job.
+ */
+export function storyMarks(chapter: number): string[] {
+  switch (chapter) {
+    case 1: return ['michael'];
+    case 2: return ['angela', 'oscar'];
+    case 3: return ['visitor:figgis'];
+    case 5: return ['michael', 'visitor:inspector'];
+    default: return [];
+  }
+}
+
+/**
  * Page one of the report holds the result. On a phone (under 420 px tall) only the first paragraph
  * of what happened stays there and the rest opens page two, so the standing changes, the bar and
  * the week fit on page one without scrolling.

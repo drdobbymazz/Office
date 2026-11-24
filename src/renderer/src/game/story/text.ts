@@ -122,7 +122,11 @@ export const MEMO = {
   kellyFollows: 'Kelly follows Ryan to the conference room.',
   suggest: {
     announce: ['Everyone to the conference room for the call, please.'],
-    whisper: ['I should be in the conference room at two.']
+    whisper: [
+      { text: 'Hiding will not make this go away.', for: ['michael'] as CastId[] },
+      { text: 'I should be in the conference room at two.', for: ['michael'] as CastId[], help: true },
+      { text: 'I should water the plants today.', for: ['creed'] as CastId[], help: true }
+    ]
   }
 };
 
@@ -166,8 +170,31 @@ export const ROW = {
   kevinGossip: 'Angela blaming Oscar for the late accounts',
   kevinStarts: 'After lunch Kevin starts worrying out loud about the deadline. He keeps going over to Oscar.',
   kevinWarns: 'Kevin tells Oscar that Angela will blame him for the late accounts. Oscar goes quiet again.',
-  talkPushed: 'Angela and Oscar have a proper talk. It goes well.',
-  talkChat: 'Angela and Oscar exchange a few polite words.',
+  talkPushed: (n: number) => `Angela and Oscar have a proper talk, and it goes well. That is ${Math.min(3, n)} of 3.`,
+  talkChat: 'Angela and Oscar exchange a few polite words. That counts as half a talk.',
+  talkFace: 'Set down face to face, Angela and Oscar manage a few stiff words. That counts as half a talk.',
+  /** The talks themselves, by how far the thaw has got: who walked over speaks first. */
+  talks: [
+    {
+      angela: ['Oscar. I have checked my figures twice.', 'So have I. One of us is wrong, and I would like to know which.'],
+      oscar: ['Angela. Your total and mine are forty dollars apart.', 'I am aware. Mine is the correct one.']
+    },
+    {
+      angela: ['Show me where your number comes from.', 'Line twelve. Bring your own pencil.'],
+      oscar: ['Can I see how you got your total?', 'You may look. You may not touch.']
+    },
+    {
+      angela: ['It was the postage. We both missed it.', 'We did. I am glad you said "we".'],
+      oscar: ['I found it. It was the postage, on both sheets.', 'Then we were both wrong. I can live with that.']
+    }
+  ] as { angela: [string, string]; oscar: [string, string] }[],
+  face: { first: 'Oscar.', second: 'Angela.' },
+  lostWhy: (talks: number, dwight: boolean, kevin: boolean): string => {
+    const n = Math.floor(talks);
+    const got = n === 0 ? 'Angela and Oscar never had one good talk' : `Angela and Oscar had ${n} good ${n === 1 ? 'talk' : 'talks'} of the 3 they needed`;
+    const stir = dwight ? ' Dwight was still warning Angela about Oscar.' : kevin ? ' Kevin was still worrying Oscar about the deadline.' : '';
+    return `${got}.${stir}`;
+  },
   lockedTalk: 'Angela and Oscar were locked in together. They had to talk.',
   party: (who: string, other: string) => `${other} brings ${who} a slice of the birthday cake. ${who} almost smiles.`,
   truthOscar: 'Oscar cannot lie, and says he misses working with Angela. Word gets back to her.',
@@ -192,10 +219,15 @@ export const ROW = {
   topicDwight: 'Dwight keeps saying Oscar is plotting against Angela, which keeps the row going.',
   topicMadeUp: 'Angela and Oscar are speaking again.',
   recapCall: 'Yesterday the vice president told the whole office that the branch may close on Friday.',
-  recapNoCall: 'Yesterday nobody was there for Corporate\'s call, but the news that the branch may close got round anyway.',
+  recapNoCall: 'Yesterday the office missed Corporate\'s call, but the news that the branch may close got round anyway.',
   suggest: {
     announce: ['Angela and Oscar, please come to the conference room.'],
-    whisper: ['Maybe I was wrong about Oscar.', 'Life is too short to stay angry.']
+    whisper: [
+      { text: 'Life is too short to stay angry with Oscar.', for: ['angela'] as CastId[] },
+      { text: 'Life is too short to stay angry with Angela.', for: ['oscar'] as CastId[] },
+      { text: 'Maybe I was wrong about Oscar.', for: ['dwight'] as CastId[], help: true },
+      { text: 'The accounts will be fine. No need to worry Oscar.', for: ['kevin'] as CastId[], help: true }
+    ]
   }
 };
 
@@ -247,7 +279,7 @@ export const CLIENT = {
   tooAnnoyed: 'Mr Figgis is too annoyed to talk business. Cheer him up first.',
   statusAnnoyed: (p: number) => `Patience ${p}: too annoyed to talk business`,
   statusPatience: (p: number) => `Patience ${p} (talks business from 50)`,
-  statusPitch: (sales: string, s: number, of: number) => `${sales} pitching: ${s}s of ${of}`,
+  statusPitch: (sales: string, s: number, of: number) => `${sales} pitching: ${s} of ${of} seconds`,
   meetingFact: (sales: string, room: string) => `Mr Figgis is in a meeting with ${sales} in ${room}, deciding whether to sign again.`,
   sitsDown: (sales: string, room: string) => `${sales} starts the pitch to Mr Figgis in ${room}.`,
   balloons: 'Michael has tied welcome balloons by the front door for Mr Figgis.',
@@ -310,8 +342,11 @@ export const CLIENT = {
   changeWon: 'Figgis Hardware signed for another year',
   changeLost: 'Figgis Hardware walked away',
   suggest: {
-    announce: ['Mr Figgis, please come to the conference room.'],
-    whisper: ['I should look after Mr Figgis myself.', 'I have paperwork to finish in my office.']
+    announce: [{ text: 'Mr Figgis and Stanley, please come to the conference room.', help: true }],
+    whisper: [
+      { text: 'I should look after Mr Figgis myself.', for: ['stanley', 'jim', 'phyllis', 'andy', 'dwight'] as CastId[] },
+      { text: 'I have paperwork to finish in my office.', for: ['michael'] as CastId[], help: true }
+    ]
   }
 };
 
@@ -584,7 +619,12 @@ export const VERDICT = {
     { id: 'spotless', title: 'Spotless tour', icon: 'check', detail: 'Score 90 or more on the inspection.' }
   ],
   suggest: {
-    whisper: ['My farewell speech can wait until the inspector has gone.', 'I should wait in my office for the inspector.', 'Security can wait. I should be at my desk.'],
+    whisper: [
+      { text: 'Is today really the day for a farewell speech?', for: ['michael'] as CastId[] },
+      { text: 'My farewell speech can wait until the inspector has gone.', for: ['michael'] as CastId[], help: true },
+      { text: 'I should wait in my office for the inspector.', for: ['michael'] as CastId[], help: true },
+      { text: 'Security can wait. I should be at my desk.', for: ['dwight'] as CastId[], help: true }
+    ],
     announce: ['Everyone back to your desks, the inspector is here!']
   },
   locked: 'Corporate is sending its own inspector today.',
@@ -801,7 +841,7 @@ export interface EpilogueFacts {
   leakFound?: boolean;
   accounts?: boolean;
   figgis?: boolean;
-  speech?: 'during' | 'after' | 'never';
+  speech?: 'during' | 'after' | 'quiet' | 'never';
   wrongedName?: string;
   carried?: { name: string; times: number };
   whispers: number;
@@ -819,6 +859,7 @@ export function epilogueLines(f: EpilogueFacts): string[] {
   if (f.carried && f.carried.times >= 3) out.push(`${f.carried.name} was picked up ${f.carried.times} times this week, and now keeps one hand on the desk at all times.`);
   if (f.wrongedName) out.push(`${f.wrongedName} has forgiven the office for Thursday's accusation. Mostly.`);
   if (f.speech === 'after') out.push("Michael's farewell speech got a standing ovation. He offers to give it again every Friday.");
+  else if (f.speech === 'quiet') out.push("Michael gave his farewell speech to a nearly empty break room. He says it went well.");
   else if (f.speech === 'during') out.push("The inspector's report has a whole page on Michael's farewell speech.");
   else if (f.speech === 'never') out.push("Michael never gave his farewell speech. It is still in his desk drawer, just in case.");
   if (f.accounts === true) out.push("Angela and Oscar still check each other's figures, but now they do it over coffee.");

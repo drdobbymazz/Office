@@ -106,6 +106,8 @@ export interface StoryUi {
   warns: Partial<Record<ActionId, string>>;
   /** Story-aware suggestions for the whisper and loudspeaker boxes (shown first). May be empty. */
   suggest: { whisper: string[]; announce: string[] };
+  /** Whisper suggestions that only fit one person (shown first when whispering them). */
+  suggestFor?: Partial<Record<string, string[]>>;
   /** Today's main goal is settled and nothing left today changes the result: the player may finish the day now. */
   canFinish: boolean;
   /** Endless Saga metadata when running in `mode === 'saga'`; undefined in Classic Story mode. */
@@ -410,13 +412,15 @@ export interface GameApi {
   /** Start an event. Resolves to null on success or a plain reason why not ("Still cooling down"). */
   triggerChaos(id: ChaosId, target: ChaosTarget): string | null;
   /** Free text: "a horse walks into the office". */
-  customEvent(text: string): void;
+  // The four send methods return false when nothing happened (refused, or the person is not in), so the
+  // interface can keep the typed text and not claim it was sent.
+  customEvent(text: string): boolean | void;
   /** Put a thought in someone's head. */
-  whisper(who: CharId, text: string): void;
+  whisper(who: CharId, text: string): boolean | void;
   /** Speak over the loudspeaker to everyone. */
-  announce(text: string): void;
+  announce(text: string): boolean | void;
   /** Tell someone exactly what to do next: "confess to Lena". */
-  cue(who: CharId, instruction: string): void;
+  cue(who: CharId, instruction: string): boolean | void;
   /** Prod someone with the giant invisible finger. */
   poke(who: CharId): void;
 

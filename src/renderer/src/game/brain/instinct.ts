@@ -217,6 +217,31 @@ const PLAN_ROOM: Partial<Record<PlanKind, string[]>> = {
 // ── The brain ───────────────────────────────────────────────────────────────
 
 /** Blank out office room phrases ("Michael's office") so room names are not mistaken for people. */
+/**
+ * "break" the noun is not "break" the verb: "in the break room", "a coffee break", "take a break"
+ * must never read as an order to smash something.
+ */
+export function withoutBreakNouns(text: string): string {
+  return text
+    .replace(/\bbreak[\s-]*room\b/gi, 'kitchen')
+    .replace(/\b(?:a|an|the|my|your|his|her|their|our|lunch|coffee|tea|tea-|short|quick|little|smoke|cigarette|toilet|bathroom)\s+break\b/gi, 'pause')
+    .replace(/\bbreak\s+(?:time|times)\b/gi, 'pause');
+}
+
+/**
+ * Leaving the job for good: "quit", "resign", "walk out", "pack up your things", "storm out",
+ * "I'm done (here / with this place)". Not "quit hiding", "quit it", "quit worrying about Oscar"
+ * (stop doing something), and not "I'm done with the report".
+ */
+export function meansQuitting(text: string): boolean {
+  if (/\b(resign(?:ing)?|walk(?:ing)?\s+out|pack(?:ing)?\s+(?:up|your\s+things|my\s+things)|storm(?:ing)?\s+out)\b/i.test(text)) return true;
+  // "quit" followed by a doing-word, "it", "that" or "being ..." means stop, not resign.
+  if (/\bquitt?(?:ing)?\b(?!\s+(?:\w+ing\b|it\b|that\b|this\s+\w+ing\b|being\b|while\b|your\s+\w+ing\b|my\s+\w+ing\b))/i.test(text)) return true;
+  // "I'm done" on its own, or done with the place: not "I'm done with the report" or "I'm done hiding".
+  if (/\bi'?m\s+done\b(?=\s*(?:[.!?,;]|$|here\b|with\s+(?:this|that)\s+(?:place|job|office|company|branch)\b|with\s+(?:you\s+)?(?:people|all)\b))/i.test(text)) return true;
+  return false;
+}
+
 export function stripRoomPhrases(text: string): string {
   return text
     .replace(
@@ -1532,7 +1557,7 @@ export class InstinctBrain implements Brain, Reflexes {
       verb = 'drag';
     } else if (/\b(lock(?:\s+in|\s+\w+\s+in)?|barricad(?:e|ing)|trapp?(?:ing)?|seal(?:ing)?|bolt(?:ing)?|lock\s+the\s+door)\b/i.test(text)) {
       verb = 'lock_in';
-    } else if (/\b(quitt?(?:ing)?|resign(?:ing)?|walk(?:ing)?\s+out|pack(?:ing)?\s+(?:up|your\s+things)|i'?m\s+done|storm(?:ing)?\s+out)\b/i.test(text)) {
+    } else if (meansQuitting(text)) {
       verb = 'walk_out';
     } else if (
       /\b(shov(?:e|ing)|push(?:ing)?|tripp?(?:ing)?|yeet(?:ing)?|splash(?:ing)?|drench(?:ing)?|soak(?:ing)?|squirt(?:ing)?)\b/i.test(text) ||
@@ -1540,7 +1565,7 @@ export class InstinctBrain implements Brain, Reflexes {
     ) {
       verb = 'shove';
     } else if (
-      (/\b(smash(?:ing)?|wreck(?:ing)?|break(?:ing)?|unplugg?(?:ing)?|vandaliz(?:e|ing)|sabotag(?:e|ing)|trash(?:ing)?|destroy(?:ing)?|ruin(?:ing)?|jamm?(?:ing)?|screw(?:ing)?\s+up|fuck(?:ing)?\s+up)\b/i.test(text) ||
+      (/\b(smash(?:ing)?|wreck(?:ing)?|break(?:ing)?|unplugg?(?:ing)?|vandaliz(?:e|ing)|sabotag(?:e|ing)|trash(?:ing)?|destroy(?:ing)?|ruin(?:ing)?|jamm?(?:ing)?|screw(?:ing)?\s+up|fuck(?:ing)?\s+up)\b/i.test(withoutBreakNouns(text)) ||
         (/\bripp?(?:ing)?\b/i.test(text) && !clothingWord)) &&
       (hasMachine || !hasPersonTarget)
     ) {

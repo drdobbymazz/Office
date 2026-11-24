@@ -14,6 +14,7 @@ import type { CharId, ChaosId } from '@/game/core/types';
 import type { Suggestions, Tips } from '@/game/core/content/types';
 import { GameCtx, useViewport, type UiCtx } from './ctx';
 import { BubbleLayer, type Bounds } from './Bubbles';
+import { StoryMarkers } from './markers';
 import { EventsAndToasts, hudBottom, hudInset, MissionChip, OfflineBanner, StatusStrip, STRIP_W, Subtitle } from './Hud';
 import { StoryCoach } from './coach';
 import { Dock, NavCtx, type Nav } from './Dock';
@@ -82,7 +83,11 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
   const lastScreen = useRef(screen);
   const [daysStarted, setDaysStarted] = useState(0);
   useEffect(() => {
-    if (screen === 'playing' && lastScreen.current !== 'playing') setDaysStarted((n) => n + 1);
+    if (screen === 'playing' && lastScreen.current !== 'playing') {
+      setDaysStarted((n) => n + 1);
+      // A new day opens on the list of people, not on whoever was looked at yesterday (who may not be here).
+      setPersonId(null);
+    }
     lastScreen.current = screen;
   }, [screen]);
   const band = useDayBand(daysStarted);
@@ -135,6 +140,7 @@ export function GameUI(props: { game: GameApi; suggestions: Suggestions; tips: T
     <GameCtx.Provider value={ctx}>
       <NavCtx.Provider value={nav}>
         <div className="gu-root">
+          {screen === 'playing' && <StoryMarkers />}
           <BubbleLayer bounds={bounds} />
           {screen === 'playing' && (
             <>

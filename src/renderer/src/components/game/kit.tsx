@@ -303,9 +303,11 @@ export function Toggle({ label, hint, on, onChange }: { label: string; hint?: st
 
 // ── Text tool: a box, tappable suggestions and a Send button ──
 
-export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = 'Send', disabled, accent = 'lilac', coach, autoFocus, cost, short, warn }: {
-  placeholder: string; hint?: string; suggestions: string[]; onSend: (text: string) => void; sendLabel?: string;
+export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = 'Send', disabled, accent = 'lilac', coach, autoFocus, cost, short, warn, reveal }: {
+  placeholder: string; hint?: string; suggestions: string[]; onSend: (text: string) => boolean | void; sendLabel?: string;
   disabled?: boolean; accent?: AccentColorName; coach?: string; autoFocus?: boolean;
+  /** Opened by a tap further up a long card: bring the box and its Send button into view. */
+  reveal?: boolean;
   /** Story mode: what sending costs in influence (shown on the button). */
   cost?: number;
   /** Story mode: why it cannot be afforded right now ("Not enough influence: ..."), or null. */
@@ -355,7 +357,8 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
   const send = useCallback(() => {
     const t = text.trim();
     if (!t || disabled || short) return;
-    onSend(t);
+    // Refused (not enough influence, nobody there): the words stay in the box.
+    if (onSend(t) === false) return;
     setText('');
     ref.current?.blur();
   }, [text, disabled, short, onSend]);
@@ -364,8 +367,12 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
       {sendLabel}
     </Btn>
   );
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (reveal) rootRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [reveal]);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-coach={coach}>
+    <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 8 }} data-coach={coach}>
       {hint && <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{hint}</div>}
       <div style={{ position: 'relative' }}>
         <textarea
@@ -395,17 +402,10 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
           </span>
         )}
       </div>
-      {shown.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch' }}>
-          {shown.map((s, i) => (
-            <Chip key={i + s} onClick={() => setText(s)} accent={accent} style={{ width: '100%' }}>{s}</Chip>
-          ))}
-        </div>
-      )}
       {warn && !short && <Warning text={warn} />}
       <div style={{ display: 'flex', gap: 8, marginTop: cost ? 4 : 0 }}>
         {suggestions.length > 3 && (
-          <Btn variant="ghost" size="md" icon="refresh" onClick={() => setPage((p) => p + 1)} label="More ideas">Ideas</Btn>
+          <Btn variant="ghost" size="md" icon="refresh" onClick={() => setPage((p) => p + 1)} label="More ideas" style={{ flexShrink: 0 }} />
         )}
         {cost ? (
           // Story mode: the cost sits as a tag on the button's top edge, so long labels keep their room.
@@ -416,6 +416,14 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
         ) : sendBtn}
       </div>
       {short && <Refusal text={short} />}
+      {/* Ideas come after Send: typing and sending never needs a scroll, and a tap on an idea fills the box above. */}
+      {shown.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch' }}>
+          {shown.map((s, i) => (
+            <Chip key={i + s} onClick={() => setText(s)} accent={accent} style={{ width: '100%' }}>{s}</Chip>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

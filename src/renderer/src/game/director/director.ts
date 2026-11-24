@@ -41,6 +41,8 @@ export interface DirectorOptions {
   pinned?: (who: CharId) => boolean;
   /** Story mode: how long (sim seconds) people summoned to a room wait there today; undefined for the usual. */
   summonStay?: (room: RoomId) => number | undefined;
+  /** Story mode: typed orders and whispers are read carefully (the model may not escalate mild words). */
+  carefulOrders?: () => boolean;
   /** Story mode: what the office is talking about right now (plain sentences). Small talk may pick from these. */
   storyTopics?: () => string[];
   /** Story mode: today's chapter may replace a scene's change in feeling (return the delta to apply). */
@@ -583,7 +585,8 @@ export class Director {
           ...(isCastId(o.id) ? { pronoun: CAST[o.id].pronoun } : {})
         })),
       rooms: TARGET_ROOMS.map((id) => ({ id: id as string, name: roomDef(id).name })),
-      allowDelegate
+      allowDelegate,
+      ...(this.opts.carefulOrders?.() ? { careful: true } : {})
     };
     const apply = (res: DirectiveResult): void => {
       if (this.disposed) return;

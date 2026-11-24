@@ -291,11 +291,12 @@ function ChangeRow({ text, onChange }: { text: string; onChange: () => void }) {
 
 // ── text tools ──
 
-export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFocus?: boolean }) {
+export function WhisperTool({ fixedWho, autoFocus, reveal }: { fixedWho?: CharId; autoFocus?: boolean; reveal?: boolean }) {
   const game = useGame();
   const price = useCost('whisper');
   const { suggestions } = useContent();
   const storyIdeas = useUi((s) => s.story?.suggest?.whisper ?? NONE);
+  const ideasFor = useUi((s) => s.story?.suggestFor ?? null);
   const warn = useUi((s) => s.story?.warns?.whisper ?? null);
   const people = useUi((s) => s.people);
   const [who, setWho] = useState<CharId | null>(fixedWho ?? null);
@@ -305,7 +306,13 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
     const rest = people.filter((p) => p.id !== target?.id);
     return rest.length ? rest[(target?.name.length ?? 0) % rest.length].name : 'someone';
   }, [people, target?.id, target?.name.length]);
-  const list = useMemo(() => [...storyIdeas, ...suggestions.whispers].map((s) => fill(s, target?.name ?? 'them', other)), [storyIdeas, suggestions.whispers, target?.name, other]);
+  const list = useMemo(() => {
+    // What fits this person comes first. A thought about someone is never offered to that same person.
+    const mine = (target && ideasFor?.[target.id]) || NONE;
+    const first = (target?.name ?? '').split(' ')[0];
+    const general = storyIdeas.filter((s) => !first || !new RegExp(`\\b${first}\\b`, 'i').test(s));
+    return [...mine, ...general, ...suggestions.whispers].map((s) => fill(s, target?.name ?? 'them', other));
+  }, [storyIdeas, ideasFor, suggestions.whispers, target?.id, target?.name, other]);
   return (
     <>
       {!fixedWho && (
@@ -314,11 +321,16 @@ export function WhisperTool({ fixedWho, autoFocus }: { fixedWho?: CharId; autoFo
           <PersonStrip value={who} onPick={(id) => { setWho(id); setSent(null); }} />
         </>
       )}
-      <TextTool coach="whisper" autoFocus={autoFocus}
+      <TextTool coach="whisper" autoFocus={autoFocus} reveal={reveal}
         hint="Only they hear it. They think it is their own idea."
         placeholder={target ? `A thought for ${target.name}...` : 'Pick someone above first'}
         suggestions={target ? list : []} disabled={!target} sendLabel="Send whisper" cost={price?.cost} short={target ? price?.short : null} warn={target ? warn : null}
-        onSend={(t) => { if (!target) return; game.whisper(target.id, t); setSent(`Whispered to ${target.name}.`); }} />
+        onSend={(t) => {
+          if (!target) return false;
+          if (game.whisper(target.id, t) === false) { setSent(null); return false; }
+          setSent(`Whispered to ${target.name}.`);
+          return true;
+        }} />
       {sent && <Sent text={sent} />}
     </>
   );
@@ -344,7 +356,11 @@ function AnnounceTool() {
     <>
       <TextTool coach="announce" hint="Everyone hears this over the loudspeaker. Name a room to send people there." placeholder="Attention, everyone..." accent="peach"
         suggestions={list} sendLabel="Announce" cost={price?.cost} short={price?.short} warn={warn}
-        onSend={(t) => { game.announce(t); setSent('Announced to the whole office.'); }} />
+        onSend={(t) => {
+          if (game.announce(t) === false) { setSent(null); return false; }
+          setSent('Announced to the whole office.');
+          return true;
+        }} />
       {sent && <Sent text={sent} />}
     </>
   );
@@ -360,7 +376,11 @@ function AnythingTool() {
     <>
       <TextTool hint="Type anything. The office has to deal with it." placeholder="a horse walks into the office" accent="lemon"
         suggestions={suggestions.customEvents} sendLabel="Make it happen" cost={price?.cost} short={price?.short} warn={warn}
-        onSend={(t) => { game.customEvent(t); setSent('On its way. Watch the floor.'); }} />
+        onSend={(t) => {
+          if (game.customEvent(t) === false) { setSent(null); return false; }
+          setSent('On its way. Watch the floor.');
+          return true;
+        }} />
       {sent && <Sent text={sent} />}
     </>
   );

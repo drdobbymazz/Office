@@ -62,7 +62,8 @@ export function ScrollArea({ children, style, inner, fade = 'var(--cth-cream-50)
         <>
           <div className="sc-more" style={{ ['--sc-fade-bg' as string]: fade } as CSSProperties} />
           <button type="button" className="sc-chev" aria-label="More below" onClick={down}>
-            <span style={{ display: 'block', transform: 'rotate(90deg)' }}><GIcon name="chev-right" px={16} /></span>
+            {/* The outer span takes the nudge animation (which sets transform); the inner one turns the chevron to point down. */}
+            <span style={{ display: 'block' }}><span style={{ display: 'block', transform: 'rotate(90deg)' }}><GIcon name="chev-right" px={16} /></span></span>
           </button>
         </>
       )}

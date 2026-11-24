@@ -496,6 +496,11 @@ class RowRun implements ChapterRun {
   private tricks = new Set<string>();
   private askAt = 0;
   private warned = new Set<string>();
+  /** A hand-written talk between the two is being spoken (it counts when its last line is said). */
+  private talking = false;
+  private wasHeld: 'angela' | 'oscar' | null = null;
+  private landedAt = -1;
+  private lastFace = -1e9;
 
   constructor(private c: ChapterCtx) {}
 
@@ -536,6 +541,36 @@ class RowRun implements ChapterRun {
     this.stir();
     if (!this.kevinStarted && s.clock >= KEVIN_AT) this.startKevin();
     this.boostPair();
+    this.faceToFace();
+  }
+
+  /**
+   * Set one of them down beside the other and they cannot pretend not to see each other: a few
+   * stiff words, worth half a talk (and not more than once a minute or so, however often they are carried).
+   */
+  private faceToFace(): void {
+    const s = this.c.sim;
+    const held = s.holding === 'angela' || s.holding === 'oscar' ? s.holding : null;
+    if (this.wasHeld && !held) this.landedAt = s.time + 2.5;
+    this.wasHeld = held;
+    if (this.landedAt < 0 || s.time < this.landedAt) return;
+    this.landedAt = -1;
+    const a = s.person('angela');
+    const o = s.person('oscar');
+    if (!a || !o || !a.present || !o.present || a.sceneId || o.sceneId || this.talking) return;
+    if (Math.hypot(a.x - o.x, a.y - o.y) > 44 || s.time - this.lastFace < 50) return;
+    this.lastFace = s.time;
+    this.talking = true;
+    this.c.script([
+      { who: 'angela', text: ROW.face.first, emotion: 'suspicious', to: 'oscar' },
+      { who: 'oscar', text: ROW.face.second, emotion: 'suspicious', to: 'angela' }
+    ], {
+      room: a.room, then: 'none',
+      done: () => {
+        this.talking = false;
+        if (this.c.main() === 'open') this.talk(0.5, 5, ROW.talkFace);
+      }
+    });
   }
 
   /** The obstacle: Dwight keeps warning Angela about Oscar's "plot" (and after lunch Kevin worries Oscar). */
@@ -588,12 +623,25 @@ class RowRun implements ChapterRun {
       : o.plan && o.plan.target === 'angela' && SOCIAL_PLANS.has(o.plan.kind) ? o : null;
     if (!lead || !lead.plan) return;
     const other = lead === a ? o : a;
-    if (Math.hypot(a.x - o.x, a.y - o.y) > 30) return;
-    s.requestScene({
-      people: [lead.id, other.id], trigger: 'plan', planKind: lead.plan.kind, priority: 8, staleAfter: 90,
-      why: `${lead.name} walked over to ${lead.plan.kind === 'flirt' ? 'flirt with' : 'talk to'} ${other.name} about their row over the figures.`
-    });
+    if (Math.hypot(a.x - o.x, a.y - o.y) > 30 || this.talking) return;
     this.askAt = s.time + 30;
+    // The talk itself is written by hand, so it starts at once and never waits on a slow model:
+    // stiff the first time, warmer each time after. It counts when the second line has been said.
+    const stage = ROW.talks[Math.min(ROW.talks.length - 1, Math.floor(this.talks))];
+    const [first, second] = lead.id === 'angela' ? stage.angela : stage.oscar;
+    const warm = Math.floor(this.talks) >= 2;
+    this.talking = true;
+    s.setPlan(lead.id, null);
+    this.c.script([
+      { who: lead.id, text: first, emotion: warm ? 'happy' : 'neutral', to: other.id },
+      { who: other.id, text: second, emotion: warm ? 'happy' : 'suspicious', to: lead.id }
+    ], {
+      room: lead.room, then: 'none',
+      done: () => {
+        this.talking = false;
+        if (this.c.main() === 'open') this.talk(1, 10, ROW.talkPushed(Math.floor(this.talks) + 1));
+      }
+    });
   }
 
   private madeUp(): void {
@@ -627,9 +675,20 @@ class RowRun implements ChapterRun {
   atFive(): void {
     for (const id of PAPERS) this.c.sim.removeEffect(`story.row.papers.${id}`);
     if (this.c.main() !== 'open') return;
+    // A talk still going at five counts: nobody loses the day to a sentence that was half said.
+    const a = this.c.sim.person('angela');
+    const o = this.c.sim.person('oscar');
+    if (this.talking || (!!a?.sceneId && a.sceneId === o?.sceneId)) {
+      this.talks += 1;
+      if (this.talks >= TALKS_NEEDED) {
+        this.madeUp();
+        return;
+      }
+    }
     this.c.notes.accounts = false;
     this.c.sim.narrate(ROW.lost, { room: 'accounts', beat: true });
-    this.c.lose([ROW.lost]);
+    // The report says how close it was, and what was still in the way.
+    this.c.lose([ROW.lost, ROW.lostWhy(this.talks, this.dwightHolds(), this.kevinHolds())]);
   }
 
   status(): { progress: number; status: string } {
@@ -654,7 +713,7 @@ class RowRun implements ChapterRun {
     this.lastTalk = s.time;
     this.talks += n;
     this.both(bond, 'talking again after the row');
-    s.narrate(text, { icon: 'love', room: s.person('angela')?.room });
+    s.narrate(text, { icon: 'love', room: s.person('angela')?.room, beat: true });
   }
 
   /** Something that brings them together once (a party, a confession, a shared enemy). */
@@ -681,7 +740,7 @@ class RowRun implements ChapterRun {
     const has = (id: CharId): boolean => e.people.includes(id);
     if (has('angela') && has('oscar')) {
       const pushed = e.trigger === 'whisper' || e.trigger === 'cue' || (e.trigger === 'plan' && !!e.planKind && KIND_TALK.has(e.planKind));
-      this.talk(pushed ? 1 : 0.5, pushed ? 10 : 5, pushed ? ROW.talkPushed : ROW.talkChat);
+      this.talk(pushed ? 1 : 0.5, pushed ? 10 : 5, pushed ? ROW.talkPushed(Math.floor(this.talks) + 1) : ROW.talkChat);
     } else if (has('dwight') && has('angela') && this.dwightHolds()) {
       this.setBack('angela', 'dwight', ROW.dwightWarns, "Dwight's warnings about Oscar");
     } else if (has('kevin') && has('oscar') && this.kevinHolds()) {
@@ -2145,7 +2204,8 @@ class VerdictRun implements ChapterRun {
     n.inspection = total;
     const went = this.problems.filter((p) => p.state !== 'waiting');
     n.tour = { of: went.length, fixed: went.filter((p) => p.state === 'fixed').length };
-    n.speech = this.speech === 'during' ? 'during' : this.speech === 'after' || this.speech === 'afterGiven' ? 'after' : 'never';
+    // What has actually happened so far: a speech saved for after the tour has not been given yet.
+    n.speech = this.speech === 'during' ? 'during' : 'never';
     s.setFact('story.verdict', VERDICT.after(total));
     const calmLine = VERDICT.calm(calm);
     s.narrate(calmLine, { icon: 'inspector' });
@@ -2167,6 +2227,15 @@ class VerdictRun implements ChapterRun {
   private afterTheTour(): void {
     const s = this.c.sim;
     if (this.total === null) return;
+    // No Michael, no speech (he has left the building, or worse): the extra goal is over.
+    if (this.speech === 'after') {
+      const m = s.person('michael');
+      if (!m || !m.present || s.hasStatus('michael', 'quit') || s.hasStatus('michael', 'eliminated')) {
+        this.speech = 'cancelled';
+        this.c.setExtra('ovation', 'lost');
+        return;
+      }
+    }
     if (this.speech === 'after' && this.afterSpeechAt < 0) {
       this.afterSpeechAt = s.time + 6;
       s.goTo('michael', { room: 'kitchen' }, { doing: VERDICT.hurrying, stay: 60, stayDoing: VERDICT.practising });
@@ -2181,8 +2250,12 @@ class VerdictRun implements ChapterRun {
       if (n >= 8) {
         s.narrate(VERDICT.ovation(n), { icon: 'announce', room: 'kitchen', beat: true });
         for (const p of s.peopleIn('kitchen')) if (p.isCast && p.id !== 'michael') s.react(p.id, 'cheer', 1.5);
+        this.c.notes.speech = 'after';
         this.c.setExtra('ovation', 'won');
-      } else this.c.setExtra('ovation', 'lost');
+      } else {
+        this.c.notes.speech = 'quiet';
+        this.c.setExtra('ovation', 'lost');
+      }
     }
   }
 

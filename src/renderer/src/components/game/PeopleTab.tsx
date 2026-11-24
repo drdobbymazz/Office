@@ -94,9 +94,13 @@ function CueTool({ who, name }: { who: CharId; name: string }) {
   const other = people.find((p) => p.id !== who && p.present)?.name ?? 'someone';
   return (
     <>
-      <TextTool hint={`${name} will try to do exactly this next.`} placeholder="drag Michael to the conference room" accent="sky"
+      <TextTool reveal hint={`${name} will try to do exactly this next.`} placeholder={`go and talk to ${other}`} accent="sky"
         suggestions={suggestions.cues.map((c) => fill(c, name, other))} sendLabel={`Tell ${name}`} cost={price?.cost} short={price?.short} warn={warn}
-        onSend={(t) => { game.cue(who, t); setSent(`${name} has their orders.`); }} />
+        onSend={(t) => {
+          if (game.cue(who, t) === false) { setSent(null); return false; }
+          setSent(`${name} has their orders.`);
+          return true;
+        }} />
       {sent && <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14 }}><GIcon name="check" px={16} />{sent}</div>}
     </>
   );
@@ -240,13 +244,13 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
           </div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-          <Btn stack icon="whisper" variant={tool === 'whisper' ? 'accent' : 'secondary'} accent="lilac" full onClick={() => setTool(tool === 'whisper' ? null : 'whisper')}>Whisper</Btn>
-          <Btn stack icon="tell" variant={tool === 'cue' ? 'accent' : 'secondary'} accent="sky" full onClick={() => setTool(tool === 'cue' ? null : 'cue')}>Tell them to...</Btn>
+          <Btn stack icon="whisper" variant={tool === 'whisper' ? 'accent' : 'secondary'} accent="lilac" full disabled={!d.present} onClick={() => setTool(tool === 'whisper' ? null : 'whisper')}>Whisper</Btn>
+          <Btn stack icon="tell" variant={tool === 'cue' ? 'accent' : 'secondary'} accent="sky" full disabled={!d.present} onClick={() => setTool(tool === 'cue' ? null : 'cue')}>Tell them to...</Btn>
           <Btn stack icon="poke" variant="secondary" full disabled={!d.present} onClick={() => game.poke(d.id)}>Poke</Btn>
           <Btn stack icon="follow" variant="secondary" full disabled={!d.present} onClick={() => game.focusPerson(d.id)}>Follow</Btn>
         </div>
-        {tool === 'whisper' && <WhisperTool fixedWho={d.id} />}
-        {tool === 'cue' && <CueTool who={d.id} name={d.name} />}
+        {d.present && tool === 'whisper' && <WhisperTool fixedWho={d.id} reveal />}
+        {d.present && tool === 'cue' && <CueTool who={d.id} name={d.name} />}
       </Section>
 
       {(!visitor || d.bonds.length > 0) && (

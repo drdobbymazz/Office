@@ -163,6 +163,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       pinned: (who) => (mode === 'story' ? day?.pinned(who) ?? false : false),
       // Today's chapter may make summoned people wait longer (Monday: until the call).
       summonStay: (room) => (mode === 'story' ? day?.summonStay(room) : undefined),
+      // The story's days are puzzles: a whisper is read by its plain words, and the model may not escalate it.
+      carefulOrders: () => mode === 'story',
       // What the office is talking about in Story or Endless Saga right now (small talk picks it up).
       storyTopics: () => (mode === 'story' && day ? day.topics() : mode === 'saga' && sagaDay ? sagaDay.topics() : []),
       // Classic Story may adjust a scene's change in feeling while counting progress; Saga leaves shifts raw.
@@ -507,7 +509,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const detail = won ? extraDetail : undefined;
     set({ ceremony: { id: `c${ceremonySeq}`, kind: won ? 'extraWon' : 'extraLost', title: g.title, detail } });
     if (won) {
-      toast(`Goal done: ${g.title}. ${extraDetail}`, 'good', 'check');
+      toast(`Goal done: ${g.title}${/[.?!]$/.test(g.title) ? '' : '.'} ${extraDetail}`, 'good', 'check');
       audio.sfx('objective');
     } else {
       toast(`Goal failed: ${g.title}`, 'bad', 'x');
@@ -532,6 +534,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     resetDayOverlay();
     const next = buildSim({ save: story.daySave(), dayMinutes: STORY_DAY_MINUTES, sandbox: false, seed: story.simSeed() });
     if (next.day !== story.chapter) next.beginDay(story.chapter);
+    // Building the office announces the day it was saved on before today begins: only today belongs in today's Log.
+    feedBuffer = feedBuffer.filter((f) => f.day === next.day);
     story.recordStart(next.serialize());
     mode = 'story';
     swapWorld(next);
@@ -551,6 +555,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     const next = buildSim({ save: saga.daySave(), dayMinutes: settings.dayMinutes, sandbox: settings.sandbox, seed: saga.simSeed() });
     const absDay = (saga.season - 1) * 5 + saga.chapter;
     if (next.day !== absDay) next.beginDay(absDay);
+    feedBuffer = feedBuffer.filter((f) => f.day === next.day);
     saga.recordStart(next.serialize());
     mode = 'saga';
     swapWorld(next);
@@ -653,6 +658,15 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
     }
     day.spend(action);
     return null;
+  }
+
+  /** Nobody to whisper to or order about: say so (they have not arrived, or have gone), and charge nothing. */
+  function notHere(who: CharId): boolean {
+    const p = sim.person(who);
+    if (p?.present) return false;
+    toast(`${p?.name ?? 'They'} ${sim.clock < 9 * 60 + 10 ? 'is not in yet' : 'is not in the building'}.`, 'bad', 'door');
+    audio.sfx('deny');
+    return true;
   }
 
   function noteStory(a: PlayerAction): void {
@@ -1030,31 +1044,35 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
 
     triggerChaos,
     customEvent(text) {
-      if (!text.trim() || pay('anything')) return;
+      if (!text.trim() || pay('anything')) return false;
       director.customEvent(text);
       noteStory({ kind: 'anything', text });
       objectives.note('custom');
       audio.sfx('confirm');
+      return true;
     },
     whisper(who, text) {
-      if (!text.trim() || !sim.person(who)?.present || pay('whisper')) return;
+      if (!text.trim() || notHere(who) || pay('whisper')) return false;
       director.whisper(who, text);
       noteStory({ kind: 'whisper', who, text });
       objectives.note('whisper', who);
       audio.sfx('whisperSend');
+      return true;
     },
     announce(text) {
-      if (!text.trim() || pay('announce')) return;
+      if (!text.trim() || pay('announce')) return false;
       director.announce(text);
       noteStory({ kind: 'announce', text });
       objectives.note('announce');
+      return true;
     },
     cue(who, instruction) {
-      if (!instruction.trim() || !sim.person(who)?.present || pay('cue')) return;
+      if (!instruction.trim() || notHere(who) || pay('cue')) return false;
       director.cue(who, instruction);
       noteStory({ kind: 'cue', who, text: instruction });
       objectives.note('cue', who);
       audio.sfx('confirm');
+      return true;
     },
     poke(who) {
       sim.poke(who);

@@ -117,12 +117,13 @@ export function StatusStrip({ left }: { left: string }) {
         ) : (
           <>
             <GIcon name="influence" px={16} />
-            <Pips left={Math.min(story.left, story.max)} max={story.max} size={6} gap={2} />
+            {/* Ten pips and a bonus have to share the strip with the standing: they draw tighter so nothing is cut off. */}
+            <Pips left={Math.min(story.left, story.max)} max={story.max} size={story.max > 8 ? 5 : 6} gap={story.max > 8 ? 1 : 2} />
             <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>{story.left}</span>
-            {story.left > story.max && <span style={{ fontSize: 12, lineHeight: '12px', color: '#2f8a45' }}>+{story.left - story.max}</span>}
+            {story.left > story.max && <span style={{ fontSize: 12, lineHeight: '12px', color: '#2f8a45', flexShrink: 0 }}>+{story.left - story.max}</span>}
             <span style={{ flex: 1 }} />
             <GIcon name="branch" px={16} />
-            <StandingBar value={story.standing} w={30} h={10} marks={false} />
+            <StandingBar value={story.standing} w={story.left > story.max ? 20 : 30} h={10} marks={false} />
             <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 20, lineHeight: '16px', minWidth: 18, textAlign: 'right' }}>{story.standing}</span>
           </>
         ) : (

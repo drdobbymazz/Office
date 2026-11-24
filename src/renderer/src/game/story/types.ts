@@ -49,7 +49,8 @@ export interface WeekNotes {
   /** Thursday: people wrongly accused of leaking (they are still hurt on Friday). */
   wronged?: CastId[];
   /** Friday: what became of Michael's farewell speech. */
-  speech?: 'during' | 'after' | 'never';
+  /** Michael's farewell speech: during the tour, after it to an ovation, after it to a thin crowd, or never given. */
+  speech?: 'during' | 'after' | 'quiet' | 'never';
   /** Friday: problems on the inspector's tour, and how many were dealt with. */
   tour?: { of: number; fixed: number };
   /** The whole week, for the ending's epilogue: what the player used and who they carried. */
@@ -148,6 +149,8 @@ export interface ChapterRun {
   settled?(): boolean;
 }
 
+export type SuggestIdea = string | { text: string; for?: CharId[]; help?: boolean };
+
 export interface ExtraDef extends GoalDef {
   /** How it is settled at five o'clock if still open. */
   atFive: 'won' | 'lost';
@@ -168,8 +171,12 @@ export interface ChapterDef {
   help?: string[];
   /** One sentence for the card on what happened before (from the week's notes), or null. */
   recap?(notes: WeekNotes): string | null;
-  /** Story-aware suggestions for the whisper and loudspeaker boxes. */
-  suggest?: { whisper?: string[]; announce?: string[] };
+  /**
+   * Story-aware suggestions for the whisper and loudspeaker boxes. A plain string is offered for
+   * anyone. An idea with `for` is offered only when whispering one of those people, and one marked
+   * `help` only after a failed try or a retry (it gives the day's answer away).
+   */
+  suggest?: { whisper?: SuggestIdea[]; announce?: SuggestIdea[] };
   /** Today's prices where they differ from the usual (rules.ts COSTS). */
   costs?: Partial<Record<ActionId, number>>;
   create(ctx: ChapterCtx): ChapterRun;

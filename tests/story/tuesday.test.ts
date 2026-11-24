@@ -36,7 +36,10 @@ describe('Tuesday: Not Speaking', () => {
       expect(g.day.main).toBe('lost');
       // Dwight's warnings made Angela think even less of Oscar.
       expect(bonds(g)[0]).toBeLessThan(-40);
-      expect(g.day.lines).toEqual([ROW.lost]);
+      // The loss says how close it was, and who was still stirring.
+      expect(g.day.lines[0]).toBe(ROW.lost);
+      expect(g.day.lines[1]).toMatch(/never had one good talk|of the 3 they needed/);
+      expect(g.day.lines[1]).toMatch(/Dwight was still warning Angela about Oscar/);
       expect(g.story.state.notes.accounts).toBe(false);
       // No extra goal wins itself.
       expect(g.day.extraState('stirring')).toBe('lost');
@@ -129,6 +132,41 @@ describe('Tuesday: Not Speaking', () => {
     g.sim.bus.emit('sceneDone', { people: ['dwight', 'angela'], trigger: 'plan', planKind: 'gossip' });
     expect(talks(g)).toBe(0.5);
     expect(g.feed).toContain(ROW.dwightWarns);
+  });
+
+  it('a whispered idea of making peace leads to a hand-written talk, which counts once it has been said', async () => {
+    const g = play(storyAt(2, 31));
+    await g.toClock(9, 10);
+    expect(g.whisper('dwight', 'Maybe I was wrong about Oscar.')).toBeNull();
+    expect(g.whisper('angela', 'Life is too short to stay angry with Oscar.')).toBeNull();
+    expect(g.whisper('oscar', 'Life is too short to stay angry with Angela.')).toBeNull();
+    // When one of them walks over on purpose, the talk is spoken in their own written words
+    // (stiff at first, warmer later), and the caption keeps count.
+    const written = ROW.talks.flatMap((t) => [...t.angela, ...t.oscar]);
+    expect(await g.until(() => g.feed.some((l) => written.includes(l)), 700)).toBe(true);
+    expect(await g.until(() => g.feed.some((l) => /That is \d of 3/.test(l)), 60)).toBe(true);
+    expect(talks(g)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('set down face to face, they manage a few words: half a talk', async () => {
+    const g = play(storyAt(2, 32));
+    await g.toClock(9, 30);
+    const o = g.sim.person('oscar')!;
+    await g.drop('angela', { x: o.x + 14, y: o.y + 4 });
+    expect(await g.until(() => talks(g) >= 0.5, 40)).toBe(true);
+    expect(g.feed.some((l) => l === ROW.talkFace || l === ROW.talkChat)).toBe(true);
+  });
+
+  it('a talk still going at five counts, and a lost day says how close it was', async () => {
+    const g = play(storyAt(2, 33));
+    await g.toClock(16, 57);
+    const run = g.day.logic as unknown as { talks: number; talking: boolean };
+    run.talks = 2;
+    run.talking = true;
+    await g.toEnd();
+    expect(g.day.main).toBe('won');
+    expect(ROW.lostWhy(2, true, false)).toBe('Angela and Oscar had 2 good talks of the 3 they needed. Dwight was still warning Angela about Oscar.');
+    expect(ROW.lostWhy(0.5, false, false)).toBe('Angela and Oscar never had one good talk.');
   });
 
   it('while they are making up, a scene never makes them like each other less', () => {

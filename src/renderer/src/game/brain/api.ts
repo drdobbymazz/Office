@@ -393,6 +393,12 @@ export interface DirectiveRequest {
   people: { id: CharId; name: string; room: RoomId; pronoun?: 'he' | 'she' | 'they' }[];
   rooms: { id: string; name: string }[];
   allowDelegate?: boolean;
+  /**
+   * Story mode: the model may not turn mild words into something that takes a person out of the
+   * day (quitting, being knocked out or worse, wrecking a room). Such a reading is only accepted
+   * when the plain words say so too. Deliberate orders ("quit your job") still work.
+   */
+  careful?: boolean;
 }
 
 export interface DirectiveResult {
