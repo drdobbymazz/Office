@@ -385,7 +385,11 @@ export function TextTool({ placeholder, hint, suggestions, onSend, sendLabel = '
           placeholder={placeholder}
           disabled={disabled}
           onChange={(e) => setText(e.target.value)}
-          onFocus={refocus}
+          onFocus={() => {
+            refocus();
+            // A phone's keyboard takes half the screen a moment after focus: keep the box in view above it.
+            window.setTimeout(() => ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 350);
+          }}
           onBlur={releaseTyping}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           style={{ minHeight: 64 }}

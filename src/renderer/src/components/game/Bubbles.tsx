@@ -220,6 +220,8 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       const list = game.activeSpeech();
       const live = new Set<string>();
       for (const sp of list) {
+        // A thought cleared by the game is an empty line: nothing to show (no "Michael thinks" over a blank box).
+        if (!sp.text.trim()) continue;
         if (now < sp.startedAt) continue;
         live.add(sp.id);
         if (!nodes.has(sp.id)) {

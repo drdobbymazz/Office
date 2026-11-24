@@ -52,6 +52,12 @@ export const ROOM_SHORT: Record<string, string> = {
   outside: 'Outside'
 };
 
+/** Room names for the list of people: the same words the cards and captions use. */
+export const ROOM_LIST: Record<string, string> = {
+  boss: "Michael's office", meeting: 'Conference room', annex: 'Annex', accounts: 'Accounts', bullpen: 'Bullpen', kitchen: 'Break room',
+  outside: 'Outside'
+};
+
 /** Room names for the tiles of the mini plan (they wrap onto two short lines in the narrow tiles). */
 export const ROOM_TILE: Record<string, string> = {
   boss: "Michael's office", meeting: 'Conference room', annex: 'Annex', accounts: 'Accounts', bullpen: 'Bullpen', kitchen: 'Break room',

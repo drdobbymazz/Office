@@ -12,7 +12,7 @@ import { useContent, useGame, useUi } from './ctx';
 import { useNav } from './Dock';
 import { WhisperTool } from './PowersTab';
 import { useCost, useStory } from './Story';
-import { EMOTION_WORD, STATUS_WORD, ROOM_SHORT, cap, doingWhere, fill, readableOnCream } from './words';
+import { EMOTION_WORD, STATUS_WORD, ROOM_LIST, cap, doingWhere, fill, readableOnCream } from './words';
 
 function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
   const { pressed, handlers } = usePress();
@@ -33,7 +33,7 @@ function Row({ p, onTap }: { p: PersonUi; onTap: () => void }) {
           {p.statuses.slice(0, 2).map((s) => <GIcon key={s} name={statusIcon(s)} px={16} title={STATUS_WORD[s]} />)}
         </div>
         <div style={{ fontSize: 13, lineHeight: '15px', color: 'var(--cth-ink-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {p.present ? `${ROOM_SHORT[p.room] ?? p.roomName} · ${p.doing}` : cap(p.doing || 'not here')}
+          {p.present ? `${ROOM_LIST[p.room] ?? p.roomName} · ${p.doing}` : cap(p.doing || 'not here')}
         </div>
       </div>
       <GIcon name={emotionIcon(p.emotion)} px={16} title={EMOTION_WORD[p.emotion]} />

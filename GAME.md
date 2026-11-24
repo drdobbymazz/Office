@@ -47,7 +47,7 @@ If you lose or retry a day, the card also shows "Stuck? Ways that work".
 | Day | Chapter | The job | What is in the way |
 |---|---|---|---|
 | Monday | The Memo | Get Michael and at least 9 others into the conference room between 14:00 and 15:00 for Corporate's call. | Michael really hides in his office and ignores the loudspeaker; at 10:20 Creed goes through his bin. |
-| Tuesday | Not Speaking | Three good talks between Angela and Oscar (or both back to liking each other) before five. | Dwight keeps warning Angela about Oscar, and after lunch Kevin starts worrying Oscar. |
+| Tuesday | Not Speaking | Three good talks between Angela and Oscar (or both back to liking each other) before five. Each talk shows its count. | Dwight keeps warning Angela about Oscar, and after lunch Kevin starts worrying Oscar. |
 | Wednesday | The Client | Get Mr Figgis and a salesperson together in a meeting room before his patience runs out. | Michael keeps barging in to pitch, and not every salesperson suits him: read his card. |
 | Thursday | The Leak | Work out who is faxing Corporate and accuse them (two tries). | Everyone on an errand uses the same fax machine; only the leak's pages make it beep. |
 | Friday | The Verdict | Pass the inspector's tour. | Michael wants to give a farewell speech, and the week's loose ends turn up on the tour. |
@@ -65,9 +65,21 @@ Days remember each other: a late set of accounts makes Mr Figgis start out annoy
 Thursday's fax quieter, and an uncaught leak tries one last page during Friday's tour. The week ends with a
 scene on the floor before the ending card.
 
-While you play: story moments show as a caption at the bottom of the floor; a stamp marks each goal won or
-lost; once the day's job is settled, **Finish the day** runs the rest quickly to the report, and after a loss
-**Try the day again** starts the same morning over. Tap the clock to pause; the day also pauses while you type.
+While you play:
+
+- Story moments show as a caption at the bottom of the floor, and a stamp marks each goal won or lost.
+- The day's key people carry a name tag while the camera is zoomed out.
+- When nothing needs you for a while, the mission row offers a time, such as **10:25**: one tap skips ahead to it.
+  Once the day's job is settled, **Finish the day** runs the rest quickly to the report, and after a loss
+  **Try the day again** starts the same morning over.
+- The fast-forward button on the rail switches between normal speed and 2x. Tap the clock to pause; the day
+  also pauses while you type.
+- Whisper suggestions fit the person you are whispering to. The ones that give a day's answer away only appear
+  after you have failed that day once, next to "Stuck? Ways that work" on the card.
+- In the story, a whisper or an order is read by its plain words. With the model online, the words and the
+  model must agree before anyone is hurt, quits or is locked away, so an innocent sentence cannot wreck a day.
+  A deliberate order ("quit your job") still works.
+
 The story saves itself separately from the sandbox. Announcements that name a room send people there, and
 people you drop stay put for a while: both work in the sandbox too.
 
