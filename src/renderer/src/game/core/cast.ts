@@ -453,6 +453,32 @@ export const BOND_SEEDS: readonly BondSeed[] = [
   ['ryan', 'dwight', -25, 'a strange man who will not leave him alone']
 ];
 
+/** Initial pairwise romantic chemistry (0..100). Separate from general friendship/bond. */
+export const CHEMISTRY_SEEDS: readonly [CastId, CastId, number][] = [
+  ['jim', 'pam', 82],
+  ['pam', 'jim', 82],
+  ['dwight', 'angela', 74],
+  ['angela', 'dwight', 72],
+  ['kelly', 'ryan', 86],
+  ['ryan', 'kelly', 38],
+  ['toby', 'pam', 62],
+  ['andy', 'angela', 48],
+  ['michael', 'ryan', 30],
+  ['michael', 'pam', 20],
+  ['meredith', 'jim', 45],
+  ['meredith', 'ryan', 40],
+  ['meredith', 'creed', 35],
+  ['meredith', 'michael', 30],
+  ['kevin', 'pam', 28],
+  ['kevin', 'meredith', 22],
+  ['ryan', 'pam', 25]
+];
+
+/** Pairs already having a secret office fling at the start of a fresh save. */
+export const FLING_SEEDS: readonly [CastId, CastId][] = [
+  ['dwight', 'angela']
+];
+
 // ── Visitors: people who turn up for an event and leave again ────────────────
 
 /** How a guest conjured by the player looks, drawn in the same pixel style as the cast. */

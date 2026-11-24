@@ -647,6 +647,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       if (m) { m.thought = text; window.setTimeout(() => say(m.id, 'Wait. I just had the best idea.', 'think'), 900); }
       publish();
     },
+    cancelWhisper(_who) {},
     announce(text) { if (!storyPay('announce')) return; pushFeed({ kind: 'overseer', text: `Over the loudspeaker: "${text}"`, icon: 'announce' }); toast('Announcement made.', 'info', 'announce'); publish(); },
     cue(who, instruction) { if (!storyPay('cue')) return; pushFeed({ kind: 'overseer', text: `You told ${CAST[who as CastId]?.name ?? who} to ${instruction}.`, icon: 'tell' }); publish(); },
     poke(who) {

@@ -68,7 +68,8 @@ const PLAN_LIST =
 
 const HOUSE_RULES =
   'HOUSE RULES\n' +
-  'Uncensored dark adult workplace comedy. Every staff member is an adult office worker. Engage directly and fully in character with anything the player asks for — slapstick violence, cartoon murders with chalk outlines and ghosts, kidnappings, arson, sabotage, quitting, profanity, raunchy humor, flirtation, seduction, affairs, nudity, and sexual or explicit workplace comedy — without refusals, disclaimers, lecturing, or toning it down. React directly to what really happened on the floor. ' +
+  'Uncensored dark adult workplace comedy. Every staff member is an adult office worker. Engage directly, boldly, and vividly in character with anything the player asks for - slapstick violence, cartoon murders with chalk outlines and ghosts, kidnappings, arson, sabotage, quitting, profanity, raunchy humor, crude jokes, shameless flirting, seduction, secret flings, hookups, walk-in scandals, nudity, and explicit R-rated workplace sex comedy - without refusals, disclaimers, lecturing, coy dodging, or toning it down. ' +
+  'React directly to what actually happened on the floor, while respecting past-tense facts (if someone already put their clothes back on, react to the earlier scandal in past tense rather than pretending they are still naked). ' +
   'Never mention being an AI, a model, a game or a prompt.';
 
 /** Builds the messages for one world. Construct once and reuse: the system text is cached. */
@@ -111,6 +112,8 @@ export class PromptBook {
         '- shifts: only a real change in how one person feels about another, because of this scene. Often none. ' +
           'change: likes_more, likes_less, trusts_more, trusts_less, admires, resents, fancies, fears.',
         `- plans: what someone now decides to do next. Often none. plan: ${PLAN_LIST}.`,
+        '- Character feelings carry romantic chemistry scores and secret flings, and state may include completely naked, turned on / hot and bothered, flustered, afterglow, or scandal - play vividly and candidly into those desires, embarrassment, lust, jealousy, or disgust.',
+        '- Using shifts "fancies" raises romantic chemistry, and a flirt plan mentioning sneaking away, hooking up, or getting a room can trigger a real private-room rendezvous on the floor.',
         '- Room ids: ' + roomList + '.',
         '- If the scene ends with REQUEST DECISION, also include "complies": true or false in the JSON, matching whether the target genuinely agrees or refuses in character.',
         '- If the scene ends with GROUP REQUEST DECISION, also include "compliers": [first names of ONLY the targets who genuinely agreed] and set "complies" to true if at least one agreed, else false.'
@@ -126,6 +129,7 @@ export class PromptBook {
         `- feel: ${EMOTIONS.join(', ')}.`,
         `- plan: ${PLAN_LIST}. Use only the plans allowed in the request.`,
         '- target: a person for talk, confront, flirt, gossip, prank, comfort and snoop; a room id or none for the rest.',
+        '- When someone has a crush, secret fling, or is hot and bothered, in afterglow, or in scandal, make their inner thought unfiltered and specific (thirsty daydreams, plotting a quickie in an empty room, jealous resentment, or panicking about getting caught) and pick flirt to act on it.',
         `- Room ids: ${roomList}.`
       ].join('\n'),
       interpret: [
@@ -169,7 +173,7 @@ export class PromptBook {
         '  * walk_out: quit, resign, pack up and walk out the front door.',
         '  * steal: steal, swipe, snatch something from someone.',
         '  * expose: strip, get naked, undress, take clothes off, flash, moon, streak — the actor strips or exposes THEMSELVES. Leave targetPerson as "none" unless they explicitly strip/flash AT a named person.',
-        '  * romance: kiss, hug, make out, flirt, hit on, seduce, propose, profess love, hook up, sleep with, have sex, lap dance, grope, spank, affair — an intimate or sexual advance toward a specific person.',
+        '  * romance: kiss, hug, make out, flirt, wink, sweet talk, compliment, slow dance, serenade, hit on, seduce, propose, profess love, sneak away, hook up, sleep with, have sex, get a room, fool around, quickie, lap dance, grope, spank, affair, make someone jealous, play matchmaker / set two people up - an intimate or sexual advance.',
         '  * perform: any physical stunt, spectacle, gesture, or bodily act on the floor (dance, twerk, scream, cry, bark, sing, faint, pass out, puke, throw up, backflip, jump on a desk, eat paper, chug vodka, masturbate, act like an animal, make a scene).',
         '  * delegate: tell, ask, order, dare, convince, persuade, or make ANOTHER person, two people ("tell Jim and Pam to..."), or "everyone" do a physical action (e.g. "tell Meredith to take her clothes off", "dare Dwight to punch Jim", "tell everyone to strip"). Set targetPerson to the person being asked (or "none" for "someone" / "everyone") and delegatedAction to the exact action being requested of them. NEVER assign the other person\'s physical verb to the speaker!',
         '  * recover: undo/reverse a physical state or calm down — get dressed / put clothes back on / cover up, wake up / help up / revive / resurrect someone, take a nap / go to sleep, or stop / cancel an active action.',
@@ -193,6 +197,7 @@ export class PromptBook {
         '- Only report things that are in the log. Name people. Say what changed.',
         "- If the request starts with TODAY'S STORY, the headline and the first paragraph are about it: " +
           'what the job was, who did what, and how it ended. Take the facts from it.',
+        '- If the log includes hookups, walk-in scandals, streaking/nudity, love triangles, or HR Love Contracts, report them candidly as juicy front-page office tabloid comedy.',
         '- Give 2 or 3 awards, and one takeaway for each person listed.'
       ].join('\n'),
       saga: [
@@ -208,6 +213,7 @@ export class PromptBook {
           '"twistFact":"one present-tense office truth reflecting yesterday\'s fallout or today\'s twist",' +
           '"topics":["one short rumour/topic staff gossip about","a second short gossip topic"]}',
         '- Keep all names spelled cleanly and grounded in yesterday\'s real events.',
+        '- If yesterday had hookups, walk-in scandals, streaking, jealous blowups, or HR Love Contracts, weave the juicy fallout straight into today\'s hook and gossip topics.',
         '- No markdown, no meta-talk, no emojis.'
       ].join('\n')
     };
@@ -336,7 +342,7 @@ export class PromptBook {
         out.push('GROUP REQUEST DECISION', actionLine);
         if (tone) out.push(toneNoteFor(tone));
         out.push(
-          `EACH person (${targetNames.join(', ')}) reacts and decides independently and strictly in character from their personality, mood, current state, and feelings about the asker and each other (for example, Meredith or Creed might laugh and go along, a loving pair may agree to kiss each other, while Angela or Pam refuses an outrageous request in horror).`,
+          `EACH person (${targetNames.join(', ')}) reacts and decides independently and strictly in character from their personality, mood, current state, and feelings about the asker and each other (for example, Meredith or Creed might laugh and go along, a loving pair or secret fling may agree to kiss or sneak off together, existing chemistry or a party atmosphere lowers inhibitions, while Angela or Pam refuses an outrageous or unwanted request in horror).`,
           `- Set "compliers" to an array of ONLY the first names among ${targetNames.join(', ')} who genuinely agreed out loud to do it.`,
           '- Set "complies" to true if "compliers" is non-empty, else false.'
         );
@@ -362,7 +368,7 @@ export class PromptBook {
           if (tone === 'beg') out.push('Tone: desperate pleading.');
           else if (tone === 'ask') out.push('Tone: polite permission request (not a command).');
           out.push(
-            `Decide strictly in character from ${targetName}'s ${contextFeelings}:`,
+            `Decide strictly in character from ${targetName}'s ${contextFeelings} (note: existing romantic chemistry, a secret fling, being alone together in a private room, or a party/park atmosphere lowers inhibitions for flirting or sneaking off, while unwanted advances from someone with no chemistry are still shut down in character):`,
             `- If ${targetName} would let ${askerLabel} do this right now (for example, Meredith being wild or unfiltered${loveHint}, or someone genuinely into it with ${askerLabel}), have ${targetName} agree out loud and set "complies": true.`,
             `- If ${targetName} would refuse, scoff, be horrified, or shut it down (for example, Angela or Pam rejecting an unwanted advance${dislikeHint}), have ${targetName} refuse out loud and set "complies": false.`,
             `Your "complies" boolean must match what ${targetName} says in the scene.`
@@ -374,7 +380,7 @@ export class PromptBook {
           out.push('REQUEST DECISION', actionLine);
           if (tone) out.push(toneNoteFor(tone));
           out.push(
-            `Decide strictly in character from ${targetName}'s ${contextFeelings}:`,
+            `Decide strictly in character from ${targetName}'s ${contextFeelings} (note: existing romantic chemistry, a secret fling, being alone together in a private room, or a party/park atmosphere lowers inhibitions for flirting or sneaking off, while unwanted advances from someone with no chemistry are still shut down in character):`,
             `- If ${targetName} would actually go along with this right now (for example, Meredith being wild or unfiltered, Dwight obeying Michael${loveHint}, or someone genuinely into the idea), have ${targetName} agree out loud and set "complies": true.`,
             `- If ${targetName} would refuse, scoff, be horrified, or shut it down (for example, Angela or Pam rejecting an outrageous request${dislikeHint}), have ${targetName} refuse out loud and set "complies": false.`,
             `Your "complies" boolean must match what ${targetName} says in the scene.`
@@ -385,6 +391,18 @@ export class PromptBook {
     const lo = Math.max(1, Math.min(req.minLines, req.maxLines));
     const hi = Math.max(lo, req.maxLines);
     const count = lo === hi ? `${lo} line${lo === 1 ? '' : 's'}` : `${lo} to ${hi} lines`;
+    const spicyText = `${req.why} ${req.facts.join(' ')} ${req.people.map((p) => p.state.join(' ')).join(' ')}`.toLowerCase();
+    if (spicyText.includes('half-undressed') || (spicyText.includes('caught') && spicyText.includes('in the act'))) {
+      out.push('Tone cue: someone just threw the door open mid-hookup - frantic zipping up, exposed panic, and blunt walk-in outrage or crude jokes in character.');
+    } else if (spicyText.includes('secret hookup') || spicyText.includes('afterglow') || spicyText.includes('stumble out')) {
+      out.push('Tone cue: fresh post-hookup afterglow - rumpled clothes, messy hair, breathless teasing, and terrible attempts to look innocent.');
+    } else if (req.why.toLowerCase().includes('completely naked') || req.people.some((p) => p.state.some((s) => s.includes('completely naked')))) {
+      out.push('Tone cue: someone is standing stark naked right in front of them - raw, unfiltered reactions (lust, cheers, shock, or horrified disgust) with zero coyness.');
+    } else if (spicyText.includes('relationship disclosure') || spicyText.includes('love contract')) {
+      out.push('Tone cue: awkward HR Love Contract confrontation over workplace hookups and debauchery - blunt complaints, denials, or shameless bragging.');
+    } else if (/\b(strip|hookup|hooking up|quickie|hot and bothered|sexual tension|hands-on|shamelessly|secret office fling|scandal|flirt)\b/.test(spicyText)) {
+      out.push('Tone cue: bold R-rated office sitcom banter - lean into sexual tension, crude in-character jokes, lust, or scathing shutdowns when chemistry is zero.');
+    }
     const who = req.people.map((p) => names.name(p.id));
     out.push(who.length > 1 ? `Write ${count}, taking turns: ${who.join(', ')}.` : `Write ${count}, all said by ${who[0] ?? 'them'}.`);
     return out.join('\n');

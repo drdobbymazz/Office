@@ -1252,6 +1252,12 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       audio.sfx('whisperSend');
       return true;
     },
+    cancelWhisper(who) {
+      if (notHere(who)) return;
+      director.cancelWhisper(who);
+      audio.sfx('close');
+      pushUi();
+    },
     announce(text) {
       if (!text.trim() || pay('announce')) return false;
       director.announce(text);

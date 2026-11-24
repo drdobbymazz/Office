@@ -302,6 +302,7 @@ export function WhisperTool({ fixedWho, autoFocus, reveal }: { fixedWho?: CharId
   const [who, setWho] = useState<CharId | null>(fixedWho ?? null);
   const [sent, setSent] = useState<string | null>(null);
   const target = people.find((p) => p.id === (fixedWho ?? who));
+  const activeWhispers = useMemo(() => (fixedWho ? [] : people.filter((p) => p.present && p.whisper)), [fixedWho, people]);
   const other = useMemo(() => {
     const rest = people.filter((p) => p.id !== target?.id);
     return rest.length ? rest[(target?.name.length ?? 0) % rest.length].name : 'someone';
@@ -332,6 +333,25 @@ export function WhisperTool({ fixedWho, autoFocus, reveal }: { fixedWho?: CharId
           return true;
         }} />
       {sent && <Sent text={sent} />}
+      {activeWhispers.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+          <Label>Active whispers</Label>
+          {activeWhispers.map((p) => (
+            <div key={p.id} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px',
+              background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-lilac), inset 3px 0 0 var(--cth-lilac)'
+            }}>
+              <span style={{ fontSize: 13, lineHeight: '16px', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <b style={{ fontWeight: 400, color: 'var(--cth-ink-900)' }}>{p.name}:</b>{' '}
+                <span style={{ color: 'var(--cth-ink-700)' }}>{p.whisper!.text}</span>
+              </span>
+              <Btn variant="ghost" size="sm" icon="x" label={`Cancel whisper for ${p.name}`} sound="close" square
+                onClick={() => { game.cancelWhisper(p.id); setSent(null); }}
+                style={{ minHeight: 28, minWidth: 28 }} />
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

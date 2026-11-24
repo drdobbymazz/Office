@@ -16,8 +16,11 @@ class LoveRun extends Run {
     sim.fx({ kind: 'burst', what: 'hearts', x: p.x, y: p.y - 28, count: 14 });
     sim.sfx('heart', p.x);
     this.status(a, 'love', LASTS + 4, b);
+    this.status(a, 'aroused', 55, b);
     sim.emote(a, 'heart');
     sim.feel(a, 'love', 1, 12);
+    sim.shiftChemistry(a, b, 40);
+    if (sim.bond(b, a) > -30) sim.shiftChemistry(b, a, 12);
     sim.react(a, 'startle', 0.6);
     sim.face(a, b);
     this.narrate('start');

@@ -814,4 +814,44 @@ describe('physical directive execution', () => {
       expect(feed.some((t) => /\bDwight\s+barks\s+like\s+a\s+dog\b/i.test(t))).toBe(true);
     }
   });
+
+  it('clears naked facts/perception after cooldown expiry or manual redressing', async () => {
+    const { sim, director, advanceAsync } = makeOffice(91);
+    director.cue('angela', 'take her clothes off');
+    await advanceAsync(40, () => sim.hasStatus('angela', 'naked'));
+    expect(sim.facts().some((f) => /Angela.*completely naked/i.test(f))).toBe(true);
+
+    // Wait for the 90s naked status cooldown to expire naturally
+    await advanceAsync(100, () => !sim.hasStatus('angela', 'naked'));
+    expect(sim.hasStatus('angela', 'naked')).toBe(false);
+    expect(sim.facts().some((f) => /Angela.*completely naked/i.test(f))).toBe(false);
+    expect(sim.facts().some((f) => /Angela.*fully dressed again/i.test(f))).toBe(true);
+
+    const witnessBrief = sim.briefFor('dwight', ['angela']);
+    expect(witnessBrief.memories.some((m) => /is now completely naked/i.test(m))).toBe(false);
+    expect(witnessBrief.memories.some((m) => /fully dressed again/i.test(m))).toBe(true);
+
+    // Timed dressed fact also expires cleanly after its 90s TTL
+    await advanceAsync(95, () => !sim.facts().some((f) => /Angela.*fully dressed again/i.test(f)));
+    expect(sim.facts().some((f) => /Angela.*fully dressed again/i.test(f))).toBe(false);
+  });
+
+  it('tracks player whispers with fromPlayer and lets cancelWhisper clear them without bypassing story convictions', async () => {
+    const { sim, director, feed, advanceAsync } = makeOffice(93);
+    director.whisper('kevin', 'guard the snack table');
+    await advanceAsync(10, () => !!sim.person('kevin')?.conviction);
+    expect(sim.person('kevin')?.conviction?.fromPlayer).toBe(true);
+    expect(sim.peopleUi().find((p) => p.id === 'kevin')?.whisper?.text).toBe('guard the snack table');
+
+    director.cancelWhisper('kevin');
+    expect(sim.person('kevin')?.conviction).toBeNull();
+    expect(sim.peopleUi().find((p) => p.id === 'kevin')?.whisper).toBeNull();
+    expect(feed.some((t) => /Kevin shakes off the thought/i.test(t))).toBe(true);
+
+    // Non-player story convictions must not be cleared by cancelWhisper
+    sim.convince('michael', 'Today is the day for a speech.');
+    expect(sim.person('michael')?.conviction?.fromPlayer).toBeUndefined();
+    director.cancelWhisper('michael');
+    expect(sim.person('michael')?.conviction?.text).toBe('Today is the day for a speech.');
+  });
 });

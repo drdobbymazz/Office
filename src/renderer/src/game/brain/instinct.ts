@@ -19,6 +19,7 @@ import {
 } from './instinctRules';
 import type { ThingRule } from './instinctRules';
 import { NameMap, normName } from './names';
+import { detectSpicyTopic, spicyDelegationReply, spicySceneLines, spicySummary } from './instinctRomance';
 import { capitalise, listNames, pick, shuffle } from './util';
 import type { Rng } from './util';
 import { WorldIndex } from './world';
@@ -108,7 +109,7 @@ function chaosCategoryLines(id: ChaosId): string[] {
 
 // ── Reading feelings ────────────────────────────────────────────────────────
 
-const WARM_RE = /\b(like|likes|love|loves|adore|adores|hero|crush|fancy|fancies|friend|sweet|lovely|trust|trusts|admire|admires|fond|best|kind|respect|respects|good|iconic|joy|partner|soft spot|great)\b/gi;
+const WARM_RE = /\b(like|likes|love|loves|adore|adores|hero|crush|fancy|fancies|friend|sweet|lovely|trust|trusts|admire|admires|fond|best|kind|respect|respects|good|iconic|joy|partner|soft spot|great|devoted|besotted|fling)\b/gi;
 const COLD_RE = /\b(hate|hates|rival|resent|resents|annoy|annoying|annoys|can't stand|cannot stand|fiction|loud|vampire|furious|grudge|distrust|angry|threat|idle|tiresome|odd|violation|worst|drives him|drives her|mad|wind up|terrifying|suspicious|enemy|jealous|fusspot|scared of|never seems|takes credit|dislikes)\b/gi;
 
 export type Tone = 'warm' | 'cold' | 'neutral';
@@ -116,6 +117,7 @@ export type Tone = 'warm' | 'cold' | 'neutral';
 export function toneOf(p: PersonBrief, about: CharId | null | undefined): Tone {
   const text = (about ? p.feelings.find((f) => f.about === about)?.text : '') ?? '';
   let score = (text.match(WARM_RE)?.length ?? 0) - (text.match(COLD_RE)?.length ?? 0);
+  if (/\b(?:is close to|head over heels|strong chemistry)\b/i.test(text)) score += 1;
   if (/\b(not|never|no longer)\s+(like|trust|fond|a friend)/i.test(text)) score -= 2;
   if (['angry', 'disgusted', 'suspicious'].includes(p.mood)) score -= 0.75;
   if (['happy', 'love', 'excited', 'amused'].includes(p.mood)) score += 0.5;
@@ -600,7 +602,9 @@ export class InstinctBrain implements Brain, Reflexes {
         persuade: 'tried to persuade'
       };
       const actLower = `${del.action} ${del.command}`.toLowerCase();
-      const isOutrageous = /\b(strip|undress|naked|nude|clothes|flash|moon|streak|topless|pantless|kiss|make\s+out|seduce|hook\s+up|sleep\s+with|have\s+sex|fuck|bang|lap\s+dance|grope|massage|straddle|lick|kill|murder|eliminate|punch|hit(?!\s+on)|knock\s*out|shove|drag|lock|sabotage|smash)\b/.test(actLower);
+      const isSpicyDel = /\b(strip|undress|naked|nude|clothes|flash|moon|streak|topless|pantless|kiss|make\s+out|seduce|hook\s+up|sleep\s+with|have\s+sex|fuck|bang|lap\s+dance|grope|massage|straddle|lick|flirt|wink|sneak\s+(?:away|off)|slow\s+dance|serenade|cuddle|fool\s+around|get\s+a\s+room)\b/.test(actLower);
+      const isOutrageous = isSpicyDel || /\b(kill|murder|eliminate|punch|hit(?!\s+on)|knock\s*out|shove|drag|lock|sabotage|smash)\b/.test(actLower);
+      const isExposeDel = /\b(strip|undress|naked|nude|clothes|flash|moon|streak|topless|pantless)\b/.test(actLower);
       const targets = del.targets && del.targets.length > 1 ? del.targets : [del.target];
       if (targets.length > 1) {
         const compliers = targets.filter((id) => this.decideComplianceFor(req, id));
@@ -630,24 +634,33 @@ export class InstinctBrain implements Brain, Reflexes {
           const tp = ppl.find((p) => p.id === tid);
           if (!tp) continue;
           const yes = compliers.includes(tid);
+          const spicyReply = isSpicyDel ? spicyDelegationReply(tp.id, askerName, yes, isExposeDel, false, delTone, rng) : null;
           lines.push(
-            yes
+            spicyReply
               ? {
                   who: tp.id,
-                  say: delTone === 'dare' ? "You're on! Watch this." : 'Sure, why not? Watch this.',
-                  feel: 'mischievous',
+                  say: spicyReply.say,
+                  feel: spicyReply.feel,
                   to: asker ? asker.id : 'all',
-                  act: 'laugh'
+                  act: spicyReply.act
                 }
-              : {
-                  who: tp.id,
-                  say: delTone === 'ask'
-                    ? (asker ? `Uh, no thanks, ${askerName}. Not happening.` : 'No thanks. Not happening.')
-                    : (asker ? `Are you serious, ${askerName}? No chance.` : 'Are you serious? No chance.'),
-                  feel: 'disgusted',
-                  to: asker ? asker.id : 'all',
-                  act: 'shake_head'
-                }
+              : yes
+                ? {
+                    who: tp.id,
+                    say: delTone === 'dare' ? "You're on! Watch this." : 'Sure, why not? Watch this.',
+                    feel: 'mischievous',
+                    to: asker ? asker.id : 'all',
+                    act: 'laugh'
+                  }
+                : {
+                    who: tp.id,
+                    say: delTone === 'ask'
+                      ? (asker ? `Uh, no thanks, ${askerName}. Not happening.` : 'No thanks. Not happening.')
+                      : (asker ? `Are you serious, ${askerName}? No chance.` : 'Are you serious? No chance.'),
+                    feel: 'disgusted',
+                    to: asker ? asker.id : 'all',
+                    act: 'shake_head'
+                  }
           );
         }
         const verbWord = summaryVerb[delTone];
@@ -696,24 +709,33 @@ export class InstinctBrain implements Brain, Reflexes {
                 }
           );
         }
+        const spicyPerm = isSpicyDel ? spicyDelegationReply(target.id, askerName, complies, isExposeDel, true, delTone, rng) : null;
         lines.push(
-          complies
+          spicyPerm
             ? {
                 who: target.id,
-                say: 'Sure, why not? Go ahead.',
-                feel: 'happy',
+                say: spicyPerm.say,
+                feel: spicyPerm.feel,
                 to: asker && asker.id !== target.id ? asker.id : 'all',
-                act: 'nod'
+                act: spicyPerm.act
               }
-            : {
-                who: target.id,
-                say: delTone === 'beg'
-                  ? `Stop begging, ${askerName}. No chance.`
-                  : `Are you serious, ${askerName}? No chance.`,
-                feel: 'disgusted',
-                to: asker && asker.id !== target.id ? asker.id : 'all',
-                act: 'shake_head'
-              }
+            : complies
+              ? {
+                  who: target.id,
+                  say: 'Sure, why not? Go ahead.',
+                  feel: 'happy',
+                  to: asker && asker.id !== target.id ? asker.id : 'all',
+                  act: 'nod'
+                }
+              : {
+                  who: target.id,
+                  say: delTone === 'beg'
+                    ? `Stop begging, ${askerName}. No chance.`
+                    : `Are you serious, ${askerName}? No chance.`,
+                  feel: 'disgusted',
+                  to: asker && asker.id !== target.id ? asker.id : 'all',
+                  act: 'shake_head'
+                }
         );
       } else {
         if (asker && asker.id !== target.id) {
@@ -745,22 +767,31 @@ export class InstinctBrain implements Brain, Reflexes {
           if (delTone === 'persuade') return asker ? `Save your breath, ${askerName}. Not happening.` : 'Not happening.';
           return asker ? `Don't boss me around, ${askerName}. No chance.` : 'Are you serious? No chance.';
         })();
+        const spicySingle = isSpicyDel ? spicyDelegationReply(target.id, askerName, complies, isExposeDel, false, delTone, rng) : null;
         lines.push(
-          complies
+          spicySingle
             ? {
                 who: target.id,
-                say: complySay,
-                feel: 'mischievous',
+                say: spicySingle.say,
+                feel: spicySingle.feel,
                 to: asker && asker.id !== target.id ? asker.id : 'all',
-                act: 'laugh'
+                act: spicySingle.act
               }
-            : {
-                who: target.id,
-                say: refuseSay,
-                feel: 'disgusted',
-                to: asker && asker.id !== target.id ? asker.id : 'all',
-                act: 'shake_head'
-              }
+            : complies
+              ? {
+                  who: target.id,
+                  say: complySay,
+                  feel: 'mischievous',
+                  to: asker && asker.id !== target.id ? asker.id : 'all',
+                  act: 'laugh'
+                }
+              : {
+                  who: target.id,
+                  say: refuseSay,
+                  feel: 'disgusted',
+                  to: asker && asker.id !== target.id ? asker.id : 'all',
+                  act: 'shake_head'
+                }
         );
       }
       const bystander = ppl.find((p) => p.id !== asker?.id && p.id !== target.id);
@@ -804,11 +835,32 @@ export class InstinctBrain implements Brain, Reflexes {
     // older events, so only the newest one (after the line giving the time) is a fallback:
     // otherwise people would shout about an earthquake that ended half an hour ago.
     const chaos = !theme && (req.trigger === 'event' || req.trigger === 'aftermath') ? detectChaos(req.why) ?? detectChaos(req.facts[1] ?? '') : null;
+    const spicy = !theme && !chaos ? detectSpicyTopic(req) : null;
     const thing = req.trigger === 'custom' ? matchThing(req.why) : null;
     const thingNoun = thing?.noun ?? guessNoun(req.why);
     const vibe: CustomVibe = thing?.vibe ?? 'weird';
     const seen = new Set(req.recent.map((r) => lineKey(r.say)));
     const lines: SceneLine[] = [];
+    if (spicy) {
+      const generated = spicySceneLines(req, spicy, names, rng, n);
+      for (const line of generated) {
+        const cleaned = cleanSay(line.say);
+        const key = lineKey(cleaned);
+        if (cleaned && !seen.has(key)) {
+          seen.add(key);
+          lines.push({ ...line, say: cleaned });
+        }
+      }
+      if (lines.length) {
+        return {
+          lines,
+          summary: spicySummary(req, spicy, names),
+          shifts: this.shiftsFor(req, lines),
+          plans: this.plansFor(req, chaos),
+          source: 'instinct'
+        };
+      }
+    }
 
     // News with nothing to point at (someone arrived, something was decided) is brought up once and
     // answered; an event or a thing everyone can see gets a first reaction from each of them.
@@ -1194,19 +1246,35 @@ export class InstinctBrain implements Brain, Reflexes {
     const isNestedDelegate = /^(?:tell|ask|order|command|dare|convince|persuade|beg|urge|force|make|have|get)\s+/i.test(del.command.trim());
     const isExpose = !isNestedDelegate && /\b(strip|undress|naked|nude|clothes|flash|moon|streak|topless|pantless)\b/.test(act);
     const isViolent = /\b(kill|murder|eliminate|punch|hit(?!\s+on)|knock\s*out|shove|drag|lock|sabotage|smash|fire)\b/.test(act);
-    const isRomance = !isNestedDelegate && /\b(kiss|make\s+out|seduce|hook\s+up|sleep\s+with|have\s+sex|fuck|bang|lap\s+dance|grope|massage|straddle|lick)\b/.test(act);
+    const isRomance = !isNestedDelegate && /\b(kiss|make\s+out|seduce|hook\s+up|sleep\s+with|have\s+sex|fuck|bang|lap\s+dance|grope|massage|straddle|lick|flirt|wink|sneak\s+(?:away|off)|slow\s+dance|serenade|cuddle|fool\s+around|get\s+a\s+room)\b/.test(act);
     const isWalkOut = !isNestedDelegate && /\b(quit|resign|walk\s+out)\b/.test(act);
     const tid = targetId.toLowerCase();
     const delTone: DelegateTone = del.tone ?? (del.executor === 'asker' ? 'ask' : 'order');
     const harmless = !isExpose && !isRomance && !isViolent && !isWalkOut;
 
-    if (tone === 'cold' && !(tid === 'dwight' && delTone === 'dare' && harmless)) return false;
-    if (target && ['angry', 'disgusted', 'scared', 'sad'].includes(target.mood)) return false;
+    const factsStr = req.facts.join(' ').toLowerCase();
+    const isPrivate = factsStr.includes('alone together');
+    const isPartyOrPark = factsStr.includes('party atmosphere') || factsStr.includes('disco') || factsStr.includes('scranton community park');
+    const askerFling = hasAsker && /secret office fling/i.test(feelingText);
+    const askerHighChem = hasAsker && /\b(head\s+over\s+heels|strong\s+chemistry)\b/i.test(feelingText);
+    const askerCrush = hasAsker && /\bhas\s+a\s+crush\s+on\b/i.test(feelingText);
+    const isAroused = stateText.includes('hot and bothered') || stateText.includes('afterglow');
+
+    if (tone === 'cold' && !(tid === 'dwight' && delTone === 'dare' && harmless) && !(isRomance && (askerFling || askerHighChem))) return false;
+    const hardRefuseMood = !!target && ['angry', 'disgusted', 'scared', 'sad'].includes(target.mood);
+    const softRomanceOverride = !!target && target.mood === 'disgusted' && tone !== 'cold' && ((isRomance && (askerFling || askerHighChem)) || (isExpose && askerFling && isPrivate));
+    if (hardRefuseMood && !softRomanceOverride) return false;
 
     // For romance requests ("tell jim and pam to kiss", "tell jim to kiss pam", "ask pam if you can massage her"),
-    // also check whether target loves/fancies the partner or the asker asking them.
-    if (isRomance && target && !['angry', 'disgusted', 'scared', 'sad'].includes(target.mood)) {
-      if (hasAsker && /\b(in\s+love|adore|adores|crush|fancy|fancies|hopelessly\s+in\s+love|soulmate|sweet\s+on|devoted|besotted)\b/i.test(feelingText)) {
+    // also check whether target loves/fancies the partner or the asker asking them, plus chemistry & privacy.
+    if (isRomance && target && (!hardRefuseMood || softRomanceOverride)) {
+      if (isAroused && tone !== 'cold') {
+        return true;
+      }
+      if (hasAsker && (askerFling || askerHighChem || /\b(in\s+love|adore|adores|crush|fancy|fancies|hopelessly\s+in\s+love|soulmate|sweet\s+on|devoted|besotted)\b/i.test(feelingText))) {
+        return true;
+      }
+      if (hasAsker && askerCrush && (delTone !== 'order' || isPrivate || isPartyOrPark)) {
         return true;
       }
       const coTarget = del.targets?.length === 2 ? del.targets.find((id) => id !== targetId) : undefined;
@@ -1225,12 +1293,25 @@ export class InstinctBrain implements Brain, Reflexes {
         const partnerName = req.people.find((p) => p.id === partnerId)?.name ?? this.index.nameOf(partnerId);
         const partnerFirst = partnerName.split(/\s+/)[0].toLowerCase();
         const partnerFeeling = target.feelings.find((f) => f.about === partnerId)?.text.toLowerCase() ?? '';
+        const partnerFling = /secret office fling/i.test(partnerFeeling);
+        const partnerHighChem = /\b(head\s+over\s+heels|strong\s+chemistry)\b/i.test(partnerFeeling);
+        const partnerCrush = /\bhas\s+a\s+crush\s+on\b/i.test(partnerFeeling);
         const partnerSmitten =
           stateText.includes(`in love with ${partnerFirst}`) ||
+          partnerFling ||
+          partnerHighChem ||
+          (partnerCrush && (delTone !== 'order' || isPrivate || isPartyOrPark)) ||
           /\b(love|loves|crush|adore|adores|fancy|fancies|hopelessly in love|soulmate|sweet on|romantic|soft spot|devoted|besotted)\b/i.test(partnerFeeling) ||
           (target.mood === 'love' && toneOf(target, partnerId) === 'warm');
         if (partnerSmitten) return true;
       }
+      if ((isPrivate || isPartyOrPark) && delTone !== 'order' && tone === 'warm') {
+        return true;
+      }
+    }
+
+    if (isExpose && hasAsker && (askerFling || (isAroused && (tone === 'warm' || askerHighChem))) && isPrivate && (!hardRefuseMood || softRomanceOverride)) {
+      return true;
     }
 
     const aid = hasAsker ? del.asker.toLowerCase() : 'loudspeaker';
@@ -1634,7 +1715,7 @@ export class InstinctBrain implements Brain, Reflexes {
     const isExpose = !isDress && /\b(stripp?(?:ing)?(?:\s+down)?|strip\s*tease|undress(?:ing)?|get(?:ting)?\s+(?:naked|nude|undressed)|go(?:ing)?\s+(?:naked|nude|topless|pantless|bottomless)|be\s+naked|naked|nude|topless|pantless|bottomless|skinny\s+dip(?:ping)?|tak(?:e|ing)\s+off\s+everything|tak(?:e|ing)\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear|trousers)\s+off|tak(?:e|ing)\s+off\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear|trousers)|ripp?(?:ing)?\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress)\s+off|ripp?(?:ing)?\s+off\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress)|dropp?(?:ing)?\s+(?:(?:your|his|her|their|my)\s+)?(?:pants|trousers|drawers|shorts|skirt)|pull(?:ing)?\s+down\s+(?:(?:your|her|his|their|my)\s+)?(?:pants|trousers|shorts|skirt|underwear)|bar(?:e|ing)\s+(?:(?:your|her|his|their|my)\s+)?(?:ass|butt|chest|boobs|breasts)|flash(?:ing)?|moon(?:ing)?|streak(?:ing)?)\b/i.test(vt);
     const selfPleasure = /\b(masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself))\b/i.test(vt);
     const isRomance = !selfPleasure && (
-      /\b(kiss(?:ing)?|smooch(?:ing)?|hugg?(?:ing)?|cuddl(?:e|ing)|embrac(?:e|ing)|mak(?:e|ing)\s+out|french\s+kiss(?:ing)?|propos(?:e|ing)|profess(?:ing)?\s+(?:your\s+)?love|confess(?:ing)?\s+(?:your\s+)?love|flirt(?:ing)?|romanc(?:e|ing)|marry(?:ing)?|seduc(?:e|ing)|hitt?(?:ing)?\s+on|hook(?:ing)?\s+up|sleep(?:ing)?\s+with|sleep(?:ing)?\s+together|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|shagg?(?:ing)?|grop(?:e|ing)|feel(?:ing)?\s+up|fondl(?:e|ing)|lap\s+danc(?:e|ing)|grind(?:ing)?\s+on|dry\s+hump(?:ing)?|spank(?:ing)?|affair|orgy|threesome|blowjob|handjob|motorboat(?:ing)?|eat(?:ing)?\s+\w+\s+out|suck(?:ing)?\s+\w+\s+off|finger(?:ing)?|turn(?:ing)?\s+\w+\s+on|sitt?(?:ing)?\s+on\s+(?:\w+'s\s+)?lap|straddl(?:e|ing)|lick(?:ing)?|nibbl(?:e|ing)|massag(?:e|ing)|caress(?:ing)?|strok(?:e|ing)|twerk(?:ing)?\s+on|ask(?:ing)?\s+\w+\s+out|rubb?(?:ing)?\s+(?:\w+'s\s+)?(?:shoulders|back|feet|leg|thigh|ass|butt)|(?:slapp?(?:ing)?|grabb?(?:ing)?|pinch(?:ing)?|smack(?:ing)?)\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty|boobs|chest|crotch)|giv(?:e|ing)\s+\w+\s+a\s+(?:lap\s+dance|massage|kiss|hickey|bj|blowjob|handjob)|bit(?:e|ing)\s+\w+'s\s+(?:neck|ear|lip)|pleasur(?:e|ing)\s+(?!yourself|himself|herself|myself)\w+)\b/i.test(vt) ||
+      /\b(kiss(?:ing)?|smooch(?:ing)?|hugg?(?:ing)?|cuddl(?:e|ing)|embrac(?:e|ing)|mak(?:e|ing)\s+out|french\s+kiss(?:ing)?|propos(?:e|ing)|profess(?:ing)?\s+(?:your\s+)?love|confess(?:ing)?\s+(?:your\s+)?love|flirt(?:ing)?|romanc(?:e|ing)|marry(?:ing)?|seduc(?:e|ing)|hitt?(?:ing)?\s+on|hook(?:ing)?\s+up|sleep(?:ing)?\s+with|sleep(?:ing)?\s+together|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|shagg?(?:ing)?|grop(?:e|ing)|feel(?:ing)?\s+up|fondl(?:e|ing)|lap\s+danc(?:e|ing)|slow\s+danc(?:e|ing)|serenad(?:e|ing)|grind(?:ing)?\s+on|dry\s+hump(?:ing)?|spank(?:ing)?|affair|orgy|threesome|blowjob|handjob|motorboat(?:ing)?|eat(?:ing)?\s+\w+\s+out|suck(?:ing)?\s+\w+\s+off|finger(?:ing)?|turn(?:ing)?\s+\w+\s+on|sitt?(?:ing)?\s+on\s+(?:\w+'s\s+)?lap|straddl(?:e|ing)|lick(?:ing)?|nibbl(?:e|ing)|massag(?:e|ing)|caress(?:ing)?|strok(?:e|ing)|twerk(?:ing)?\s+on|ask(?:ing)?\s+\w+\s+out|wink(?:ing)?\s+at|blow(?:ing)?\s+a\s+kiss|sweet\s*talk(?:ing)?|charm(?:ing)?|check(?:ing)?\s+\w+\s+out|leav(?:e|ing)\s+(?:\w+\s+)?a\s+love\s+note|sneak(?:ing)?\s+(?:away|off)\s+with|slip(?:ping)?\s+away\s+with|get(?:ting)?\s+a\s+room(?:\s+with)?|fool(?:ing)?\s+around(?:\s+with)?|quickie(?:\s+with)?|make\s+\w+\s+jealous|play(?:ing)?\s+matchmaker|set(?:ting)?\s+\w+\s+(?:and\s+\w+\s+)?up|compliment(?:ing)?\s+(?:\w+'s\s+)?(?:looks|body|eyes|smile|hair|outfit|ass|butt)|rubb?(?:ing)?\s+(?:\w+'s\s+)?(?:shoulders|back|feet|leg|thigh|ass|butt)|(?:slapp?(?:ing)?|grabb?(?:ing)?|pinch(?:ing)?|smack(?:ing)?)\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty|boobs|chest|crotch)|giv(?:e|ing)\s+\w+\s+a\s+(?:lap\s+dance|massage|kiss|hickey|bj|blowjob|handjob)|bit(?:e|ing)\s+\w+'s\s+(?:neck|ear|lip)|pleasur(?:e|ing)\s+(?!yourself|himself|herself|myself)\w+)\b/i.test(vt) ||
       (/\b(fuck(?:ing)?(?!\s+(?:off|up|this|that|it|everything|around))|bang(?:ing)?|screw(?:ing)?(?!\s+(?:up|off|around))|bed|rid(?:e|ing)|blow(?:ing)?(?!\s+(?:up|off|away|out)))\b/i.test(vt) && hasPersonTarget && !hasMachine)
     );
     const isPerform = /\b(danc(?:e|ing)|twerk(?:ing)?|boogi(?:e|eing)|scream(?:ing)?|shriek(?:ing)?|howl(?:ing)?|bark(?:ing)?|meow(?:ing)?|moo(?:ing)?|cluck(?:ing)?|hiss(?:ing)?|growl(?:ing)?|roar(?:ing)?|neigh(?:ing)?|oink(?:ing)?|quack(?:ing)?|squawk(?:ing)?|squeak(?:ing)?|screech(?:ing)?|cry(?:ing)?|sobb?(?:ing)?|weep(?:ing)?|laugh(?:ing)?|giggl(?:e|ing)|chuckl(?:e|ing)|cackl(?:e|ing)|sing(?:ing)?|rapp?(?:ing)?|opera|beatbox(?:ing)?|yodel(?:ing)?|whistl(?:e|ing)|serenad(?:e|ing)|applaud(?:ing)?|clapp?(?:ing)?|faint(?:ing)?|pass(?:ing)?\s+out|collaps(?:e|ing)|play(?:ing)?\s+dead|puk(?:e|ing)|vomit(?:ing)?|throw(?:ing)?\s+up|barf(?:ing)?|fart(?:ing)?|burp(?:ing)?|belch(?:ing)?|sneez(?:e|ing)|cough(?:ing)?|hiccup(?:ing)?|yawn(?:ing)?|snor(?:e|ing)|spitt?(?:ing)?|drool(?:ing)?|backflipp?(?:ing)?|cartwheel(?:ing)?|handstand|somersault(?:ing)?|moonwalk(?:ing)?|breakdanc(?:e|ing)|do(?:ing)?\s+(?:the\s+)?worm|air\s+guitar|jump(?:ing)?|hopp?(?:ing)?|spinn?(?:ing)?|stomp(?:ing)?|tantrum|chugg?(?:ing)?|get(?:ting)?\s+drunk|drink(?:ing)?\s+(?:vodka|whiskey|booze|alcohol)|tak(?:e|ing)\s+a\s+shot|do(?:ing)?\s+shots|eat(?:ing)?\s+paper|smok(?:e|ing)|vap(?:e|ing)|masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself)|act(?:ing)?\s+like\s+a|pretend(?:ing)?\s+to\s+be|impersonat(?:e|ing)|do(?:ing)?\s+an?\s+impression|mim(?:e|ing)|juggl(?:e|ing)|crawl(?:ing)?|roll(?:ing)?\s+around|flex(?:ing)?|pushups|jumping\s+jacks|stretch(?:ing)?|meditat(?:e|ing)|yoga|salut(?:e|ing)|bow(?:ing)?|curtsy(?:ing)?|kneel(?:ing)?|pray(?:ing)?|t-?pos(?:e|ing)|dabb?(?:ing)?|floss(?:ing)?|tickl(?:e|ing)|pok(?:e|ing)|high\s*fiv(?:e|ing)|fist\s*bump(?:ing)?|handshake|shak(?:e|ing)\s+hands|climb(?:ing)?\s+(?:on|onto)|stand(?:ing)?\s+on|hid(?:e|ing)\s+under|flipp?(?:ing)?\s+(?:the\s+)?(?:bird|off)|giv(?:e|ing)\s+\w+\s+the\s+(?:finger|middle\s+finger)|middle\s+finger)\b/i.test(vt);

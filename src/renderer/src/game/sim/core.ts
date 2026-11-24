@@ -26,6 +26,7 @@ import { Clock, type DayPhase } from './clock';
 import { MeterState } from './meters';
 import { MemoryBook } from './memory';
 import { Bonds } from './bonds';
+import { ChemistryBook } from './chemistry';
 import { SceneManager } from './scenes';
 import { ChaosRegistry } from './chaosRegistry';
 import {
@@ -72,6 +73,7 @@ export class SimCore implements DirectorSimApi {
   readonly meterState = new MeterState();
   readonly memory = new MemoryBook();
   readonly bondsTable = new Bonds();
+  readonly chemistryBook = new ChemistryBook();
   readonly scenes: SceneManager;
   readonly chaosReg: ChaosRegistry;
   readonly sandbox: boolean;
@@ -82,6 +84,7 @@ export class SimCore implements DirectorSimApi {
   private map = new Map<CharId, Person>();
   effects: EffectInstance[] = [];
   readonly factMap = new Map<string, string>();
+  readonly factExpiries = new Map<string, number>();
   readonly hazards = new Map<string, RoomId>();
   speeches: Speech[] = [];
   holdingId: CharId | null = null;
@@ -113,6 +116,7 @@ export class SimCore implements DirectorSimApi {
     const save = opts.save ? cleanSave(opts.save) : null;
     if (save) {
       this.bondsTable.load(save.bonds);
+      this.chemistryBook.load(save.chemistry, save.flings);
       this.memory.load(save);
       this.meterState.stock = save.meters.stock;
       this.meterState.stockHistory = save.meters.stockHistory.length ? [...save.meters.stockHistory] : [save.meters.stock];
@@ -323,6 +327,37 @@ export class SimCore implements DirectorSimApi {
 
   bondLabel(who: CharId, about: CharId): string {
     return this.bondsTable.label(who, about);
+  }
+
+  chemistry(who: CharId, about: CharId): number {
+    return this.chemistryBook.score(who, about);
+  }
+
+  shiftChemistry(who: CharId, about: CharId, delta: number): number {
+    if (!Number.isFinite(delta) || who === about) return this.chemistry(who, about);
+    const before = this.chemistryBook.label(who, about);
+    const next = this.chemistryBook.shift(who, about, delta);
+    const after = this.chemistryBook.label(who, about);
+    if (after && after !== before && isCastId(who) && isCastId(about)) {
+      this.emitFeed('shift', `${this.nameOf(who)} now ${after} ${this.nameOf(about)}.`, { who, other: about });
+    }
+    return next;
+  }
+
+  isFling(a: CharId, b: CharId): boolean {
+    return this.chemistryBook.isFling(a, b);
+  }
+
+  markFling(a: CharId, b: CharId): boolean {
+    const added = this.chemistryBook.markFling(a, b);
+    if (added && isCastId(a) && isCastId(b)) {
+      this.emitFeed('shift', `${this.nameOf(a)} and ${this.nameOf(b)} started a secret office fling.`, { who: a, other: b });
+    }
+    return added;
+  }
+
+  flings(): [CastId, CastId][] {
+    return this.chemistryBook.flings();
   }
 
   findFixer(skill: FixSkill, near: Vec): CharId | null {
@@ -668,11 +703,11 @@ export class SimCore implements DirectorSimApi {
     if (p) p.thought = String(thought ?? '').slice(0, 200);
   }
 
-  convince(who: CharId, text: string | null): void {
+  convince(who: CharId, text: string | null, fromPlayer = false): void {
     const p = this.map.get(who);
     if (!p) return;
     const t = String(text ?? '').trim().slice(0, 200);
-    p.conviction = t ? { text: t, since: this.clock } : null;
+    p.conviction = t ? { text: t, since: this.clock, ...(fromPlayer ? { fromPlayer: true } : {}) } : null;
   }
 
   setHiddenNote(who: CharId, text: string | null): void {
@@ -895,9 +930,15 @@ export class SimCore implements DirectorSimApi {
     for (const p of targets) p.mood = clamp(p.mood + amount, -1, 1);
   }
 
-  setFact(key: string, text: string | null): void {
-    if (text && text.trim()) this.factMap.set(key, text.trim());
-    else this.factMap.delete(key);
+  setFact(key: string, text: string | null, ttlSecs?: number): void {
+    if (text && text.trim()) {
+      this.factMap.set(key, text.trim());
+      if (ttlSecs && ttlSecs > 0) this.factExpiries.set(key, this.time + ttlSecs);
+      else this.factExpiries.delete(key);
+    } else {
+      this.factMap.delete(key);
+      this.factExpiries.delete(key);
+    }
   }
 
   incident(): void {
@@ -1002,11 +1043,15 @@ export class SimCore implements DirectorSimApi {
     const mem = this.memory.serialize();
     const bonds: SaveData['bonds'] = {};
     for (const [k, v] of this.bondsTable.entries()) bonds[k] = v;
+    const chemistry: Record<string, number> = {};
+    for (const [k, v] of this.chemistryBook.entries()) chemistry[k] = v;
     return {
       version: SAVE_VERSION,
       day: this.day,
       dayDone: this.phase === 'over',
       bonds,
+      chemistry,
+      flings: this.chemistryBook.flings(),
       memories: mem.memories,
       takeaways: mem.takeaways,
       meters: { stock: this.meterState.stock, stockHistory: [...this.meterState.stockHistory], morale: this.meterState.morale },
@@ -1055,6 +1100,12 @@ export class SimCore implements DirectorSimApi {
   }
 
   private expireStatuses(): void {
+    for (const [key, until] of this.factExpiries) {
+      if (until <= this.time) {
+        this.factMap.delete(key);
+        this.factExpiries.delete(key);
+      }
+    }
     for (const p of this.list) {
       if (!p.statuses.length) continue;
       let changed = false;
@@ -1071,7 +1122,15 @@ export class SimCore implements DirectorSimApi {
         this.feel(p.id, 'confused', 0.7, 6);
         if (p.job?.kind === 'settle' || !p.job) p.doing = 'getting up';
       }
-      if (wasNaked && !p.has('naked')) this.setFact(`naked:${p.id}`, null);
+      if (wasNaked && !p.has('naked')) {
+        this.setFact(`naked:${p.id}`, null);
+        this.setFact(`dressed:${p.id}`, `${p.name} put their clothes back on and is fully dressed again.`, 90);
+        this.remember('all', `${p.name} put their clothes back on and is fully dressed again.`, 3.5);
+        if (p.onFloor) {
+          this.narrate(`${p.name} puts their clothes back on.`, { kind: 'event', icon: 'tell', room: p.room });
+          this.feel(p.id, 'embarrassed', 0.5, 6);
+        }
+      }
     }
   }
 
@@ -1095,6 +1154,9 @@ export class SimCore implements DirectorSimApi {
   private restingMood(p: Person): EmotionId {
     if (p.has('love')) return 'love';
     if (p.has('rage')) return 'angry';
+    if (p.has('aroused')) return p.mood > 0.35 ? 'love' : 'mischievous';
+    if (p.has('afterglow')) return p.mood > 0.2 ? 'smug' : 'happy';
+    if (p.has('flustered')) return p.mood > 0.2 ? 'love' : 'embarrassed';
     if (p.has('spooked') || p.has('paranoid')) return 'nervous';
     if (p.has('asleep') || p.energy < 0.2) return 'tired';
     if (p.mood < -0.45) return 'sad';

@@ -59,7 +59,7 @@ function ThoughtBox({ text }: { text: string }) {
 }
 
 /** The whispered idea they have held all day, marked in the whisper colour. */
-function ConvictionBox({ text, since }: { text: string; since: number }) {
+function ConvictionBox({ text, since, onCancel }: { text: string; since: number; onCancel?: () => void }) {
   return (
     <div data-coach="conviction" style={{
       display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px',
@@ -72,6 +72,10 @@ function ConvictionBox({ text, since }: { text: string; since: number }) {
         </div>
         <div style={{ fontSize: 15, lineHeight: '18px', color: 'var(--cth-ink-900)' }}>{cap(text)}</div>
       </div>
+      {onCancel && (
+        <Btn variant="ghost" size="sm" icon="x" label="Cancel whisper" sound="close" square onClick={onCancel}
+          style={{ margin: '-4px -4px -4px 0', minHeight: 28, minWidth: 28 }} />
+      )}
     </div>
   );
 }
@@ -231,7 +235,10 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
         {visitor && <About d={d} />}
         {/* Right after a whisper the thought and the conviction are the same words: show them once. */}
         {(!d.conviction || d.thought.trim() !== d.conviction.text.trim()) && <ThoughtBox text={d.thought} />}
-        {d.conviction && <ConvictionBox text={d.conviction.text} since={d.conviction.since} />}
+        {d.conviction && (
+          <ConvictionBox text={d.conviction.text} since={d.conviction.since}
+            onCancel={d.conviction.fromPlayer ? () => { game.cancelWhisper(d.id); setD(game.person(id)); } : undefined} />
+        )}
         <StatBar label="Mood" value={moodPct} color={d.mood >= 0 ? 'var(--cth-mint)' : 'var(--cth-coral)'} />
         <StatBar label="Energy" value={d.energy} color="var(--cth-lemon)" />
         <StatBar label="Stress" value={d.stress} color="var(--cth-coral)" />
@@ -259,12 +266,35 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
           {d.bonds.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>No strong feelings about anyone yet.</div>}
           {d.bonds.slice(0, 6).map((b) => {
             const score = Math.abs(b.score) > 1 ? b.score / 100 : b.score;
+            const chem = b.chemistry ?? 0;
+            const chemBadge = b.fling
+              ? 'Fling'
+              : chem >= 55
+                ? `Spark ${chem}`
+                : chem >= 35
+                  ? `Crush ${chem}`
+                  : chem >= 20
+                    ? `${chem}`
+                    : '';
             return (
               <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Head src={b.avatar} scale={2} box={14} ring={b.color} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 14, color: readableOnCream(b.color), flex: 1 }}>{b.name}</span>
+                    {chemBadge && (
+                      <span
+                        title={`Chemistry ${chem}/100${b.fling ? ' - Secret fling' : ''}`}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 2, padding: '1px 5px',
+                          background: 'var(--cth-coral-light)', color: 'var(--cth-ink-900)',
+                          boxShadow: 'inset 0 0 0 1px var(--cth-coral)', fontSize: 11, fontWeight: 700
+                        }}
+                      >
+                        <GIcon name="love" px={10} />
+                        {chemBadge}
+                      </span>
+                    )}
                     <LikeBar score={score} w={56} />
                   </div>
                   <div style={{

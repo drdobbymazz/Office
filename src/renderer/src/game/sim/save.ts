@@ -16,6 +16,10 @@ export interface SaveData {
   dayDone: boolean;
   /** "michael>jim" -> bond. */
   bonds: Record<string, BondEntry>;
+  /** "jim>pam" -> 0..100 romantic chemistry. */
+  chemistry?: Record<string, number>;
+  /** Cast pairs currently in a secret fling. */
+  flings?: [CastId, CastId][];
   memories: Record<string, Memory[]>;
   takeaways: Record<string, string[]>;
   meters: {
@@ -33,11 +37,26 @@ export function cleanSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Partial<SaveData>;
   const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const cleanChem: Record<string, number> = {};
+  let hasChem = false;
+  if (r.chemistry && typeof r.chemistry === 'object') {
+    for (const [k, v] of Object.entries(r.chemistry)) {
+      if (k.includes('>') && typeof v === 'number' && Number.isFinite(v)) {
+        cleanChem[k] = v;
+        hasChem = true;
+      }
+    }
+  }
+  const cleanFlings = Array.isArray(r.flings)
+    ? r.flings.filter((p): p is [CastId, CastId] => Array.isArray(p) && p.length === 2 && isCastId(p[0]) && isCastId(p[1]) && p[0] !== p[1])
+    : undefined;
   return {
     version: SAVE_VERSION,
     day: Math.max(1, Math.floor(num(r.day, 1))),
     dayDone: !!r.dayDone,
     bonds: r.bonds && typeof r.bonds === 'object' ? r.bonds : {},
+    ...(hasChem ? { chemistry: cleanChem } : {}),
+    ...(cleanFlings ? { flings: cleanFlings } : {}),
     memories: r.memories && typeof r.memories === 'object' ? r.memories : {},
     takeaways: r.takeaways && typeof r.takeaways === 'object' ? r.takeaways : {},
     meters: {

@@ -37,7 +37,11 @@ export function statusWords(core: SimCore, s: StatusEffect): string | null {
     case 'eliminated': return `eliminated by ${t}`;
     case 'guilty': return `just took out ${t} and everyone saw`;
     case 'quit': return 'stormed out and quit for the day';
-    case 'naked': return 'completely naked in the office (wearing no clothes at all)';
+    case 'naked': return 'completely naked in the office, shamelessly flashing everyone with zero clothes on';
+    case 'flustered': return 'blushing, breathless, and visibly worked up after a shamelessly steamy moment';
+    case 'aroused': return 'visibly hot and bothered, eyeing coworkers with shameless sexual tension and lowered inhibitions';
+    case 'afterglow': return 'messy-haired, shirt rumpled, and glowing straight out of a steamy office hookup';
+    case 'scandal': return 'at the center of explicit office sex-and-exposure gossip (any earlier stripping or hookup already ended - react to the juicy scandal in past tense)';
     default: return null;
   }
 }
@@ -95,8 +99,13 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
       const love = p?.statuses.find((s) => s.kind === 'love' && s.target === o);
       const rage = p?.statuses.find((s) => s.kind === 'rage' && s.target === o);
       const b = core.bondsTable.get(who, o);
-      let text = love ? `is hopelessly in love with ${core.nameOf(o)}` : rage ? `is furious with ${core.nameOf(o)}` : `${core.bondsTable.label(who, o)} ${core.nameOf(o)}`;
+      const oName = core.nameOf(o);
+      let text = love ? `is hopelessly in love with ${oName}` : rage ? `is furious with ${oName}` : `${core.bondsTable.label(who, o)} ${oName}`;
       if (b.note && !love) text += ` (${b.note})`;
+      const chem = core.chemistry(who, o);
+      const chemLabel = core.chemistryBook.label(who, o);
+      if (core.isFling(who, o)) text += `; currently having a secret office fling with ${oName} (chemistry ${chem}/100)`;
+      else if (chemLabel && !love) text += `; ${chemLabel} ${oName} (chemistry ${chem}/100)`;
       return { about: o, text };
     });
   const memories = core.memory.relevant(who, others, core.day, core.clock, 3);
@@ -137,5 +146,8 @@ export function factsOf(core: SimCore): string[] {
     }
   }
   for (const id of core.revealedList()) out.push(`Everyone now knows ${CAST[id].name}'s secret: ${CAST[id].persona.secret}.`);
+  if (core.list.some((p) => p.onFloor && p.has('party'))) {
+    out.push('There is a lively party atmosphere in the office right now.');
+  }
   return out.slice(0, 24);
 }

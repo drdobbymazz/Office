@@ -12,6 +12,44 @@ import type { DirectorSimApi, SceneAsk, SimPerson } from '@/game/core/simApi';
 import { feetOf, room as roomDef, roomCentrePx, walkableTilesIn } from '@/game/core/world';
 import type { BurstKind } from '@/game/view/api';
 
+export type RomanceTier = 'flirt' | 'bold' | 'rendezvous' | 'matchmaker' | 'jealousy';
+
+export function classifyRomanceTier(rawText: string, summary = ''): RomanceTier {
+  const s = `${rawText} ${summary}`.toLowerCase();
+  if (/\b(play(?:ing)?\s+matchmaker|set(?:ting)?\s+\w+\s+(?:and\s+\w+\s+)?up|get(?:ting)?\s+\w+\s+and\s+\w+\s+together)\b/i.test(s)) {
+    return 'matchmaker';
+  }
+  if (/\bmake\s+\w+\s+jealous\b/i.test(s)) {
+    return 'jealousy';
+  }
+  if (
+    /\b(sneak(?:ing)?\s+(?:away|off)|slip(?:ping)?\s+away|hook(?:ing)?\s+up|sleep(?:ing)?\s+(?:with|together)|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|get(?:ting)?\s+a\s+room|shagg?(?:ing)?|affair|fool(?:ing)?\s+around|quickie|closet|alone\s+in\s+the\s+(?:annex|conference\s+room|meeting\s+room))\b/i.test(s)
+  ) {
+    return 'rendezvous';
+  }
+  const hasBold = /\b(kiss(?:ing)?|smooch|mak(?:e|ing)\s+out|massag|lap\s+danc|spank|grop|straddl|seduc|cuddl|slow\s+danc|serenad|rubb?(?:ing)?|fondl|dry\s+hump|grind|lick|nibbl|bit(?:e|ing)|slapp?|smack|pinch|grabb?)\b/i.test(s);
+  if (
+    !hasBold &&
+    /\b(wink(?:ing)?|flirt(?:ing)?|compliment(?:ing)?|sweet\s*talk|charm(?:ing)?|blow(?:ing)?\s+a\s+kiss|check(?:ing)?\s+\w+\s+out|hit(?:ting)?\s+on|ask(?:ing)?\s+\w+\s+out|love\s+note|profess|confess)\b/i.test(s)
+  ) {
+    return 'flirt';
+  }
+  return 'bold';
+}
+
+function pickPrivateRoom(sim: DirectorSimApi, aId: CharId, tId: CharId): TargetRoomId {
+  const candidates: TargetRoomId[] = ['annex', 'meeting', 'boss', 'accounts'];
+  const safe = candidates.filter((r) => !sim.isHazard(r));
+  const pool = safe.length ? safe : candidates;
+  return pool
+    .slice()
+    .sort((r1, r2) => {
+      const c1 = sim.peopleIn(r1).filter((p) => p.isCast && p.present && p.id !== aId && p.id !== tId).length;
+      const c2 = sim.peopleIn(r2).filter((p) => p.isCast && p.present && p.id !== aId && p.id !== tId).length;
+      return c1 - c2;
+    })[0];
+}
+
 export interface DirectivesContext {
   sim: DirectorSimApi;
   scene: (ask: SceneAsk, fromPlayer: boolean) => void;
@@ -22,6 +60,7 @@ interface ActiveDirective {
   id: string;
   actor: CharId;
   target: CharId | null;
+  secondTarget?: CharId;
   targetPeople?: CharId[];
   allowRevive?: boolean;
   delegateDepth?: number;
@@ -29,13 +68,15 @@ interface ActiveDirective {
   delegateTone?: DelegateTone;
   room: TargetRoomId | null;
   verb: DirectiveVerb;
+  romanceTier?: RomanceTier;
+  rendezvousRoom?: TargetRoomId;
   rawText: string;
   summary: string;
   delegatedText?: string;
   kind: 'whisper' | 'cue';
   item: string;
   power: CustomPower;
-  phase: 'approach' | 'scuffle' | 'haul' | 'chase' | 'follow' | 'perform' | 'romance_act';
+  phase: 'approach' | 'scuffle' | 'haul' | 'chase' | 'follow' | 'perform' | 'romance_act' | 'rendezvous_walk' | 'rendezvous_hold';
   timer: number;
   repathAt: number;
   burstAt: number;
@@ -223,6 +264,9 @@ export class Directives {
   private fxIds: string[] = [];
   private seq = 0;
   private gen = 0;
+  private scandalHeat = 0;
+  private lastHrAt = -999;
+  private jealousyAt = new Map<CharId, number>();
 
   constructor(private ctx: DirectivesContext) {}
 
@@ -239,6 +283,9 @@ export class Directives {
     this.timers.length = 0;
     for (const id of this.fxIds) sim.removeEffect(id);
     this.fxIds.length = 0;
+    this.scandalHeat = 0;
+    this.lastHrAt = -999;
+    this.jealousyAt.clear();
   }
 
   queueChain(actor: CharId, steps: string[], kind: 'whisper' | 'cue', allowDelegate = true): void {
@@ -277,7 +324,10 @@ export class Directives {
     if (!prev) return;
     const sim = this.ctx.sim;
     sim.release(prev.actor, prev.id);
-    if (prev.target) sim.release(prev.target, prev.id);
+    if (prev.target) {
+      sim.release(prev.target, prev.id);
+      if (prev.phase === 'rendezvous_walk' || prev.phase === 'rendezvous_hold') sim.resume(prev.target);
+    }
     if (prev.scuffleId) sim.removeEffect(prev.scuffleId);
     this.active.delete(who);
   }
@@ -536,17 +586,65 @@ export class Directives {
         const destRoom = res.verb === 'drag'
           ? (res.targetRoom ?? (t.room === 'meeting' ? 'bullpen' : 'meeting'))
           : res.targetRoom;
+        const romanceTier = res.verb === 'romance' ? classifyRomanceTier(rawText, res.summary) : undefined;
+        let secondTarget: CharId | undefined;
+        if (romanceTier === 'matchmaker') {
+          const otherMatch = sim
+            .people()
+            .find((p) => p.isCast && this.isAliveAndPresent(p) && p.id !== actor && p.id !== t.id && new RegExp(`\\b${p.name.split(/\s+/)[0]}\\b`, 'i').test(rawText));
+          secondTarget = otherMatch?.id;
+        } else if (romanceTier === 'jealousy') {
+          const decoy = sim
+            .peopleNear(a.x, a.y, 1200)
+            .filter((p) => p.isCast && this.isAliveAndPresent(p) && p.id !== actor && p.id !== t.id)
+            .sort((x, y) => Math.hypot(x.x - a.x, x.y - a.y) - Math.hypot(y.x - a.x, y.y - a.y))[0];
+          secondTarget = decoy?.id;
+        }
+        if (romanceTier === 'rendezvous' && t.id !== actor) {
+          const privRoom = res.targetRoom ?? pickPrivateRoom(sim, actor, t.id);
+          const privName = roomDef(privRoom).name;
+          const d: ActiveDirective = {
+            id,
+            actor,
+            target: t.id,
+            room: privRoom,
+            verb: 'romance',
+            romanceTier: 'rendezvous',
+            rendezvousRoom: privRoom,
+            rawText,
+            summary: res.summary,
+            kind,
+            item: res.item,
+            power: res.power,
+            phase: 'rendezvous_walk',
+            timer: 0,
+            repathAt: -1,
+            burstAt: 0,
+            alertedTarget: false
+          };
+          this.active.set(actor, d);
+          this.focusPeople([actor, t.id], 6500);
+          if (kind === 'cue') sim.setThought(actor, '');
+          sim.feel(actor, 'mischievous', 0.8, 12);
+          sim.feel(t.id, 'love', 0.8, 12);
+          sim.goTo(actor, { room: privRoom }, { style: 'run', doing: `sneaking off to ${privName} with ${t.name} for a hookup`, stay: 30, stayDoing: `having a private moment with ${t.name}`, braveHazard: true });
+          sim.goTo(t.id, { room: privRoom }, { style: 'run', doing: `slipping into ${privName} with ${a.name} for a hookup`, stay: 30, stayDoing: `having a private moment with ${a.name}`, braveHazard: true });
+          sim.narrate(`${a.name} grabs ${t.name} and pulls them toward ${privName} for a steamy private quickie...`, { kind: 'event', icon: 'love', room: privRoom, beat: true });
+          return true;
+        }
         const phase = res.verb === 'chase' ? 'chase' : res.verb === 'follow' ? 'follow' : 'approach';
         const d: ActiveDirective = {
           id,
           actor,
           target: t.id,
+          ...(secondTarget ? { secondTarget } : {}),
           ...(validTargetPeople && validTargetPeople.length > 1 ? { targetPeople: validTargetPeople } : {}),
           delegateDepth,
           ...(res.delegateExecutor ? { delegateExecutor: res.delegateExecutor } : {}),
           ...(res.delegateTone ? { delegateTone: res.delegateTone } : {}),
           room: destRoom,
           verb: res.verb,
+          ...(romanceTier ? { romanceTier } : {}),
           rawText,
           summary: res.summary,
           delegatedText: res.delegatedText,
@@ -888,7 +986,70 @@ export class Directives {
           d.burstAt = now + 0.75;
           sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: a.y - 16, count: 8 });
         }
-        if (d.timer >= 1.5) this.finishRomance(d, a, t);
+        const dur = d.romanceTier === 'flirt' ? 1.15 : 1.5;
+        if (d.timer >= dur) this.finishRomance(d, a, t);
+        continue;
+      }
+
+      if (d.phase === 'rendezvous_walk' && t && d.rendezvousRoom) {
+        const dest = d.rendezvousRoom;
+        const bothIn = a.room === dest && t.room === dest;
+        const timedIn = d.timer >= 14 && (a.room === dest || t.room === dest);
+        if (bothIn || timedIn) {
+          d.phase = 'rendezvous_hold';
+          d.timer = 0;
+          d.burstAt = now + 2.4;
+          sim.face(a.id, t.id);
+          sim.face(t.id, a.id);
+          sim.addStatus(a.id, 'flustered', 45, t.id);
+          sim.addStatus(t.id, 'flustered', 45, a.id);
+          sim.addStatus(a.id, 'aroused', 50, t.id);
+          sim.addStatus(t.id, 'aroused', 50, a.id);
+          sim.emote(a.id, 'heart');
+          sim.emote(t.id, 'heart');
+          sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 16, count: 10 });
+          sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: '*muffled moans*', color: 0xff5a8a });
+          sim.sfx('heart', a.x);
+          continue;
+        }
+        if (d.timer >= 20) {
+          this.onContact(d, a, t);
+          continue;
+        }
+        if (now >= d.repathAt) {
+          d.repathAt = now + 2.2;
+          const destName = roomDef(dest).name;
+          if (a.room !== dest) sim.goTo(a.id, { room: dest }, { style: 'run', doing: `sneaking off to ${destName} with ${t.name} for a hookup`, stay: 30, braveHazard: true });
+          if (t.room !== dest) sim.goTo(t.id, { room: dest }, { style: 'run', doing: `slipping into ${destName} with ${a.name} for a hookup`, stay: 30, braveHazard: true });
+        }
+        continue;
+      }
+
+      if (d.phase === 'rendezvous_hold' && t && d.rendezvousRoom) {
+        const dest = d.rendezvousRoom;
+        const intruding = sim
+          .peopleIn(dest)
+          .filter((p) => p.isCast && this.isAliveAndPresent(p) && p.available && p.id !== a.id && p.id !== t.id && !sim.hasStatus(p.id, 'asleep') && !sim.hasStatus(p.id, 'knockedOut'));
+        if (intruding.length) {
+          const priority = ['angela', 'toby', 'kelly', 'michael', 'dwight'];
+          const walker = intruding.slice().sort((x, y) => {
+            const ix = priority.indexOf(x.id);
+            const iy = priority.indexOf(y.id);
+            return (ix === -1 ? 99 : ix) - (iy === -1 ? 99 : iy);
+          })[0];
+          this.finishRendezvousCaught(d, a, t, walker);
+          continue;
+        }
+        if (now >= d.burstAt) {
+          d.burstAt = now + 2.4;
+          sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 16, count: 8 });
+          const cues = ['*rustling clothes*', '*heavy breathing*', '*creaking desk*'];
+          const cue = cues[Math.floor(d.timer / 2.4) % cues.length];
+          sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: cue, color: 0xff7098 });
+        }
+        if (d.timer >= 8) {
+          this.finishRendezvousClean(d, a, t);
+        }
         continue;
       }
 
@@ -1153,29 +1314,55 @@ export class Directives {
     }
 
     if (d.verb === 'romance') {
+      const tier = d.romanceTier ?? classifyRomanceTier(d.rawText, d.summary);
+      if (tier === 'matchmaker' && d.secondTarget) {
+        const second = sim.person(d.secondTarget);
+        if (second && this.isAliveAndPresent(second) && second.id !== t.id) {
+          this.finishMatchmaker(d, a, t, second);
+          return;
+        }
+      }
+      if (tier === 'jealousy' && d.secondTarget) {
+        const decoy = sim.person(d.secondTarget);
+        if (decoy && this.isAliveAndPresent(decoy) && decoy.id !== a.id && decoy.id !== t.id) {
+          this.finishMakeJealous(d, a, t, decoy);
+          return;
+        }
+      }
       const phrase = formatAction(d.summary, d.rawText, a.name);
       d.phase = 'romance_act';
+      d.romanceTier = tier;
       d.timer = 0;
       d.burstAt = sim.time + 0.75;
       this.focusPeople(t.id !== a.id ? [a.id, t.id] : [a.id], 6500);
       if (d.kind === 'cue') sim.setThought(a.id, '');
-      sim.seize(a.id, d.id, { anim: 'cheer', doing: phrase || 'making a move' });
+      const anim: AnimId = tier === 'flirt'
+        ? 'wave'
+        : /\b(dance|serenade)\b/i.test(d.rawText)
+          ? 'dance'
+          : 'cheer';
+      sim.seize(a.id, d.id, { anim, doing: phrase || (tier === 'flirt' ? 'flirting' : 'making a move') });
       sim.face(a.id, t.id);
       if (t.id !== a.id) {
         sim.face(t.id, a.id);
-        sim.react(t.id, 'startle', 1.2);
+        sim.react(t.id, tier === 'flirt' ? 'nod' : 'startle', 1.1);
       }
-      sim.feel(a.id, 'love', 0.9, 12);
-      sim.feel(t.id, 'surprised', 0.8, 8);
-      sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: a.y - 16, count: 12 });
+      sim.feel(a.id, tier === 'flirt' ? 'mischievous' : 'love', 0.9, 12);
+      sim.feel(t.id, tier === 'flirt' ? 'embarrassed' : 'surprised', 0.8, 8);
+      sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: a.y - 16, count: tier === 'flirt' ? 7 : 12 });
       sim.emote(a.id, 'heart');
       sim.sfx('heart', t.x);
-      sim.narrate(`${a.name} ${phrase || `makes a move on ${t.name}`} right in ${roomName}!`, {
-        kind: 'event',
-        icon: 'love',
-        room: t.room,
-        beat: true
-      });
+      sim.narrate(
+        tier === 'flirt'
+          ? `${a.name} ${phrase || `flirts shamelessly with ${t.name}`} right in ${roomName}!`
+          : `${a.name} ${phrase || `gets hands-on with ${t.name}`} right in ${roomName} with zero shame!`,
+        {
+          kind: 'event',
+          icon: 'love',
+          room: t.room,
+          beat: true
+        }
+      );
       const witnesses = sim
         .peopleNear(t.x, t.y, 180)
         .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
@@ -1202,6 +1389,7 @@ export class Directives {
     if (d.verb === 'expose') {
       sim.seize(a.id, d.id, { anim: 'dance', doing: phrase || 'stripping naked' });
       sim.addStatus(a.id, 'naked', 90);
+      sim.setFact(`dressed:${a.id}`, null);
       sim.setFact(`naked:${a.id}`, `${a.name} is completely naked in ${roomName}.`);
       sim.feel(a.id, 'excited', 0.95, 14);
       sim.emote(a.id, 'heart');
@@ -1211,8 +1399,8 @@ export class Directives {
       sim.bumpChaos(14);
       sim.narrate(
         t && t.id !== a.id
-          ? `${a.name} steps right up to ${t.name} in ${roomName} and ${phrase}!`
-          : `${a.name} ${phrase} right in the middle of ${roomName}!`,
+          ? `${a.name} steps right up to ${t.name} in ${roomName} and shamelessly ${phrase}, leaving nothing to the imagination!`
+          : `${a.name} shamelessly ${phrase} right in the middle of ${roomName}, leaving nothing to the imagination!`,
         { kind: 'event', icon: 'warn', room: a.room, beat: true }
       );
     } else {
@@ -1262,11 +1450,23 @@ export class Directives {
     const uniqueParticipants = [...new Set(participants)];
 
     if (d.verb === 'expose') {
+      sim.addStatus(a.id, 'scandal', 75, t?.id);
+      for (const w of sceneWitnesses) {
+        if (w.id === 'meredith' || w.id === 'creed' || w.id === 'kelly' || sim.chemistry(w.id, a.id) >= 35) {
+          sim.addStatus(w.id, 'aroused', 45, a.id);
+        }
+      }
       sim.remember(
         uniqueParticipants,
-        `${a.name} physically ${phrase} right in ${roomName} in front of everyone and is now completely naked.`,
+        `${a.name} briefly ${phrase} in ${roomName} in front of everyone.`,
         3
       );
+      if (t && t.id !== a.id) {
+        sim.shiftChemistry(a.id, t.id, 12);
+        this.checkJealousy(a, t, sceneWitnesses, true);
+      }
+      this.scandalHeat += 2;
+      this.checkHrFallout(a, t);
       const people = [a.id, ...(t && t.id !== a.id ? [t.id] : []), ...sceneWitnesses.map((w) => w.id)]
         .filter((id, i, arr) => arr.indexOf(id) === i)
         .slice(0, 3);
@@ -1322,15 +1522,16 @@ export class Directives {
     if (d.item === 'dress') {
       sim.removeStatus(subj.id, 'naked');
       sim.setFact(`naked:${subj.id}`, null);
+      sim.setFact(`dressed:${subj.id}`, `${subj.name} put their clothes back on and is fully dressed again.`, 90);
       sim.react(subj.id, 'cheer', 1.2);
       sim.feel(subj.id, 'happy', 0.7, 8);
       sim.fx({ kind: 'burst', what: 'sparkles', x: subj.x, y: subj.y - 14, count: 10 });
       sim.sfx('pop', subj.x);
       const line = t && t.id !== a.id
-        ? `${a.name} helped ${t.name} get dressed again in ${roomName}.`
-        : `${a.name} got dressed again in ${roomName}.`;
+        ? `${a.name} helped ${t.name} put their clothes back on and is fully dressed again in ${roomName}.`
+        : `${a.name} put their clothes back on and is fully dressed again in ${roomName}.`;
       sim.narrate(line, { kind: 'event', icon: 'tell', room: subj.room, beat: true });
-      sim.remember([a.id, subj.id], line, 2);
+      sim.remember('all', line, 3.5);
       const witnesses = sim
         .peopleNear(subj.x, subj.y, 180)
         .filter((p) => p.isCast && p.present && p.available && p.id !== subj.id && p.id !== a.id)
@@ -1391,23 +1592,51 @@ export class Directives {
     sim.release(a.id, d.id);
     this.active.delete(a.id);
 
+    const tier = d.romanceTier ?? classifyRomanceTier(d.rawText, d.summary);
     const roomName = roomDef(t.room).name;
     const raw = d.rawText.trim().replace(/\s+/g, ' ').slice(0, 120);
     const phrase = formatAction(d.summary, d.rawText, a.name);
     const witnesses = sim
       .peopleNear(t.x, t.y, 180)
       .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
-    sim.bumpChaos(6);
+    sim.bumpChaos(tier === 'flirt' ? 3 : 6);
     if (t.id !== a.id) {
-      sim.shiftBond(a.id, t.id, 25);
-      sim.shiftBond(t.id, a.id, 15);
-      sim.remember([a.id, t.id, ...witnesses.map((w) => w.id)], `${a.name} physically ${phrase} in ${roomName}.`, 2.5);
+      if (tier === 'flirt') {
+        sim.shiftBond(a.id, t.id, 8);
+        sim.shiftBond(t.id, a.id, 5);
+        sim.shiftChemistry(a.id, t.id, 10);
+        sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -10 ? 8 : 3);
+        sim.addStatus(t.id, 'flustered', 30, a.id);
+        if (sim.chemistry(t.id, a.id) >= 30) sim.addStatus(t.id, 'aroused', 50, a.id);
+      } else {
+        sim.shiftBond(a.id, t.id, 25);
+        sim.shiftBond(t.id, a.id, 15);
+        sim.shiftChemistry(a.id, t.id, 20);
+        sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -20 ? 15 : 5);
+        sim.addStatus(a.id, 'flustered', 40, t.id);
+        sim.addStatus(t.id, 'flustered', 40, a.id);
+        sim.addStatus(a.id, 'aroused', 55, t.id);
+        sim.addStatus(t.id, 'aroused', 55, a.id);
+        if (sim.chemistry(a.id, t.id) >= 65 && sim.chemistry(t.id, a.id) >= 55) {
+          sim.markFling(a.id, t.id);
+        }
+        if (witnesses.length >= 2) {
+          sim.addStatus(a.id, 'scandal', 55, t.id);
+          sim.addStatus(t.id, 'scandal', 55, a.id);
+          this.scandalHeat += 1;
+          this.checkHrFallout(a, t);
+        }
+      }
+      this.checkJealousy(a, t, witnesses, tier !== 'flirt' && witnesses.length >= 2);
+      sim.remember([a.id, t.id, ...witnesses.map((w) => w.id)], `${a.name} ${tier === 'flirt' ? 'shamelessly' : 'physically'} ${phrase} in ${roomName}.`, 2.5);
       const people = [a.id, t.id, ...witnesses.slice(0, 1).map((w) => w.id)];
       this.ctx.scene({
         people,
         room: t.room,
         trigger: 'aftermath',
-        why: `${a.name} just walked up to ${t.name} in ${roomName} and physically ${phrase} right in front of everyone (action: "${raw}"). (${a.name} actually did this to ${t.name} — react directly to what ${a.name} just did.)`,
+        why: tier === 'flirt'
+          ? `${a.name} just got shamelessly flirty with ${t.name} in ${roomName} and ${phrase} (action: "${raw}"). React directly in character.`
+          : `${a.name} just walked up to ${t.name} in ${roomName} and shamelessly, physically ${phrase} right in front of everyone (action: "${raw}"). (${a.name} actually did this to ${t.name} - react directly to what ${a.name} just did.)`,
         priority: 9,
         minLines: 2,
         maxLines: Math.min(4, people.length + 1),
@@ -1425,7 +1654,7 @@ export class Directives {
         people,
         room: a.room,
         trigger: 'aftermath',
-        why: `${a.name} just physically ${phrase} right in the middle of ${roomName} in front of everyone (action: "${raw}"). (${a.name} actually did this — react directly to what ${a.name} just did.)`,
+        why: `${a.name} just physically ${phrase} right in the middle of ${roomName} in front of everyone (action: "${raw}"). (${a.name} actually did this - react directly to what ${a.name} just did.)`,
         priority: 9,
         minLines: people.length > 1 ? 2 : 1,
         maxLines: people.length > 1 ? Math.min(4, people.length + 1) : 2,
@@ -1433,6 +1662,250 @@ export class Directives {
       }, true);
     }
     this.advanceChain(a.id);
+  }
+
+  private finishRendezvousClean(d: ActiveDirective, a: SimPerson, t: SimPerson): void {
+    const sim = this.ctx.sim;
+    const room = d.rendezvousRoom ?? a.room;
+    const roomName = roomDef(room).name;
+    this.active.delete(a.id);
+    sim.markFling(a.id, t.id);
+    sim.shiftChemistry(a.id, t.id, 28);
+    sim.shiftChemistry(t.id, a.id, 26);
+    sim.shiftBond(a.id, t.id, 18);
+    sim.shiftBond(t.id, a.id, 18);
+    sim.bumpMood(a.id, 0.2);
+    sim.bumpMood(t.id, 0.2);
+    sim.removeStatus(a.id, 'aroused');
+    sim.removeStatus(t.id, 'aroused');
+    sim.addStatus(a.id, 'flustered', 45, t.id);
+    sim.addStatus(t.id, 'flustered', 45, a.id);
+    sim.addStatus(a.id, 'afterglow', 70, t.id);
+    sim.addStatus(t.id, 'afterglow', 70, a.id);
+    sim.feel(a.id, 'love', 0.95, 14);
+    sim.feel(t.id, 'love', 0.95, 14);
+    sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 16, count: 14 });
+    sim.sfx('heart', a.x);
+    sim.narrate(`${a.name} and ${t.name} stumble out of ${roomName} rumpled, breathless, and trying to look completely normal after hooking up.`, {
+      kind: 'event',
+      icon: 'love',
+      room,
+      beat: true
+    });
+    sim.remember([a.id, t.id], `${a.name} and ${t.name} hooked up behind closed doors in ${roomName} and emerged with messy hair and untucked shirts.`, 3);
+    this.ctx.scene({
+      people: [a.id, t.id],
+      room,
+      trigger: 'aftermath',
+      why: `${a.name} and ${t.name} just finished a steamy secret hookup alone in ${roomName} and are walking out rumpled and breathless, trying to pretend nothing happened.`,
+      priority: 9,
+      minLines: 2,
+      maxLines: 3,
+      staleAfter: 35
+    }, true);
+    this.advanceChain(a.id);
+  }
+
+  private finishRendezvousCaught(d: ActiveDirective, a: SimPerson, t: SimPerson, walker: SimPerson): void {
+    const sim = this.ctx.sim;
+    const room = d.rendezvousRoom ?? walker.room;
+    const roomName = roomDef(room).name;
+    this.active.delete(a.id);
+    sim.markFling(a.id, t.id);
+    sim.shiftChemistry(a.id, t.id, 22);
+    sim.shiftChemistry(t.id, a.id, 20);
+    sim.removeStatus(a.id, 'aroused');
+    sim.removeStatus(t.id, 'aroused');
+    sim.addStatus(a.id, 'flustered', 50, t.id);
+    sim.addStatus(t.id, 'flustered', 50, a.id);
+    sim.addStatus(a.id, 'afterglow', 45, t.id);
+    sim.addStatus(t.id, 'afterglow', 45, a.id);
+    sim.addStatus(a.id, 'scandal', 85, t.id);
+    sim.addStatus(t.id, 'scandal', 85, a.id);
+    sim.react(a.id, 'startle', 1.2);
+    sim.react(t.id, 'startle', 1.2);
+    sim.react(walker.id, 'startle', 1.2);
+    sim.face(walker.id, a.id);
+    sim.emote(walker.id, 'alert');
+    sim.emote(a.id, 'alert');
+    const walkerMood: EmotionId =
+      walker.id === 'angela' || walker.id === 'toby'
+        ? 'disgusted'
+        : walker.id === 'kelly'
+          ? 'excited'
+          : walker.id === 'meredith' || walker.id === 'creed'
+            ? 'amused'
+            : 'surprised';
+    sim.feel(walker.id, walkerMood, 0.95, 12);
+    sim.feel(a.id, 'embarrassed', 0.95, 12);
+    sim.feel(t.id, 'embarrassed', 0.95, 12);
+    sim.fx({ kind: 'burst', what: 'sparkles', x: walker.x, y: walker.y - 14, count: 12 });
+    sim.sfx('pop', walker.x);
+    sim.bumpChaos(14);
+    const msg = `${walker.name} burst into ${roomName} and caught ${a.name} and ${t.name} half-undressed in the act!`;
+    sim.narrate(msg, { kind: 'event', icon: 'rumour', room, beat: true });
+    sim.setFact(`caught:${a.id}:${t.id}`, `${walker.name} walked in and caught ${a.name} and ${t.name} sneaking around and hooking up in ${roomName}.`, 90);
+    sim.remember('all', msg, 3.5);
+    this.checkJealousy(a, t, [walker], true);
+    this.scandalHeat += 2;
+    this.checkHrFallout(a, t);
+    this.ctx.scene({
+      people: [walker.id, a.id, t.id],
+      room,
+      trigger: 'aftermath',
+      why: `${walker.name} just threw open the door to ${roomName} and caught ${a.name} and ${t.name} half-undressed and hooking up in the act.`,
+      priority: 10,
+      minLines: 2,
+      maxLines: 4,
+      staleAfter: 40
+    }, true);
+    this.advanceChain(a.id);
+  }
+
+  private finishMatchmaker(d: ActiveDirective, a: SimPerson, first: SimPerson, second: SimPerson): void {
+    const sim = this.ctx.sim;
+    this.active.delete(a.id);
+    if (d.kind === 'cue') sim.setThought(a.id, '');
+    const roomName = roomDef(first.room).name;
+    sim.shiftChemistry(first.id, second.id, 22);
+    sim.shiftChemistry(second.id, first.id, 20);
+    sim.shiftBond(first.id, second.id, 12);
+    sim.shiftBond(second.id, first.id, 12);
+    sim.addStatus(first.id, 'flustered', 30, second.id);
+    sim.addStatus(second.id, 'flustered', 30, first.id);
+    sim.emote(a.id, 'heart');
+    sim.fx({ kind: 'burst', what: 'hearts', x: first.x, y: first.y - 16, count: 10 });
+    sim.sfx('heart', first.x);
+    sim.setPlan(first.id, { kind: 'flirt', target: second.id, about: `what ${a.name} just suggested` });
+    sim.narrate(`${a.name} plays matchmaker between ${first.name} and ${second.name} in ${roomName}!`, {
+      kind: 'event',
+      icon: 'love',
+      room: first.room,
+      beat: true
+    });
+    sim.remember([a.id, first.id, second.id], `${a.name} tried to set ${first.name} and ${second.name} up together.`, 2);
+    this.ctx.scene({
+      people: [a.id, first.id, second.id],
+      room: first.room,
+      trigger: 'aftermath',
+      why: `${a.name} just tried to play matchmaker and push ${first.name} and ${second.name} together right in ${roomName}.`,
+      priority: 9,
+      minLines: 2,
+      maxLines: 3,
+      staleAfter: 35
+    }, true);
+    this.advanceChain(a.id);
+  }
+
+  private finishMakeJealous(d: ActiveDirective, a: SimPerson, targetToRile: SimPerson, decoy: SimPerson): void {
+    const sim = this.ctx.sim;
+    this.active.delete(a.id);
+    if (d.kind === 'cue') sim.setThought(a.id, '');
+    const roomName = roomDef(decoy.room).name;
+    sim.face(a.id, decoy.id);
+    sim.emote(a.id, 'heart');
+    sim.fx({ kind: 'burst', what: 'hearts', x: decoy.x, y: decoy.y - 16, count: 10 });
+    sim.sfx('heart', decoy.x);
+    sim.shiftChemistry(a.id, decoy.id, 12);
+    sim.shiftChemistry(decoy.id, a.id, 10);
+    sim.addStatus(decoy.id, 'flustered', 25, a.id);
+    sim.narrate(`${a.name} shamelessly flirts with ${decoy.name} in ${roomName} to make ${targetToRile.name} jealous!`, {
+      kind: 'event',
+      icon: 'love',
+      room: decoy.room,
+      beat: true
+    });
+    if (sim.chemistry(targetToRile.id, a.id) >= 25 || sim.bond(targetToRile.id, a.id) >= 20 || sim.hasStatus(targetToRile.id, 'love')) {
+      sim.feel(targetToRile.id, 'angry', 0.85, 10);
+      sim.emote(targetToRile.id, 'anger');
+      sim.shiftBond(targetToRile.id, decoy.id, -14, 'jealousy');
+      sim.shiftBond(targetToRile.id, a.id, -6, 'jealousy');
+    }
+    this.ctx.scene({
+      people: [a.id, decoy.id, targetToRile.id],
+      room: decoy.room,
+      trigger: 'aftermath',
+      why: `${a.name} is loudly flirting with ${decoy.name} right in front of ${targetToRile.name} specifically to make ${targetToRile.name} jealous.`,
+      priority: 9,
+      minLines: 2,
+      maxLines: 4,
+      staleAfter: 35
+    }, true);
+    this.advanceChain(a.id);
+  }
+
+  private checkJealousy(a: SimPerson, t: SimPerson, witnesses: readonly SimPerson[], broadcast: boolean): void {
+    const sim = this.ctx.sim;
+    const now = sim.time;
+    const witnessIds = new Set(witnesses.map((w) => w.id));
+    for (const c of sim.people()) {
+      if (!c.isCast || !this.isAliveAndPresent(c) || c.id === a.id || c.id === t.id) continue;
+      if (now - (this.jealousyAt.get(c.id) ?? -999) < 45) continue;
+      const loveA = c.statuses.some((s) => s.kind === 'love' && s.target === a.id);
+      const loveT = c.statuses.some((s) => s.kind === 'love' && s.target === t.id);
+      const chemA = sim.chemistry(c.id, a.id);
+      const chemT = sim.chemistry(c.id, t.id);
+      const flingA = sim.isFling(c.id, a.id);
+      const flingT = sim.isFling(c.id, t.id);
+      const caresA = chemA >= 45 || flingA || loveA;
+      const caresT = chemT >= 45 || flingT || loveT;
+      if (!caresA && !caresT) continue;
+      const sawIt = broadcast || witnessIds.has(c.id) || c.room === t.room || Math.hypot(c.x - t.x, c.y - t.y) <= 260;
+      if (!sawIt) continue;
+      const scoreA = chemA + (flingA ? 50 : 0) + (loveA ? 60 : 0);
+      const scoreT = chemT + (flingT ? 50 : 0) + (loveT ? 60 : 0);
+      const crush = scoreT >= scoreA ? t : a;
+      const rival = crush.id === t.id ? a : t;
+      this.jealousyAt.set(c.id, now);
+      sim.feel(c.id, 'angry', 0.85, 10);
+      sim.emote(c.id, 'anger');
+      sim.react(c.id, 'stomp', 1.0);
+      if (rival.id !== crush.id) sim.shiftBond(c.id, rival.id, -14, 'jealousy');
+      sim.shiftBond(c.id, crush.id, -6, 'jealousy');
+      sim.remember([c.id], `${c.name} felt a surge of jealous rage watching ${a.name} and ${t.name} get shamelessly handsy.`, 2.5);
+      sim.narrate(`${c.name} glares jealously, fuming as ${a.name} and ${t.name} get shamelessly handsy!`, { kind: 'event', icon: 'rage', room: c.room });
+      if (c.room === t.room && !c.sceneId && !this.active.has(c.id) && rival.id !== c.id) {
+        sim.setPlan(c.id, { kind: 'confront', target: rival.id, about: `staying away from ${crush.name}` });
+      }
+    }
+  }
+
+  private checkHrFallout(a: SimPerson, t?: SimPerson): void {
+    const sim = this.ctx.sim;
+    if (this.scandalHeat < 3 || sim.time - this.lastHrAt < 150) return;
+    const pickEnforcer = (id: CharId): SimPerson | undefined => {
+      const p = sim.person(id);
+      if (!p || !this.isAliveAndPresent(p) || !p.available || p.id === a.id || p.id === t?.id) return undefined;
+      return p;
+    };
+    const enforcer = pickEnforcer('toby') ?? pickEnforcer('angela');
+    if (!enforcer) return;
+    this.scandalHeat = 0;
+    this.lastHrAt = sim.time;
+    sim.setProp(enforcer.id, 'clipboard');
+    sim.feel(enforcer.id, enforcer.id === 'toby' ? 'tired' : 'disgusted', 0.85, 12);
+    sim.goTo(enforcer.id, { near: a.id }, { doing: 'bringing an HR Love Contract', stay: 12, braveHazard: true });
+    const headline = enforcer.id === 'toby'
+      ? `Toby rubs his temples, grabs a Relationship Disclosure Form, and trudges over to ${a.name} before the office turns into an orgy.`
+      : `Angela clutches her pearls, grabs a clipboard, and marches over to report ${a.name} for shameless office debauchery.`;
+    sim.narrate(headline, { kind: 'event', icon: 'warn', room: a.room, beat: true });
+    sim.setFact('hr_love_contract', `${enforcer.name} just stepped in with a Dunder Mifflin Relationship Disclosure Form over the office romance scandal.`, 90);
+    const gen = this.gen;
+    const people = [enforcer.id, a.id, ...(t && t.id !== a.id ? [t.id] : [])];
+    this.schedule(3.2, () => {
+      if (gen !== this.gen) return;
+      sim.setProp(enforcer.id, null);
+      this.ctx.scene({
+        people,
+        room: a.room,
+        trigger: 'aftermath',
+        why: `${enforcer.name} just marched up with a clipboard and a Workplace Relationship Disclosure Form ("Love Contract") after the latest romantic scandal involving ${a.name}${t && t.id !== a.id ? ` and ${t.name}` : ''}.`,
+        priority: 9,
+        minLines: 2,
+        maxLines: Math.min(4, people.length + 1),
+        staleAfter: 35
+      }, true);
+    });
   }
 
   private finishScuffle(d: ActiveDirective, a: SimPerson, t: SimPerson): void {

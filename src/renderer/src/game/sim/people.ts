@@ -91,7 +91,7 @@ export class Person implements SimPerson {
   plan: Plan | null = null;
   thought = '';
   /** A whispered idea they hold for the rest of the day (since = clock minutes). */
-  conviction: { text: string; since: number } | null = null;
+  conviction: { text: string; since: number; fromPlayer?: boolean } | null = null;
   /** Something they are hiding from everyone (a story secret). Reset each morning. */
   hiddenNote: string | null = null;
   doing = '';

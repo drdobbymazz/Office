@@ -14,7 +14,7 @@ import { INK, Pix } from './pix';
 const KINDS: readonly StatusKind[] = [
   'love', 'rage', 'truth', 'paranoid', 'caffeinated', 'sleepy', 'asleep', 'tiny', 'giant', 'swapped',
   'crowned', 'party', 'rich', 'spooked', 'abducted', 'stung', 'dizzy', 'wet', 'sooty', 'frizzy', 'frozen',
-  'knockedOut', 'eliminated', 'guilty', 'quit', 'naked'
+  'knockedOut', 'eliminated', 'guilty', 'quit', 'naked', 'flustered', 'aroused', 'afterglow', 'scandal'
 ];
 const IDX = new Map<StatusKind, number>(KINDS.map((k, i) => [k, i]));
 
@@ -23,7 +23,7 @@ const EVERY: Record<StatusKind, number> = {
   love: 0.55, rage: 0.32, truth: 0.22, paranoid: 0, caffeinated: 0.1, sleepy: 1.3, asleep: 0.75,
   tiny: 0, giant: 0, swapped: 0, crowned: 0.32, party: 0.09, rich: 0.45, spooked: 0.45,
   abducted: 0.14, stung: 0.55, dizzy: 0, wet: 0.8, sooty: 0.4, frizzy: 0.22, frozen: 0.38,
-  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0, naked: 0.55
+  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0, naked: 0.55, flustered: 1.1, aroused: 0.7, afterglow: 1.2, scandal: 0
 };
 
 interface PFx {
@@ -218,8 +218,17 @@ export class Statuses {
     let tint = 0xffffff;
     switch (k) {
       case 'love':
+      case 'flustered':
         q.x += rr(-5, 5); q.z = head - 4 + rr(0, 3); q.vz = rr(12, 18); q.sway = rr(1, 2); q.swayF = rr(4, 6); q.swayPh = rr(0, 6);
         q.life = rr(1.1, 1.5); q.fadeOut = 0.4; q.popIn = 0.15; tex = this.heart;
+        break;
+      case 'aroused':
+        q.x += rr(-6, 6); q.z = head - 3 + rr(0, 3); q.vz = rr(15, 22); q.sway = rr(1.5, 2.5); q.swayF = rr(5, 7); q.swayPh = rr(0, 6);
+        q.life = rr(1.0, 1.4); q.fadeOut = 0.35; q.popIn = 0.12; tex = this.heart; tint = 0xff7098;
+        break;
+      case 'afterglow':
+        q.x += rr(-6, 6); q.z = rr(head * 0.4, head); q.vz = rr(5, 10); q.frames = sparkles(); q.once = true; q.fps = rr(5, 8); q.life = 0.65; tint = pick([0xffb0d0, 0xffe0a8, 0xffd2f0]);
+        q.alpha = 0.85;
         break;
       case 'rage': {
         // Steam out of the ears, alternating sides, with a red-hot pixel or two.

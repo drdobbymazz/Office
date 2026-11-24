@@ -150,7 +150,8 @@ export function personUi(core: SimCore, p: Person): PersonUi {
     doing,
     speaking: p.speaking,
     present: p.present && !p.hidden,
-    busy: !p.available
+    busy: !p.available,
+    whisper: p.conviction?.fromPlayer ? { text: p.conviction.text, since: p.conviction.since } : null
   };
 }
 
@@ -167,9 +168,11 @@ export function personDetail(core: SimCore, who: CharId, ages: Record<CastId, nu
     ? CAST_IDS.filter((o) => o !== who)
       .map((o) => {
         const b = core.bondsTable.get(who, o);
-        return { id: o, name: CAST[o].name, color: hex(CAST[o].color), avatar: '', score: b.score, label: core.bondsTable.label(who, o), note: b.note };
+        const chemistry = core.chemistry(who, o);
+        const fling = core.isFling(who, o);
+        return { id: o, name: CAST[o].name, color: hex(CAST[o].color), avatar: '', score: b.score, label: core.bondsTable.label(who, o), note: b.note, chemistry, fling };
       })
-      .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+      .sort((a, b) => Math.max(Math.abs(b.score), b.chemistry ?? 0) - Math.max(Math.abs(a.score), a.chemistry ?? 0))
     : [];
   const memories = [...core.memory.all(who)].reverse().map((m) => ({ day: m.day, clock: m.clock, text: m.text }));
   return {

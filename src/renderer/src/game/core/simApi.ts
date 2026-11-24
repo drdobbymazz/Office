@@ -43,7 +43,7 @@ export interface SimPerson {
   readonly plan: Plan | null;
   readonly thought: string;
   /** A whispered idea they are sure of for the rest of the day, and since when (clock minutes). */
-  readonly conviction: { text: string; since: number } | null;
+  readonly conviction: { text: string; since: number; fromPlayer?: boolean } | null;
   /** A few plain words: "typing at his desk", "running from the fire". */
   readonly doing: string;
   /** Id of the scene they are speaking in, if any. */
@@ -159,6 +159,16 @@ export interface SimApi {
   bond(who: CharId, about: CharId): number;
   /** Plain words for a bond: "can't stand", "likes", "adores". */
   bondLabel(who: CharId, about: CharId): string;
+  /** 0..100 romantic tension / chemistry from `who` toward `about`. */
+  chemistry(who: CharId, about: CharId): number;
+  /** Adjust romantic tension / chemistry from `who` toward `about` (0..100). */
+  shiftChemistry(who: CharId, about: CharId, delta: number): number;
+  /** True if `a` and `b` are currently in an active secret office fling. */
+  isFling(a: CharId, b: CharId): boolean;
+  /** Mark `a` and `b` as having an active secret office fling; returns true if new. */
+  markFling(a: CharId, b: CharId): boolean;
+  /** All cast pairs currently in a secret fling. */
+  flings(): [CastId, CastId][];
   /** Best available person to fix a kind of problem, nearest first. */
   findFixer(skill: FixSkill, near: Vec): CharId | null;
 
@@ -203,7 +213,7 @@ export interface SimApi {
   setPlan(who: CharId, plan: Plan | null): void;
   setThought(who: CharId, thought: string): void;
   /** Make a whispered idea stick for the rest of the day (null forgets it). */
-  convince(who: CharId, text: string | null): void;
+  convince(who: CharId, text: string | null, fromPlayer?: boolean): void;
   /**
    * (added) Something this person hides from everyone until the morning (null forgets it).
    * The model sees it and plays it as nerves; nobody else is told.
@@ -250,8 +260,8 @@ export interface SimApi {
   shiftBond(who: CharId, about: CharId, delta: number, why?: string): void;
   bumpChaos(amount: number): void;
   bumpMood(who: CharId | 'all', amount: number): void;
-  /** A true statement for prompts while `key` is set: "The break room is on fire." */
-  setFact(key: string, text: string | null): void;
+  /** A true statement for prompts while `key` is set (optional auto-expiry in sim seconds): "The break room is on fire." */
+  setFact(key: string, text: string | null, ttlSecs?: number): void;
   /** Count an incident (resets the "days without incident" count). */
   incident(): void;
   /** Reveal someone's secret to the player (and note that the office knows). */

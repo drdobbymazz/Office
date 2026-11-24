@@ -20,7 +20,7 @@ import { CAST } from '@/game/core/cast';
 import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
 import type { CharId, LineAct, Plan, RoomId, ShiftKind, Speech, TargetRoomId } from '@/game/core/types';
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
-import { TILE, room as roomDef } from '@/game/core/world';
+import { TILE, getWorldLocation, room as roomDef } from '@/game/core/world';
 import { Guests } from './guests';
 import { Directives } from './directives';
 import { convictionLever, invitesPeople, keepsAway, mentionsFood, roomNamedIn, speaksToEveryone, stayedLine, summonChance, summonLine, withoutRooms } from './summon';
@@ -161,6 +161,7 @@ export class Director {
   private drives = new Map<CharId, { nextAt: number; acts: number; directive?: DirectiveResult }>();
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
+  private lastAutoRendezvousAt = -999;
   /** Free-text events currently on the floor, to be cleared when their time is up. */
   /** What the Anything power put on the floor: guests, creatures, things (director/guests.ts). */
   private guests: Guests;
@@ -230,6 +231,7 @@ export class Director {
     this.seenTopics = new Set(this.storyTopics());
     this.breaking = null;
     this.drives.clear();
+    this.lastAutoRendezvousAt = -999;
   }
 
   /** Story mode: what the office is talking about now (empty in the sandbox). */
@@ -290,7 +292,7 @@ export class Director {
     this.api.feel(who, 'surprised', 0.7, 3);
     this.api.setThought(who, thought);
     // It sticks: for the rest of the day they are sure of it and act on it (see driveConvictions).
-    this.api.convince(who, thought);
+    this.api.convince(who, thought, true);
     this.drives.set(who, { nextAt: this.api.time + 30 + this.api.rng() * 15, acts: 0 });
     this.api.remember([who], `A thought came into your head from nowhere, and it feels like your own: "${thought}"`, 2.5);
     this.api.narrate(`You whisper to ${p.name}: "${thought}"`, { kind: 'overseer', icon: 'whisper', room: p.room });
@@ -299,6 +301,19 @@ export class Director {
     if (steps.length > 1) this.directives.queueChain(who, steps.slice(1), 'whisper', true);
     else this.directives.clearChain(who);
     this.dispatchDirective(who, first, 'whisper', this.buildDirectiveFallback(who, first, 'whisper'), true, 0);
+  }
+
+  /** Clear a player-sent whisper (leaves Story Mode puzzle convictions untouched). */
+  cancelWhisper(who: CharId): void {
+    const p = this.api.person(who);
+    if (!p || !p.conviction?.fromPlayer) return;
+    const old = p.conviction.text;
+    this.directives.cancelActor(who, true);
+    this.api.convince(who, null);
+    this.drives.delete(who);
+    if (p.thought === old) this.api.setThought(who, '');
+    this.api.resume(who);
+    this.api.narrate(`${p.name} shakes off the thought.`, { kind: 'event', icon: 'whisper', room: p.room });
   }
 
   /** Speak to everyone over the loudspeaker. */
@@ -930,7 +945,7 @@ export class Director {
       .filter((o) => o.id !== a.id && o.room === a.room && !this.talkedLately(a.id, o.id, now))
       .map((o) => {
         const dist = Math.hypot(o.x - a.x, o.y - a.y);
-        const feeling = Math.abs(this.api.bond(a.id, o.id)) / 100;
+        const feeling = Math.abs(this.api.bond(a.id, o.id)) / 100 + this.api.chemistry(a.id, o.id) / 200;
         return { o, dist, score: feeling + Math.max(0, 1 - dist / 260) + Math.min(1, quiet(o) / 120) * 0.6 + rng() * 0.5 };
       })
       .sort((x, y) => y.score - x.score);
@@ -994,12 +1009,28 @@ export class Director {
     }
 
     const bond = this.api.bond(a.id, b.id);
+    const chem = this.api.chemistry(a.id, b.id);
+    const fling = this.api.isFling(a.id, b.id);
     // The first fact is only the day and the time; the rest are things that have happened, newest first.
     const facts = this.sim.facts().slice(1);
     const topics: [string, string][] = [];
     if (facts.length) topics.push(['fact', `${a.name} and ${b.name} are talking about this: ${facts[Math.floor(rng() * Math.min(3, facts.length))]}`]);
     if (bond <= -20) topics.push(['feud', `${a.name} and ${b.name} do not get on. ${a.name} has found something small to pick at.`]);
     if (bond >= 30) topics.push(['pals', `${a.name} and ${b.name} get on well. They are having a quiet word instead of working.`]);
+    if (fling) topics.push(['fling', `${a.name} and ${b.name} are keeping their secret office hookups under wraps in ${place}, trading shameless looks when nobody is watching.`]);
+    else if (chem >= 45) topics.push(['crush', `${a.name} has strong sexual tension with ${b.name} and finds an excuse to linger and flirt shamelessly in ${place}.`]);
+    if (a.statuses.some((s) => s.kind === 'aroused') || b.statuses.some((s) => s.kind === 'aroused')) {
+      topics.push(['aroused', `${a.name} and ${b.name} are dealing with serious pent-up sexual tension in ${place} right now.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'afterglow') || b.statuses.some((s) => s.kind === 'afterglow')) {
+      topics.push(['afterglow', `Someone here just stumbled back out of a hookup with rumpled clothes and messy hair in ${place}.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'flustered') || b.statuses.some((s) => s.kind === 'flustered')) {
+      topics.push(['flustered', `Someone here is still blushing and breathless after a shamelessly steamy moment in ${place}.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'scandal') || b.statuses.some((s) => s.kind === 'scandal')) {
+      topics.push(['scandal', `Explicit office sex-and-exposure gossip is ripping through ${place} around ${a.name} and ${b.name} after an earlier incident.`]);
+    }
     if (a.thought) topics.push(['thought', `${a.name} keeps thinking: "${a.thought}" Now ${a.name} says something about it to ${b.name}.`]);
     // A whispered idea is what they most want to talk about, all day. Not someone keeping a secret for
     // the story: they act on what they are sure of but would never bring it up.
@@ -1303,6 +1334,21 @@ export class Director {
         // Story mode: today's chapter may adjust (or ignore) the change while it counts progress itself.
         const delta = this.opts.vetoShift ? this.opts.vetoShift(s.who, s.about, base) : base;
         if (delta) this.api.shiftBond(s.who, s.about, delta, res.summary);
+        if (s.change === 'fancies') {
+          this.api.shiftChemistry(s.who, s.about, 14);
+          if (this.api.bond(s.about, s.who) >= 0) this.api.shiftChemistry(s.about, s.who, 6);
+          if (this.api.chemistry(s.who, s.about) >= 50) this.api.addStatus(s.who, 'aroused', 45, s.about);
+        }
+      }
+      if (r.ask.planKind === 'flirt' && r.people.length >= 2 && isCastId(r.people[0]) && isCastId(r.people[1])) {
+        const [p0, p1] = r.people;
+        this.api.shiftChemistry(p0, p1, 10);
+        this.api.shiftChemistry(p1, p0, 8);
+        this.api.addStatus(p1, 'flustered', 25, p0);
+        if (this.api.chemistry(p0, p1) >= 45 || this.api.chemistry(p1, p0) >= 45) {
+          this.api.addStatus(p0, 'aroused', 45, p1);
+          this.api.addStatus(p1, 'aroused', 45, p0);
+        }
       }
       // One plan per conversation, and one follow-up at most: a plan to go straight
       // back to the person you were just talking to is only allowed once, or the
@@ -1311,6 +1357,7 @@ export class Director {
       for (const p of res.plans) {
         if (!isCastId(p.who) || !this.api.person(p.who)?.present) continue;
         const again = typeof p.plan.target === 'string' && r.people.includes(p.plan.target);
+        if (this.tryModelRendezvous(p.who, p.plan)) break;
         if (again && followUp) continue;
         this.api.setPlan(p.who, p.plan);
         break;
@@ -1376,14 +1423,15 @@ export class Director {
         });
         if (compliers.length) {
           // Mutual two-person act ("tell Jim and Pam to kiss"): Jim walks up and kisses Pam rather than both acting at thin air.
-          const mutualMatch = /^(?:to\s+)?(kiss|make\s+out(?:\s+with)?|hug|cuddle|fight|brawl|wrestle|slap|punch|hook\s+up(?:\s+with)?|sleep\s+together|have\s+sex(?:\s+with)?)(?:\s+(?:with\s+)?each\s+other)?[.!?]*$/i.exec(cmd.trim());
+          const mutualMatch = /^(?:to\s+)?(kiss|make\s+out(?:\s+with)?|hug|cuddle|slow\s+dance(?:\s+with)?|flirt(?:\s+with)?|massage|sneak\s+(?:away|off)(?:\s+with)?|fight|brawl|wrestle|slap|punch|hook\s+up(?:\s+with)?|sleep\s+together|have\s+sex(?:\s+with)?)(?:\s+(?:with\s+)?each\s+other)?[.!?]*$/i.exec(cmd.trim());
           if (mutualMatch && compliers.length === 2 && del.targets?.length === 2) {
             const [aId, bId] = compliers;
             const bName = this.api.person(bId)?.name.split(/\s+/)[0] ?? bId;
             const baseVerb = mutualMatch[1].replace(/\s+with$/i, '');
-            const mutualCmd = baseVerb.toLowerCase() === 'make out' || baseVerb.toLowerCase() === 'hook up' || baseVerb.toLowerCase() === 'have sex'
+            const lowVerb = baseVerb.toLowerCase();
+            const mutualCmd = lowVerb === 'make out' || lowVerb === 'hook up' || lowVerb === 'have sex' || lowVerb === 'slow dance' || lowVerb === 'flirt' || lowVerb === 'sneak away' || lowVerb === 'sneak off'
               ? `${baseVerb} with ${bName}`
-              : baseVerb.toLowerCase() === 'sleep together'
+              : lowVerb === 'sleep together'
                 ? `sleep with ${bName}`
                 : `${baseVerb} ${bName}`;
             const fallbackMutual = () => {
@@ -1454,11 +1502,36 @@ export class Director {
           .filter((p) => p.isCast && p.present && !ids.includes(p.id) && mentions(withoutRooms(ask.delegation!.action), p.name))
           .map((p) => p.id)
       : [];
-    const people = ids.map((who) => this.sim.briefFor(who, [...ids.filter((o) => o !== who), ...delExtra]));
+    const localCast = this.api.peopleIn(room).filter((p) => p.present && p.isCast && !ids.includes(p.id));
+    const roomRomantics = localCast
+      .filter((o) =>
+        ids.some(
+          (w) =>
+            this.api.chemistry(w, o.id) >= 40 ||
+            this.api.chemistry(o.id, w) >= 40 ||
+            this.api.isFling(w, o.id)
+        )
+      )
+      .map((o) => o.id)
+      .slice(0, 2);
+    const people = ids.map((who) =>
+      this.sim.briefFor(who, [...new Set([...ids.filter((o) => o !== who), ...delExtra, ...roomRomantics])])
+    );
     const onlookers = this.api.peopleIn(room).filter((p) => p.present && !ids.includes(p.id)).map((p) => p.name).slice(0, 5);
     const solo = ids.length === 1;
     const lively = this.api.chaos > 45;
     const topic = this.topicFor(ask);
+    const facts = this.sim.facts().slice(0, 10);
+    if (
+      ids.length === 2 &&
+      (room === 'annex' || room === 'meeting' || room === 'boss' || room === 'accounts') &&
+      onlookers.length === 0
+    ) {
+      facts.push(`They are alone together in ${roomDef(room).name} with nobody else watching.`);
+    }
+    if (getWorldLocation() === 'park') {
+      facts.push('Everyone is outdoors at Scranton Community Park, away from the usual office rules.');
+    }
     return {
       id,
       day: this.api.day,
@@ -1468,7 +1541,7 @@ export class Director {
       why: ask.why,
       people,
       onlookers,
-      facts: this.sim.facts().slice(0, 6),
+      facts,
       recent: this.sim.recentLines(room, 5),
       minLines: ask.minLines ?? (solo ? 1 : 2),
       maxLines: ask.maxLines ?? (solo ? 2 : lively ? 4 : 3),
@@ -1492,6 +1565,7 @@ export class Director {
     if (free.length < 2) return;
     for (const p of free) this.lastMinded.set(p.id, now);
     const ids = free.map((p) => p.id);
+    const presentCast = this.api.people().filter((p) => p.present && p.isCast);
     const others = this.api.people().filter((p) => p.present).map((p) => ({ id: p.id, name: p.name, place: roomDef(p.room).name }));
     this.sideN += 1;
     this.report();
@@ -1502,8 +1576,12 @@ export class Director {
         id: nextId('minds'),
         day: this.api.day,
         clock: formatClock(this.api.clock),
-        people: free.map((p) => ({ ...this.sim.briefFor(p.id, ids.filter((o) => o !== p.id)), place: roomDef(p.room).name, doing: p.doing })),
-        facts: this.sim.facts().slice(0, 6),
+        people: free.map((p) => {
+          const linked = this.romanticLinksFor(p.id, presentCast);
+          const withIds = [...new Set([...ids.filter((o) => o !== p.id), ...linked])];
+          return { ...this.sim.briefFor(p.id, withIds), place: roomDef(p.room).name, doing: p.doing };
+        }),
+        facts: this.sim.facts().slice(0, 8),
         allowed: [...PLAN_KINDS],
         others,
         chaos: Math.min(1, this.api.chaos / 100)
@@ -1533,8 +1611,47 @@ export class Director {
           shown += 1;
         }
       }
-      if (m.plan && m.plan.kind !== 'work') this.api.setPlan(m.who, m.plan);
+      if (m.plan && m.plan.kind !== 'work') {
+        if (!this.tryModelRendezvous(m.who, m.plan)) this.api.setPlan(m.who, m.plan);
+      }
     }
+  }
+
+  private romanticLinksFor(who: CharId, pool: readonly SimPerson[]): CharId[] {
+    return pool
+      .filter((o) => o.id !== who && (this.api.isFling(who, o.id) || this.api.chemistry(who, o.id) >= 35))
+      .sort((a, b) => (this.api.isFling(who, b.id) ? 100 : this.api.chemistry(who, b.id)) - (this.api.isFling(who, a.id) ? 100 : this.api.chemistry(who, a.id)))
+      .slice(0, 2)
+      .map((o) => o.id);
+  }
+
+  /** Turn bold model-chosen flirt/hookup plans into an actual private-room rendezvous on the floor. */
+  private tryModelRendezvous(who: CharId, plan: Plan): boolean {
+    if (plan.kind !== 'flirt' || typeof plan.target !== 'string' || !isCastId(who) || !isCastId(plan.target)) return false;
+    if (this.opts.carefulOrders?.() || this.api.time - this.lastAutoRendezvousAt < 120) return false;
+    if (this.opts.pinned?.(who) || this.opts.pinned?.(plan.target)) return false;
+    const a = this.api.person(who);
+    const t = this.api.person(plan.target);
+    if (!a || !t || !a.present || !t.present || !a.available || !t.available || a.sceneId || t.sceneId) return false;
+    if (this.api.hasStatus(who, 'eliminated') || this.api.hasStatus(plan.target, 'eliminated') || this.api.hasStatus(who, 'quit') || this.api.hasStatus(plan.target, 'quit')) return false;
+    const fling = this.api.isFling(who, plan.target);
+    const chemA = this.api.chemistry(who, plan.target);
+    const chemB = this.api.chemistry(plan.target, who);
+    const aroused = a.statuses.some((s) => s.kind === 'aroused') || t.statuses.some((s) => s.kind === 'aroused');
+    const wantsPrivate = /\b(sneak|hook\s*up|quickie|get\s+a\s+room|annex|conference\s+room|closet|alone|fool\s+around|private)\b/i.test(plan.about ?? '');
+    const shouldGo = (wantsPrivate && (fling || chemA >= 55 || aroused)) || ((fling || Math.min(chemA, chemB) >= 70) && aroused);
+    if (!shouldGo) return false;
+    this.lastAutoRendezvousAt = this.api.time;
+    const raw = `sneak away with ${t.name}`;
+    return this.directives.start(who, {
+      verb: 'romance',
+      targetPerson: plan.target,
+      targetRoom: null,
+      power: 'none',
+      item: '',
+      summary: `sneaks away with ${t.name}`,
+      source: 'model'
+    }, raw, 'cue', 0);
   }
 
   /** An idle thought from the written bank, so the office has life while the model is busy or absent. */

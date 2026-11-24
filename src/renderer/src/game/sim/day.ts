@@ -63,6 +63,7 @@ export function startDay(core: SimCore, day: number): void {
   core.nav.clearBlocked();
   core.hazards.clear();
   core.factMap.clear();
+  core.factExpiries.clear();
   core.clearEffects();
   core.holdingId = null;
   core.dayLogLines.length = 0;

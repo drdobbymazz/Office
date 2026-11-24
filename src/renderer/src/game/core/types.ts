@@ -101,7 +101,11 @@ export type StatusKind =
   | 'eliminated'  // taken out for the day
   | 'guilty'      // took someone out and everyone saw
   | 'quit'        // walked out for the day
-  | 'naked';      // stripped down, covered by a pixel censor mosaic
+  | 'naked'       // stripped down, covered by a pixel censor mosaic
+  | 'flustered'   // blushing and rattled after a bold romantic moment
+  | 'aroused'     // visibly turned on with lowered inhibitions
+  | 'afterglow'   // rumpled and glowing straight out of a hookup
+  | 'scandal';    // center of juicy workplace romance/exposure gossip (past-tense)
 
 export interface StatusEffect {
   kind: StatusKind;

@@ -214,6 +214,8 @@ export interface PersonUi {
   present: boolean;
   /** Cannot be targeted right now (asleep, frozen, aboard the UFO ...). */
   busy: boolean;
+  /** Active player-sent whisper they are currently convinced of, or null. */
+  whisper?: { text: string; since: number } | null;
 }
 
 /** Full detail of one person, for the character panel. */
@@ -230,7 +232,7 @@ export interface PersonDetail extends PersonUi {
   /** Latest private thought (from the model). */
   thought: string;
   /** A whispered idea they hold for the rest of the day, and since when (clock minutes). */
-  conviction: { text: string; since: number } | null;
+  conviction: { text: string; since: number; fromPlayer?: boolean } | null;
   plan: Plan | null;
   /** -1..1 */
   mood: number;
@@ -239,7 +241,7 @@ export interface PersonDetail extends PersonUi {
   /** 0..1 */
   stress: number;
   /** How they feel about the others, strongest first. */
-  bonds: { id: CastId; name: string; color: string; avatar: string; score: number; label: string; note: string }[];
+  bonds: { id: CastId; name: string; color: string; avatar: string; score: number; label: string; note: string; chemistry?: number; fling?: boolean }[];
   /** Newest first, plain sentences. */
   memories: { day: number; clock: number; text: string }[];
 }
@@ -472,6 +474,8 @@ export interface GameApi {
   customEvent(text: string): boolean | void;
   /** Put a thought in someone's head. */
   whisper(who: CharId, text: string): boolean | void;
+  /** Clear an active player-sent whisper from someone's head. */
+  cancelWhisper(who: CharId): void;
   /** Speak over the loudspeaker to everyone. */
   announce(text: string): boolean | void;
   /** Tell someone exactly what to do next: "confess to Lena". */
