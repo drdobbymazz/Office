@@ -257,6 +257,11 @@ export class Story {
     return this.state.results[this.state.chapter - 1];
   }
 
+  /** The simulation's day number for the current chapter (Episode 3 starts on a Wednesday). */
+  simDay(): number {
+    return (this.episode.firstDay ?? 1) + this.state.chapter - 1;
+  }
+
   /** The random seed for the current day's simulation (the same day always starts the same way). */
   simSeed(): number {
     return ((this.state.seed ^ Math.imul(this.state.chapter, 0x2545f491)) >>> 0) || 1;

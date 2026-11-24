@@ -163,7 +163,7 @@ afterEach(() => {
 
 describe('Episodes & Park saves', () => {
   it('registers Episode 1 (Office) and Episode 2 (Day in the Park) with isolated saves', () => {
-    expect(EPISODES.map((e) => e.id)).toEqual(['office', 'park']);
+    expect(EPISODES.map((e) => e.id).slice(0, 2)).toEqual(['office', 'park']);
     const ep1 = episodeById('office');
     const ep2 = episodeById('park');
     expect(ep1.chapters.length).toBe(5);
