@@ -5,6 +5,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PixelPanel } from '@/components/PixelPanel';
+import { EPISODES } from '@/game/story/episodes';
 import { Btn } from './kit';
 import { useGame, useUi } from './ctx';
 import { useNav } from './Dock';
@@ -36,7 +37,9 @@ function rectOf(sel: string): DOMRect | null {
 export function StoryCoach() {
   const game = useGame();
   const nav = useNav();
-  const episodeId = useUi((s) => s.story?.episodeId ?? 'office');
+  // The coach marks walk a new player through the first episode's first day.
+  const firstEpisode = useUi((s) => s.episodes[0]?.id ?? EPISODES[0].id);
+  const episodeId = useUi((s) => s.story?.episodeId ?? firstEpisode);
   const chapter = useUi((s) => s.story?.chapter ?? 0);
   const goalTitle = useUi((s) => s.story?.goal.title ?? '');
   const done = useUi((s) => s.settings.storyCoachDone);
@@ -48,7 +51,7 @@ export function StoryCoach() {
   // The steps steer the panel through a ref, so a tab change does not restart the current step.
   const navRef = useRef(nav);
   navRef.current = nav;
-  const live = episodeId === 'office' && chapter === 1 && !done && !finishing;
+  const live = episodeId === firstEpisode && chapter === 1 && !done && !finishing;
 
   // Start once Michael is on the floor and can be seen.
   useEffect(() => {

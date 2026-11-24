@@ -20,9 +20,18 @@ export type DayPicture = { faces: { id: string; face: EmotionId }[]; icon?: unde
 /**
  * Episode 1 (Office): Monday is Michael's day; Tuesday Angela and Oscar (and Kevin between them);
  * Wednesday the client and the sales team; Friday Michael and the inspector; Thursday shows the
- * leak's envelope rather than faces. Episode 2 (Day in the Park): three outdoor acts.
+ * leak's envelope rather than faces. Episode 2 (Day in the Park): three outdoor acts. Episode 3
+ * (Inside Job): Ms Vane and the people closest to the tape.
  */
 export function dayPicture(chapter: number, episodeId: EpisodeId = 'office'): DayPicture {
+  if (episodeId === 'heist') {
+    switch (chapter) {
+      case 1: return { faces: [{ id: 'visitor:vane', face: 'suspicious' }, { id: 'michael', face: 'nervous' }] };
+      case 2: return { faces: [{ id: 'michael', face: 'nervous' }, { id: 'dwight', face: 'determined' }, { id: 'pam', face: 'nervous' }] };
+      case 3: return { faces: [{ id: 'visitor:vane', face: 'suspicious' }, { id: 'kevin', face: 'nervous' }, { id: 'michael', face: 'nervous' }] };
+      default: return { faces: [] };
+    }
+  }
   if (episodeId === 'park') {
     switch (chapter) {
       case 1: return { faces: [{ id: 'michael', face: 'excited' }, { id: 'stanley', face: 'tired' }, { id: 'dwight', face: 'suspicious' }] };
@@ -45,8 +54,10 @@ export function dayPicture(chapter: number, episodeId: EpisodeId = 'office'): Da
  * Whose name is tagged on the floor while the camera is zoomed out: the people the day's job is
  * about. Not the card's portraits (Wednesday pictures two salespeople, and tagging them would
  * answer "who should pitch?"), and nobody on Thursday, when finding the right person is the job.
+ * This is the fallback: a chapter that names its own tags (`StoryUi.marks`) wins over it.
  */
 export function storyMarks(chapter: number, episodeId: EpisodeId = 'office'): string[] {
+  if (episodeId === 'heist') return chapter >= 1 && chapter <= 3 ? ['visitor:vane'] : [];
   if (episodeId === 'park') {
     switch (chapter) {
       case 1: return ['michael'];
@@ -62,6 +73,21 @@ export function storyMarks(chapter: number, episodeId: EpisodeId = 'office'): st
     case 5: return ['michael', 'visitor:inspector'];
     default: return [];
   }
+}
+
+/**
+ * The floor tags to show right now: the chapter's own (each may carry a few words) when it names
+ * them, else the day's fixed list. A person is tagged once. Nothing outside a story chapter (0).
+ */
+export function markList(
+  chapter: number, episodeId: EpisodeId | undefined, marks: readonly { id: string; label?: string }[] | undefined
+): { id: string; label?: string }[] {
+  if (!chapter) return [];
+  if (marks) {
+    const seen = new Set<string>();
+    return marks.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+  }
+  return storyMarks(chapter, episodeId).map((id) => ({ id }));
 }
 
 /**
@@ -81,16 +107,34 @@ export interface ReportActions {
   nextLabel: string;
 }
 
-export function reportActions(won: boolean, lastDay: boolean, unitLabel = 'Day'): ReportActions {
+/**
+ * `endNextLabel` is the episode's own button to its ending ("See how the job ended"); without it
+ * (an older save, the saga) the label is guessed from the unit word as before.
+ */
+export function reportActions(won: boolean, lastDay: boolean, unitLabel = 'Day', endNextLabel?: string): ReportActions {
   const isDay = unitLabel.toLowerCase() === 'day';
   if (won) {
+    const toEnd = endNextLabel || (isDay ? 'See how the week ended' : 'See how the outing ended');
     return {
       lead: 'next',
       confirmRetry: true,
-      nextLabel: lastDay ? (isDay ? 'See how the week ended' : 'See how the outing ended') : (isDay ? 'Next day' : `Next ${unitLabel.toLowerCase()}`),
+      nextLabel: lastDay ? toEnd : (isDay ? 'Next day' : `Next ${unitLabel.toLowerCase()}`),
     };
   }
   return { lead: 'retry', confirmRetry: false, nextLabel: lastDay ? 'See the ending' : 'Move on anyway' };
+}
+
+/**
+ * The small line under the title card's "Story Mode - Episodes" button, built from the list so any
+ * number of episodes fits: "3 episodes: Office, Day in the Park, Inside Job". With a saved episode
+ * it leads with that one. The button cuts what still does not fit with an ellipsis.
+ */
+export function episodeListLine(episodes: readonly { number: number; title: string; saved?: unknown }[]): string {
+  const n = episodes.length;
+  const saved = episodes.find((e) => e.saved);
+  if (saved) return `Continue Ep ${saved.number} (${saved.title}) · ${n} episode${n === 1 ? '' : 's'}`;
+  const names = episodes.map((e) => e.title).join(', ');
+  return n === 1 ? `Episode 1: ${names}` : `${n} episodes: ${names}`;
 }
 
 /** The staged reveal of the report's first page: when each stage starts (ms) and how long the count runs. */

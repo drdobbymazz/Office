@@ -137,7 +137,7 @@ async function main(): Promise<void> {
     zoom = zoom || 3.5;
     const list: Partial<PersonState>[] = view === 'props'
       ? [...PROPS.map((p) => ({ prop: p as HeldProp, anim: 'idle' as AnimId })), ...HEADGEAR.map((h) => ({ headgear: h as Headgear })),
-        { prop: 'box', anim: 'carry' }, { prop: 'cake', anim: 'carry' }, { prop: 'pizza', anim: 'carry' }, { prop: 'mop', anim: 'mop' }, { prop: 'extinguisher', anim: 'extinguish' }, { prop: 'coffee', anim: 'drink' }]
+        { prop: 'box', anim: 'carry' }, { prop: 'case', anim: 'carry' }, { prop: 'tape', anim: 'carry' }, { prop: 'cake', anim: 'carry' }, { prop: 'pizza', anim: 'carry' }, { prop: 'mop', anim: 'mop' }, { prop: 'extinguisher', anim: 'extinguish' }, { prop: 'coffee', anim: 'drink' }]
       : (['wet', 'sooty', 'frizzy', 'asleep', 'dizzy', 'stung', 'love', 'frozen'] as StatusKind[]).map((s) => ({ statuses: [s] }));
     const pos = grid(list.length, 9, 30, 52, zoom);
     list.forEach((o, i) => {

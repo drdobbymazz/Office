@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { dayPicture, reportActions, resultLines, revealTimes, splitHook } from '@/components/game/screenLogic';
+import { dayPicture, episodeListLine, markList, reportActions, resultLines, revealTimes, splitHook, storyMarks } from '@/components/game/screenLogic';
 import { CLOSED_BELOW, ENDING_RULE_TEXT, SAVED_AT } from '@/components/game/storyNumbers';
 import * as rules from '@/game/story/rules';
 import { CHAPTER_DEFS } from '@/game/story';
@@ -42,7 +42,67 @@ describe('chapter card', () => {
   });
 });
 
+describe('Episode 3 (Inside Job) pictures and tags', () => {
+  const faces = (ch: number) => dayPicture(ch, 'heist').faces.map((f) => `${f.id}:${f.face}`);
+  it('pictures Ms Vane and the people closest to the tape', () => {
+    expect(faces(1)).toEqual(['visitor:vane:suspicious', 'michael:nervous']);
+    expect(faces(2)).toEqual(['michael:nervous', 'dwight:determined', 'pam:nervous']);
+    expect(faces(3)).toEqual(['visitor:vane:suspicious', 'kevin:nervous', 'michael:nervous']);
+    expect(dayPicture(4, 'heist').faces).toEqual([]);
+  });
+
+  it('tags Ms Vane by default, and the chapter\'s own tags (with words) win', () => {
+    for (const ch of [1, 2, 3]) expect(storyMarks(ch, 'heist')).toEqual(['visitor:vane']);
+    expect(markList(2, 'heist', undefined)).toEqual([{ id: 'visitor:vane' }]);
+    const own = [{ id: 'visitor:vane', label: 'guarding the case' }, { id: 'pam', label: 'has the right tape' }, { id: 'pam', label: 'again' }];
+    expect(markList(2, 'heist', own)).toEqual(own.slice(0, 2));
+    expect(markList(2, 'heist', [])).toEqual([]);
+    expect(markList(0, 'heist', own)).toEqual([]);
+  });
+
+  it('leaves Episodes 1 and 2 as they were', () => {
+    expect(storyMarks(1)).toEqual(['michael']);
+    expect(storyMarks(3, 'park')).toEqual(['visitor:ranger', 'michael']);
+    expect(dayPicture(3, 'park').faces.map((f) => f.id)).toEqual(['visitor:ranger', 'michael']);
+  });
+});
+
+describe('title card episode line', () => {
+  const eps = [
+    { number: 1, title: 'Office', saved: null }, { number: 2, title: 'Day in the Park', saved: null }, { number: 3, title: 'Inside Job', saved: null },
+  ];
+  it('names every episode from the list', () => {
+    expect(episodeListLine(eps)).toBe('3 episodes: Office, Day in the Park, Inside Job');
+    expect(episodeListLine(eps.slice(0, 2))).toBe('2 episodes: Office, Day in the Park');
+  });
+  it('leads with a saved episode and keeps the count', () => {
+    const saved = eps.map((e) => (e.number === 3 ? { ...e, saved: { chapter: 2 } } : e));
+    expect(episodeListLine(saved)).toBe('Continue Ep 3 (Inside Job) · 3 episodes');
+  });
+});
+
+describe('the cards use the episode\'s own labels', () => {
+  const src = readFileSync(resolve(__dirname, '../../src/renderer/src/components/game/Dialogs.tsx'), 'utf8');
+  it('no card branches on an episode id or writes another episode\'s labels by hand', () => {
+    expect(src).not.toMatch(/isPark|episodeId === '|ep\.id === '|startStory\(true, '/);
+    for (const text of ['The outing', 'Outing complete', 'LATE AFTERNOON', 'Day in the Park', 'An outdoor outing']) expect(src).not.toContain(text);
+  });
+  it('reads band, span, blurb, ending heading and the next episode from the story', () => {
+    for (const field of ['story.band', 'story.spanLabel', 'story.episodeBlurb', 'story.episodeName', 'story.endHead', 'story.endSub', 'story.endNextLabel', 'story.nextEpisode', 'ep.band']) {
+      expect(src).toContain(field);
+    }
+  });
+});
+
 describe('report', () => {
+  it('the last report\'s button to the ending is the episode\'s own label', () => {
+    expect(reportActions(true, true, 'Day', 'See how the job ended').nextLabel).toBe('See how the job ended');
+    expect(reportActions(true, false, 'Day', 'See how the job ended').nextLabel).toBe('Next day');
+    expect(reportActions(true, true, 'Act').nextLabel).toBe('See how the outing ended');
+    expect(reportActions(true, false, 'Act').nextLabel).toBe('Next act');
+    expect(reportActions(false, true, 'Day', 'See how the job ended').nextLabel).toBe('See the ending');
+  });
+
   it('a won day leads on to the next day and asks before retrying', () => {
     expect(reportActions(true, false)).toEqual({ lead: 'next', confirmRetry: true, nextLabel: 'Next day' });
     expect(reportActions(true, true).nextLabel).toBe('See how the week ended');

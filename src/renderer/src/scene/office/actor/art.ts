@@ -132,7 +132,9 @@ export const STATUS = { wet: 1, sooty: 2, frizzy: 4, stung: 8, dripPhase: 16 } a
 
 export const PROPS = [
   'coffee', 'phone', 'papers', 'clipboard', 'box', 'trophy', 'extinguisher', 'mop', 'wrench', 'flashlight', 'net',
-  'pizza', 'donut', 'cake', 'cash', 'balloon'
+  'pizza', 'donut', 'cake', 'cash', 'balloon',
+  // Added after the others: a frame's prop is stored as its index here, so new ones go last.
+  'case', 'tape'
 ] as const;
 export const HEADGEAR = ['crown', 'partyHat', 'tinfoil'] as const;
 
@@ -344,6 +346,25 @@ function drawProp(buf: Buf, prop: string, hx: number, hy: number, carried: boole
       for (let y = -12; y <= -1; y++) set(buf, hx + (y < -8 ? 1 : 0) * dir, hy + y, [230, 230, 230]);
       Rr(-1, -19, 3, -14, [226, 54, 62]); P([[-1, -19], [3, -19], [-1, -14], [3, -14]], [0, 0, 0]);
       P([[0, -18], [0, -17]], [255, 160, 160]); P([[1, -13]], [180, 40, 46]);
+      break;
+    case 'case': {
+      // A dark briefcase: body, a lighter top edge, two pale clasps, the handle in the hand.
+      // (Not pure black: clearBlack() turns pure black pixels transparent.)
+      const body: RGB = [70, 50, 44], edge: RGB = [112, 82, 66], clasp: RGB = [244, 218, 130];
+      if (carried) {
+        rect(buf, 5, 20, 12, 24, body); rect(buf, 5, 20, 12, 20, edge); set(buf, 7, 21, clasp); set(buf, 10, 21, clasp);
+        set(buf, 8, 19, [40, 32, 30]); set(buf, 9, 19, [40, 32, 30]);
+      } else {
+        P([[0, 0], [1, 0]], [40, 32, 30]);
+        Rr(-1, 1, 3, 4, body); Rr(-1, 1, 3, 1, edge); P([[-1, 2], [2, 2]], clasp);
+      }
+      break;
+    }
+    case 'tape':
+      // A video cassette: near-black shell, two pale reels and a white label strip.
+      if (carried) {
+        rect(buf, 6, 20, 11, 23, [36, 34, 42]); rect(buf, 6, 20, 11, 20, [246, 246, 240]); set(buf, 7, 22, [196, 200, 210]); set(buf, 10, 22, [196, 200, 210]);
+      } else { Rr(-1, -3, 3, 0, [36, 34, 42]); Rr(-1, -3, 3, -3, [246, 246, 240]); P([[0, -1], [2, -1]], [196, 200, 210]); }
       break;
   }
   void view;

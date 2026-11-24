@@ -21,13 +21,18 @@ import { useContent, useGame, useNow, useUi, type Viewport } from './ctx';
 import { useNav } from './Dock';
 import { ExtraRow, HintList, WeekStrip, INFLUENCE_NOTE, MARKS_NOTE, STANDING_NOTE, tileIcon, useStory } from './Story';
 import { PageDots, ScrollArea, reducedMotion, useCountUp, useLast, useStages } from './screenKit';
-import { dayPicture, reportActions, resultLines, revealTimes, splitHook } from './screenLogic';
+import { dayPicture, episodeListLine, reportActions, resultLines, revealTimes, splitHook } from './screenLogic';
 
 const backdrop: React.CSSProperties = {
   position: 'absolute', inset: 0, background: 'rgba(26, 19, 32, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
   padding: '8px max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left))', pointerEvents: 'auto', zIndex: 20
 };
 const hardShadow = 'var(--cth-panel-border-dialog), 4px 4px 0 rgba(26, 19, 32, 0.25)';
+
+/** The colour of a story card's band: the saga's lilac, else the episode's own colour. */
+function storyBand(story: StoryUi): string {
+  return story.saga ? 'var(--cth-lilac)' : story.band ?? 'var(--cth-lemon)';
+}
 
 /** Body text on the cards: a size smaller on the shortest phones so a page fits. */
 function bodyType(vp: Viewport): { fontSize: number; lineHeight: string } {
@@ -179,7 +184,7 @@ export function TitleCard({ vp }: { vp: Viewport }) {
     ? rawEpisodes
     : EPISODES.map((ep) => ({
         id: ep.id, number: ep.number, title: ep.title, subtitle: ep.subtitle, tagline: ep.tagline,
-        chapters: ep.chapters.length, unitLabel: ep.unitLabel, band: ep.band, saved: ep.id === 'office' ? saved : null,
+        chapters: ep.chapters.length, unitLabel: ep.unitLabel, band: ep.band, saved: ep === EPISODES[0] ? saved : null,
       }));
   const side = !vp.portrait && vp.w >= 640;
   // The plate is 132 x 84 art pixels: twice that where there is room, else once.
@@ -208,9 +213,7 @@ export function TitleCard({ vp }: { vp: Viewport }) {
                   return (
                     <div key={ep.id} style={{
                       display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-cream-50)',
-                      boxShadow: ep.id === 'park'
-                        ? 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-mint)'
-                        : 'inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 var(--cth-lemon)',
+                      boxShadow: `inset 0 0 0 2px var(--cth-ink-900), inset 6px 0 0 ${ep.band || 'var(--cth-lemon)'}`,
                     }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, lineHeight: '14px', padding: '2px 5px 1px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
@@ -270,10 +273,8 @@ export function TitleCard({ vp }: { vp: Viewport }) {
                     onClick={() => setPickingEpisodes(true)}>
                     <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, minWidth: 0, whiteSpace: 'normal', textAlign: 'left' }}>
                       <span style={{ fontSize: 17, lineHeight: '20px' }}>Story Mode · Episodes</span>
-                      <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-cream-300)' }}>
-                        {anySavedEp
-                          ? `Continue Ep ${anySavedEp.number} (${anySavedEp.title}) · Ep 1 Office · Ep 2 Park`
-                          : 'Ep 1: Office · Ep 2: Day in the Park'}
+                      <span style={{ fontSize: 12, lineHeight: '14px', color: 'var(--cth-cream-300)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {episodeListLine(episodes)}
                       </span>
                     </span>
                   </Btn>
@@ -388,7 +389,6 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
   const { hook, rest } = splitHook(story.intro);
   const type = bodyType(vp);
   const saga = story.saga;
-  const isPark = story.episodeId === 'park';
   const unit = story.unitLabel ?? 'Day';
   const unitUpper = unit.toUpperCase();
   const first = !saga && story.chapter === 1;
@@ -400,7 +400,7 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
   const col = Math.max(156, n * 18 * scale + (n - 1) * 4 + 16);
   const short = vp.h < 420;
   return (
-    <Card fit vp={vp} band={saga ? 'var(--cth-lilac)' : isPark ? 'var(--cth-mint)' : 'var(--cth-lemon)'}
+    <Card fit vp={vp} band={storyBand(story)}
       head={saga ? `S${saga.season} DAY ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}` : `${unitUpper} ${story.chapter} · ${WEEKDAY_UPPER(story.weekday)}`}
       sub={saga ? saga.arcTitle : `${unit} ${story.chapter} of ${story.chapters}`}
       footer={
@@ -421,10 +421,10 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
             // A new episode starts here: its title banner before chapter 1.
             <div className="sc-drop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '16px', padding: '4px 6px 2px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
-                {(isPark ? (story.episodeName ?? 'DAY IN THE PARK') : STORY_TITLE).toUpperCase()}
+                {(story.episodeName ?? STORY_TITLE).toUpperCase()}
               </span>
               <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>
-                {isPark ? 'An outdoor outing in three acts' : 'A story in five days, Monday to Friday'}
+                {story.episodeBlurb ?? 'A story in five days, Monday to Friday'}
               </span>
             </div>
           )}
@@ -540,9 +540,8 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
   const saga = story.saga;
   const unit = story.unitLabel ?? 'Day';
   const unitLower = unit.toLowerCase();
-  const isPark = story.episodeId === 'park';
   return (
-    <Card vp={vp} band={saga ? 'var(--cth-lilac)' : isPark ? 'var(--cth-mint)' : 'var(--cth-lemon)'}
+    <Card vp={vp} band={storyBand(story)}
       head={saga ? `S${saga.season} · ${story.title.toUpperCase()}` : `${unit.toUpperCase()} ${story.chapter} · ${story.title.toUpperCase()}`}
       sub={saga ? `${saga.arcTitle} · Day ${story.chapter}` : `${unit} ${story.chapter} of ${story.chapters}`}
       footer={
@@ -600,7 +599,7 @@ function FooterMeters({ story, vp }: { story: StoryUi; vp: Viewport }) {
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: 150 }}>
-        <Label>{story.episodeId === 'park' ? 'The outing' : 'The week'}</Label>
+        <Label>{story.spanLabel ?? 'The week'}</Label>
         <WeekStrip week={story.week} current={story.chapter} compact />
       </div>
     </div>
@@ -804,7 +803,7 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
   const go = (p: number) => { if (p !== page) { game.uiSound('card'); setPage(p); } };
   const unit = story.unitLabel ?? 'Day';
   const unitLower = unit.toLowerCase();
-  const act = reportActions(won, lastDay, unit);
+  const act = reportActions(won, lastDay, unit, story.endNextLabel);
   const nextLabel = story.saga && lastDay ? 'See season finale' : act.nextLabel;
   const retry = () => {
     if (act.confirmRetry) { setAskRetry(true); return; }
@@ -836,7 +835,7 @@ function StoryReport({ vp, story }: { vp: Viewport; story: StoryUi }) {
     </span>
   );
   return (
-    <Card vp={vp} band={story.saga ? 'var(--cth-lilac)' : story.episodeId === 'park' ? 'var(--cth-mint)' : 'var(--cth-lemon)'}
+    <Card vp={vp} band={storyBand(story)}
       head={story.saga ? `S${story.saga.season} · DAY ${story.chapter} · ${story.weekday.toUpperCase()}` : `${unit.toUpperCase()} ${story.chapter} · ${story.weekday.toUpperCase()}`}
       sub={story.saga ? story.saga.arcTitle : `End of ${unitLower} report`}
       footer={
@@ -975,11 +974,16 @@ function ChangeRow({ text, delta }: { text: string; delta: number }) {
 const ENDING_ACCENT: Record<'saved' | 'scraped' | 'closed', string> = { saved: 'var(--cth-mint)', scraped: 'var(--cth-lemon)', closed: 'var(--cth-coral)' };
 const ENDING_FACE: Record<'saved' | 'scraped' | 'closed', EmotionId> = { saved: 'happy', scraped: 'nervous', closed: 'sad' };
 
-/** Live Office -> Park bridge cinematic banner & skip control. */
+/** The episode's opening scene on the floor: its banner and skip control. */
 export function IntroSkip() {
   const game = useGame();
   const intro = useUi((s) => s.intro);
+  const story = useUi((s) => s.story);
+  const episodes = useUi((s) => s.episodes);
   if (!intro) return null;
+  const ep = episodes.find((e) => e.id === story?.episodeId);
+  const name = story?.episodeName ?? ep?.title ?? 'Story mode';
+  const band = story?.band ?? ep?.band ?? 'var(--cth-mint)';
   return (
     <>
       <div style={{
@@ -989,11 +993,11 @@ export function IntroSkip() {
         display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center', textAlign: 'center',
       }}>
         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, lineHeight: '12px', color: 'var(--cth-ink-500)' }}>
-          EPISODE 2 · DAY IN THE PARK
+          {ep ? `EPISODE ${ep.number} · ` : ''}{name.toUpperCase()}
         </span>
         <span style={{ fontSize: 15, lineHeight: '19px', color: 'var(--cth-ink-900)' }}>{intro.caption}</span>
         <div style={{ width: '100%', maxWidth: 260, height: 4, background: 'var(--cth-cream-300)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-900)' }}>
-          <div style={{ width: `${Math.round(intro.progress * 100)}%`, height: '100%', background: 'var(--cth-mint)' }} />
+          <div style={{ width: `${Math.round(intro.progress * 100)}%`, height: '100%', background: band }} />
         </div>
       </div>
       {intro.canSkip && (
@@ -1029,9 +1033,9 @@ export function EndingCard({ vp }: { vp: Viewport }) {
   if (!story || !story.ending) return null;
   const e = story.ending;
   const saga = story.saga;
-  const isPark = story.episodeId === 'park';
   const unitLower = (story.unitLabel ?? 'Day').toLowerCase();
-  const epId = story.episodeId ?? 'office';
+  const epId = story.episodeId;
+  const next = story.nextEpisode ?? null;
   const two = !vp.portrait && vp.w >= 700;
   const short = vp.h < 420;
   const type = bodyType(vp);
@@ -1069,7 +1073,7 @@ export function EndingCard({ vp }: { vp: Viewport }) {
         {story.standingNote ?? `${STANDING_NOTE}. ${MARKS_NOTE}`}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-        <Label style={{ flex: 1 }}>{saga ? `Season ${saga.season}` : isPark ? 'The outing' : 'The week'}</Label>
+        <Label style={{ flex: 1 }}>{saga ? `Season ${saga.season}` : story.spanLabel ?? 'The week'}</Label>
         <span style={{ fontSize: 13, color: 'var(--cth-ink-700)' }}>{won} of {story.week.length} {unitLower}s won</span>
       </div>
       <WeekStrip week={story.week} titles />
@@ -1089,8 +1093,8 @@ export function EndingCard({ vp }: { vp: Viewport }) {
   );
   return (
     <Card vp={vp} band={ENDING_ACCENT[e.id]}
-      head={saga ? `SEASON ${saga.season} FINALE` : isPark ? 'LATE AFTERNOON' : 'FRIDAY, 17:00'}
-      sub={saga ? saga.arcTitle : isPark ? 'Outing complete' : 'The week is over'}
+      head={saga ? `SEASON ${saga.season} FINALE` : story.endHead ?? 'FRIDAY, 17:00'}
+      sub={saga ? saga.arcTitle : story.endSub ?? 'The week is over'}
       footer={
         <>
           <Btn variant="secondary" size={short ? 'md' : 'lg'} icon="back" onClick={() => game.toTitle()} sound="close" style={{ flexShrink: 1, minWidth: 0 }}>
@@ -1106,8 +1110,8 @@ export function EndingCard({ vp }: { vp: Viewport }) {
             <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.nextSeason()} style={{ flexShrink: 1, minWidth: 0 }}>
               Start Season {saga.season + 1}
             </Btn>
-          ) : isPark ? (
-            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.startStory(true, 'park')} style={{ flexShrink: 1, minWidth: 0 }}>
+          ) : !next ? (
+            <Btn variant="primary" size={short ? 'md' : 'lg'} icon="play" sound="confirm" onClick={() => game.startStory(true, epId)} style={{ flexShrink: 1, minWidth: 0 }}>
               Play again
             </Btn>
           ) : (
@@ -1115,8 +1119,8 @@ export function EndingCard({ vp }: { vp: Viewport }) {
               <Btn variant="secondary" size={short ? 'md' : 'lg'} icon="refresh" sound="confirm" onClick={() => game.startStory(true, epId)} style={{ flexShrink: 1, minWidth: 0 }}>
                 Play again
               </Btn>
-              <Btn variant="primary" size={short ? 'md' : 'lg'} icon="arrow-right" sound="confirm" onClick={() => game.startStory(true, 'park')} style={{ flexShrink: 1, minWidth: 0 }}>
-                Next: Day in the Park
+              <Btn variant="primary" size={short ? 'md' : 'lg'} icon="arrow-right" sound="confirm" onClick={() => game.startStory(true, next.id)} style={{ flexShrink: 1, minWidth: 0 }}>
+                Next: {next.title}
               </Btn>
             </span>
           )}

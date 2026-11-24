@@ -392,7 +392,18 @@ export function buildStory(o: BuildOpts): StoryUi {
     help: [],
     warns: {},
     suggest: { whisper: [], announce: [] },
-    canFinish: !!outcome || goal.state !== 'open'
+    canFinish: !!outcome || goal.state !== 'open',
+    // The first episode's own labels, as the real story fills them (episodes.ts).
+    episodeId: 'office',
+    episodeName: 'Office',
+    unitLabel: 'Day',
+    episodeBlurb: 'A story in five days, Monday to Friday',
+    spanLabel: 'The week',
+    band: 'var(--cth-lemon)',
+    endHead: 'FRIDAY, 17:00',
+    endSub: 'The week is over',
+    endNextLabel: 'See how the week ended',
+    nextEpisode: { id: 'park', number: 2, title: 'Day in the Park' },
   };
 }
 

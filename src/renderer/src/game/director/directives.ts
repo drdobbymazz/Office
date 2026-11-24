@@ -63,6 +63,8 @@ function propFromItem(item: string): HeldProp {
   if (/wrench/.test(s)) return 'wrench';
   if (/mop|broom/.test(s)) return 'mop';
   if (/extinguisher/.test(s)) return 'extinguisher';
+  if (/briefcase|suitcase|\bcase\b/.test(s)) return 'case';
+  if (/cassette|video ?tape|vhs|\btape\b/.test(s)) return 'tape';
   if (/box/.test(s)) return 'box';
   return 'papers';
 }
