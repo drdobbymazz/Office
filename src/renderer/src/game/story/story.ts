@@ -13,7 +13,7 @@ import { createRng } from '@/game/sim/rng';
 import { loadJson, removeKey, saveJson } from '@/game/storage';
 import { CHAPTER_DEFS } from './chapters';
 import { StoryDay, type StoryDayHooks } from './day';
-import { EPISODES, OFFICE_EPISODE, episodeById, type EpisodeDef } from './episodes';
+import { EPISODES, OFFICE_EPISODE, episodeById, nextEpisode, type EpisodeDef } from './episodes';
 import { CHAPTERS, ENDING, STANDING_START, allCosts, applyChanges, budgetFor, endingFor, standingChanges, type EndingId } from './rules';
 import { LEAK, endingText, epilogueLines } from './text';
 import type { ChapterDef, ChapterResult, EpisodeId, SuggestIdea, WeekNotes } from './types';
@@ -209,10 +209,9 @@ export class Story {
   }
 
   static peekAll(store: StoryStore): Record<EpisodeId, StorySaved | null> {
-    return {
-      office: Story.peekEpisode(store, 'office'),
-      park: Story.peekEpisode(store, 'park'),
-    };
+    const out = {} as Record<EpisodeId, StorySaved | null>;
+    for (const ep of EPISODES) out[ep.id] = Story.peekEpisode(store, ep.id);
+    return out;
   }
 
   needsIntro(): boolean {
@@ -387,7 +386,7 @@ export class Story {
   }
 
   endingId(): EndingId {
-    return this.episode.endingFor(this.state.standing, this.fridayWon);
+    return this.episode.endingFor(this.state.standing, this.fridayWon, this.state.notes);
   }
 
   ending(): { id: EndingId; title: string; text: string[]; epilogue: string[] } {
@@ -409,7 +408,17 @@ export class Story {
       return { id: x.id, title: x.title, detail: x.detail, icon: x.icon, progress: done ? 1 : 0, status: '', state: result ? (done ? 'won' : 'lost') : 'open' } as StoryUi['side'][number];
     });
     const budget = def.budget ?? budgetFor(def.chapter);
+    const next = nextEpisode(ep.id);
+    const marks = day ? day.marksUi() : null;
     return {
+      episodeBlurb: ep.blurb,
+      spanLabel: ep.spanLabel,
+      band: ep.band,
+      endHead: ep.endHead,
+      endSub: ep.endSub,
+      endNextLabel: ep.endNextLabel,
+      nextEpisode: next ? { id: next.id, number: next.number, title: next.title } : null,
+      ...(marks ? { marks } : {}),
       episodeId: ep.id,
       episodeName: ep.title,
       episodeSubtitle: ep.subtitle,

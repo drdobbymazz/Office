@@ -252,6 +252,16 @@ export class StoryDay {
     }
   }
 
+  /** The chapter's own floor tags for right now, or null when it has none (the fixed ones are used). */
+  marksUi(): { id: string; label?: string }[] | null {
+    if (this.disposed || !this.run.marks) return null;
+    try {
+      return this.run.marks().map((m) => ({ id: m.id, ...(m.label ? { label: m.label } : {}) }));
+    } catch {
+      return null;
+    }
+  }
+
   // ── influence ──────────────────────────────────────────────────────────────
 
   costOf(action: ActionId): number {

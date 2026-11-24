@@ -95,6 +95,7 @@ function episodesUi(): EpisodeSavedUi[] {
     tagline: ep.tagline,
     chapters: ep.chapters.length,
     unitLabel: ep.unitLabel,
+    band: ep.band,
     saved: saved[ep.id],
   }));
 }

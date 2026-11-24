@@ -10,7 +10,7 @@ export { CHAPTER_DEFS, FIGGIS, SALES, BULLPEN_STAFF, registerFiggis } from './ch
 export { PARK_CHAPTER_DEFS, RANGER, registerRanger } from './parkChapters';
 export { ParkIntroScene, PARK_INTRO_PREROLL } from './parkIntro';
 export { ParkFinaleScene } from './parkFinale';
-export { EPISODES, OFFICE_EPISODE, PARK_EPISODE, episodeById } from './episodes';
+export { EPISODES, OFFICE_EPISODE, PARK_EPISODE, episodeById, nextEpisode } from './episodes';
 export type { EpisodeDef } from './episodes';
 export * from './rules';
 export { ENDING_RULE } from './text';

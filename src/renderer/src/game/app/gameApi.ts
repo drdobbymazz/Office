@@ -60,6 +60,8 @@ export interface EpisodeSavedUi {
   tagline: string;
   chapters: number;
   unitLabel: string;
+  /** The episode's colour (a CSS colour, e.g. 'var(--cth-lemon)'), for its card's edge and bands. */
+  band: string;
   saved: { chapter: number; chapters: number; title: string; weekday: string; standing: number } | null;
 }
 
@@ -132,6 +134,21 @@ export interface StoryUi {
   standingLabel?: string;
   standingNote?: string;
   endingRule?: string;
+  /** One line under the episode's title banner on its first card ("A story in five days, Monday to Friday"). */
+  episodeBlurb?: string;
+  /** What the whole episode is called on the report and ending cards ("The week", "The outing", "The job"). */
+  spanLabel?: string;
+  /** The episode's colour for card bands (a CSS colour). */
+  band?: string;
+  /** The ending card's heading and line under it ("FRIDAY, 17:00", "The week is over"). */
+  endHead?: string;
+  endSub?: string;
+  /** The last report's button to the ending ("See how the week ended"). */
+  endNextLabel?: string;
+  /** The episode that follows this one, for the ending card's "Next" button; null on the last one. */
+  nextEpisode?: { id: EpisodeId; number: number; title: string } | null;
+  /** Floor name tags chosen by the chapter for right now (each may carry a few words); absent: the fixed ones. */
+  marks?: { id: string; label?: string }[];
   /** Endless Saga metadata when running in `mode === 'saga'`; undefined in Classic Story mode. */
   saga?: {
     season: number;

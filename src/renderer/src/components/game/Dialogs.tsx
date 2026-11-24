@@ -179,7 +179,7 @@ export function TitleCard({ vp }: { vp: Viewport }) {
     ? rawEpisodes
     : EPISODES.map((ep) => ({
         id: ep.id, number: ep.number, title: ep.title, subtitle: ep.subtitle, tagline: ep.tagline,
-        chapters: ep.chapters.length, unitLabel: ep.unitLabel, saved: ep.id === 'office' ? saved : null,
+        chapters: ep.chapters.length, unitLabel: ep.unitLabel, band: ep.band, saved: ep.id === 'office' ? saved : null,
       }));
   const side = !vp.portrait && vp.w >= 640;
   // The plate is 132 x 84 art pixels: twice that where there is room, else once.

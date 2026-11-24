@@ -69,7 +69,8 @@ export type AnimId = (typeof ANIMS)[number];
 export type HeldProp =
   | 'coffee' | 'phone' | 'papers' | 'clipboard' | 'box' | 'trophy'
   | 'extinguisher' | 'mop' | 'wrench' | 'flashlight' | 'net'
-  | 'pizza' | 'donut' | 'cake' | 'cash' | 'balloon';
+  | 'pizza' | 'donut' | 'cake' | 'cash' | 'balloon'
+  | 'case' | 'tape';
 
 /** Something worn on the head. Drawn by the sprite. */
 export type Headgear = 'crown' | 'partyHat' | 'tinfoil';

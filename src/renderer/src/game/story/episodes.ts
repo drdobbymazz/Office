@@ -30,9 +30,21 @@ export interface EpisodeDef {
   readonly standingStart: number;
   readonly stateKey: string;
   readonly worldKey: string;
+  /** One line under the title banner on the episode's first card. */
+  readonly blurb: string;
+  /** What the whole episode is called on the report and ending cards ("The week"). */
+  readonly spanLabel: string;
+  /** The episode's colour for its cards (a CSS colour). */
+  readonly band: string;
+  /** The ending card's heading and the line under it. */
+  readonly endHead: string;
+  readonly endSub: string;
+  /** The last report's button to the ending. */
+  readonly endNextLabel: string;
   readonly chapters: readonly ChapterDef[];
   readonly weekFacts: (notes: WeekNotes, chapter: number) => [string, string][];
-  readonly endingFor: (standing: number, lastWon: boolean) => EndingId;
+  /** Which ending the episode earns. `notes` lets an episode decide by what happened, not only by the number. */
+  readonly endingFor: (standing: number, lastWon: boolean, notes?: WeekNotes) => EndingId;
   readonly buildEnding: (standing: number, lastWon: boolean, notes: WeekNotes) => EpisodeEnding;
 }
 
@@ -51,6 +63,12 @@ export const OFFICE_EPISODE: EpisodeDef = {
   standingStart: STANDING_START,
   stateKey: 'story.state.v1',
   worldKey: 'story.world.v1',
+  blurb: 'A story in five days, Monday to Friday',
+  spanLabel: 'The week',
+  band: 'var(--cth-lemon)',
+  endHead: 'FRIDAY, 17:00',
+  endSub: 'The week is over',
+  endNextLabel: 'See how the week ended',
   chapters: CHAPTER_DEFS,
   weekFacts,
   endingFor,
@@ -99,6 +117,12 @@ export const PARK_EPISODE: EpisodeDef = {
   standingStart: STANDING_START,
   stateKey: 'story.park.state.v1',
   worldKey: 'story.park.world.v1',
+  blurb: 'An outdoor outing in three acts',
+  spanLabel: 'The outing',
+  band: 'var(--cth-mint)',
+  endHead: 'LATE AFTERNOON',
+  endSub: 'Outing complete',
+  endNextLabel: 'See how the outing ended',
   chapters: PARK_CHAPTER_DEFS,
   weekFacts: parkWeekFacts,
   endingFor: (standing, lastWon) => (standing < 40 ? 'closed' : standing >= 60 && lastWon ? 'saved' : 'scraped'),
@@ -110,8 +134,15 @@ export const PARK_EPISODE: EpisodeDef = {
   },
 };
 
+/** Every episode, in play order. Adding one here is all the title screen and the saves need. */
 export const EPISODES: readonly EpisodeDef[] = [OFFICE_EPISODE, PARK_EPISODE];
 
 export function episodeById(id: EpisodeId): EpisodeDef {
-  return id === 'park' ? PARK_EPISODE : OFFICE_EPISODE;
+  return EPISODES.find((e) => e.id === id) ?? OFFICE_EPISODE;
+}
+
+/** The episode after this one in play order, or null after the last. */
+export function nextEpisode(id: EpisodeId): EpisodeDef | null {
+  const i = EPISODES.findIndex((e) => e.id === id);
+  return i >= 0 && i + 1 < EPISODES.length ? EPISODES[i + 1] : null;
 }

@@ -9,7 +9,7 @@ import type { Rng } from '@/game/sim/rng';
 
 export type GoalState = 'open' | 'won' | 'lost';
 
-export type EpisodeId = 'office' | 'park';
+export type EpisodeId = 'office' | 'park' | 'heist';
 
 export interface GoalDef {
   id: string;
@@ -62,6 +62,18 @@ export interface WeekNotes {
   parkTruce?: boolean;
   parkInspection?: number;
   parkGrill?: boolean;
+  /** Episode 3 (Inside Job): Wednesday, how many of the lock's three numbers were learned. */
+  heistDigits?: number;
+  /** Episode 3: Wednesday was won (all three numbers known). */
+  heistCode?: boolean;
+  /** Episode 3: when the tapes were switched. Absent: never. */
+  heistSwitched?: 'thursday' | 'friday';
+  /** Episode 3: Thursday, how many times Ms Vane nearly caught the switch. */
+  heistCloseCalls?: number;
+  /** Episode 3: the wrong tape was destroyed after the switch. */
+  heistShredded?: boolean;
+  /** Episode 3: Friday, how many people talked under Ms Vane's questions. */
+  heistCracks?: number;
 }
 
 export interface WeekStats {
@@ -159,6 +171,11 @@ export interface ChapterRun {
   vetoShift?(who: CharId, about: CharId, delta: number): number | undefined;
   /** Nothing left today can change the main goal's result (the player may finish the day early). Defaults to main goal settled. */
   settled?(): boolean;
+  /**
+   * Who to tag on the floor right now, each with a few plain words ("has the tape"). When present it
+   * replaces the chapter's fixed name tags, so a tag can follow whoever matters at the moment.
+   */
+  marks?(): { id: CharId; label?: string }[];
 }
 
 export type SuggestIdea = string | { text: string; for?: CharId[]; help?: boolean };
