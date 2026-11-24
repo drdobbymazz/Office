@@ -559,7 +559,10 @@ export class LlmBrain implements Brain {
       verb = base.verb === 'delegate' ? 'social' : base.verb;
     }
     // Never let a timid model soften an unmistakable physical order into plain chat or walking.
-    if (physicalPriority.has(base.verb) && (verb === 'social' || verb === 'go_to')) {
+    // Story mode is the exception for the gravest actions: there the plain words and the model must
+    // agree before anyone is hurt, removed or locked away, so one reader's mistake is caught by the other.
+    const needsAgreement = careful && GRAVE_VERBS.has(base.verb);
+    if (physicalPriority.has(base.verb) && (verb === 'social' || verb === 'go_to') && !needsAgreement) {
       verb = base.verb;
     }
     // Story mode: a model may not escalate. When the plain words carry no physical order at all, a

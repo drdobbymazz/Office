@@ -9,7 +9,8 @@ import type { ChaosId, CharId, EmotionId, LineAct, Plan, PlanKind, RelationShift
 import type {
   BarkKind, Brain, BrainStatus, CustomVibe, DelegateTone, DirectiveRequest, DirectiveResult, DirectiveVerb,
   InterpretRequest, InterpretResult, MindResult, MindsRequest, PersonBrief, Reflexes, ReportRequest, ReportResult,
-  SagaEpisodeRequest, SagaEpisodeResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult, StoryTheme
+  SagaEpisodeRequest, SagaEpisodeResult, SceneCallbacks, SceneLine, SceneRequest, SceneResult, StoryTheme,
+  CustomPower
 } from './api';
 import { cleanSay, lineKey, SOCIAL_PLANS } from './clean';
 import {
@@ -228,13 +229,127 @@ export function withoutBreakNouns(text: string): string {
     .replace(/\bbreak\s+(?:time|times)\b/gi, 'pause');
 }
 
+/** Everyday phrases that only look like orders: each is swapped for a neutral word before the verbs are read. */
+const IDIOMS: RegExp[] = [
+  /\bkill(?:ing|ed|s)?\s+(?:it|time|for\b|me\b|us\b|the\s+mood|two\s+birds)/gi,
+  /\bdressed\s+to\s+kill\b/gi,
+  /\bhit(?:ting|s)?\s+(?:the\s+(?:books|road|lights?|sack|hay|gym|ground|nail|spot|button|jackpot|roof|deadline|target|town|shops?)|send|save|pause|play|reply)\b/gi,
+  /\b(?:a|an|the|another)\s+(?:big\s+|huge\s+|real\s+|smash\s+)?hit\b/gi,
+  /\bshoot(?:ing|s)?\s+(?:\w+\s+)?(?:over\s+)?(?:an?\s+|the\s+|some\s+)?(?:e-?mails?|messages?|texts?|notes?|memos?|looks?|glances?)\b/gi,
+  /\bshoot(?:ing)?\s+(?:for|the\s+breeze)\b/gi,
+  /\b(?:a\s+)?(?:stab|shot|crack|go)\s+at\b/gi,
+  /\bbit(?:e|ing)\s+(?:your|my|his|her|their)\s+(?:tongue|lip|nails)\b/gi,
+  /\block(?:ing|ed)?\s+(?:down|eyes|horns|in\s+(?:the|this|that|a)\s+(?:deal|sale|date|price|order))\b/gi,
+  /\bsteal(?:ing|s)?\s+(?:the\s+(?:show|spotlight|limelight)|a\s+(?:glance|look|kiss|moment|march)|(?:\w+'s\s+)?thunder)\b/gi,
+  /\bstole\s+(?:my|his|her|your|the)\s+(?:heart|show)\b/gi,
+  /\b(?:a|the|my|your|his|her|business|day|field|road|quick)\s+trip\b/gi,
+  /\bpour(?:ing|s)?\s+(?:yourself|myself|himself|herself|themselves)\b/gi,
+  /\bspill(?:ing|s)?\s+the\s+beans\b/gi,
+  /\bfollow(?:ing|s)?\s+(?:up|suit|through|the\s+(?:rules|plan|instructions|protocol|procedure)|orders|instructions)\b/gi,
+  /\bblock(?:ing|s)?\s+(?:out|off)\s+(?:an?\s+|some\s+|the\s+)?(?:hour|time|day|morning|afternoon|week|calendar|diary)\b/gi,
+  /\bchas(?:e|ing|es)\s+up\b/gi,
+  /\bhunt(?:ing|s)?\s+(?:for|around|high)\b/gi,
+  /\bpush(?:ing|es)?\s+(?:back\s+)?(?:the\s+)?(?:meeting|deadline|call|date|launch|ahead|on|through|for\b)/gi,
+  /\bpull(?:ing|s)?\s+(?:up\s+a\s+chair|up\b|an?\s+all-?nighter|(?:it|yourself|myself|himself|herself)\s+together|some\s+strings|through\b|over\b|your\s+weight)/gi,
+  /\bcarry(?:ing)?\s+(?:on|out|over)\b/gi,
+  /\bkick(?:ing|s)?\s+(?:off|back|things\s+off)\b/gi,
+  /\bbreak(?:ing|s)?\s+(?:a\s+leg|the\s+ice|the\s+news|even|it\s+down|for\s+lunch|bread)\b/gi,
+  /\bthrow(?:ing|s)?\s+(?:a\s+party|away|in\s+the\s+towel|a\s+fit|shade)\b/gi,
+  /\bbeat(?:ing|s)?\s+(?:the\s+(?:deadline|clock|traffic|rush|odds|system)|around)\b/gi,
+  /\bcrush(?:ing|ed)?\s+(?:it|this|that|the\s+\w+)\b/gi,
+  /\bknock(?:ing|s)?\s+(?:on|at)\b/gi,
+  /\b(?:dead|deadly)\s+(?:end|line|serious|tired)\b/gi,
+  /\bhit(?:ting|s)?\s+\w+\s+up\b/gi,
+  /\b(?:a|an|the|what\s+a|such\s+a|was\s+a)\s+smashing\b/gi,
+  /\bsmashing\s+(?:presentation|job|idea|day|time|success|work|effort|news|result|party|speech|pitch)\b/gi,
+  /\btrap(?:ping|ped|s)?\s+\w+\s+in\s+(?:a|an|another)\s+(?:\w+\s+)?(?:conversation|chat|meeting|discussion|argument|call)\b/gi,
+  /(?:^|[.!?]\s*)shoot\s*[,!.]/gi,
+  /\btrash(?:ing)?\s+talk\b/gi
+];
+
+const NEGATOR = /\b(?:not|never|no\s+longer|nobody|no\s+one|none\s+of|nothing|without|won'?t|wouldn'?t|shouldn'?t|couldn'?t|can'?t|cannot|mustn'?t|don'?t|doesn'?t|didn'?t|isn'?t|aren'?t|wasn'?t|weren'?t|refuse\s+to)\b/i;
+const AUX = /\b(?:is|are|was|were|am|be|been|will|would|should|could|can|may|might|must|has|have|had|did|does|do|keeps?|seems?|looks?|feels?|needs?\s+to|wants?\s+to|gets?)\b/i;
+
+/**
+ * The words that can actually be an order or an intention for this person, for deciding whether a
+ * sentence means an action. Three things are taken out first, so that keyword-spotting cannot turn
+ * an ordinary remark into violence:
+ *  - everyday idioms ("hit the books", "shoot Jim an email", "pack up for the day");
+ *  - negated clauses ("I would never hit Jim", "nobody is going to quit");
+ *  - clauses about somebody or something else ("Jim is killing it", "this spreadsheet is killing me").
+ * Who and where the sentence is about are still read from the full text.
+ */
+export function orderWords(text: string, actorName: string, otherFirstNames: readonly string[]): string {
+  let t = withoutBreakNouns(text);
+  for (const re of IDIOMS) t = t.replace(re, ' … ');
+  const actor = (actorName.trim().split(/\s+/)[0] || '').toLowerCase();
+  const others = new Set(otherFirstNames.map((n) => n.toLowerCase()).filter((n) => n && n !== actor));
+  // Clauses: sentences, and the parts either side of "and", "but", "because", "if", "when", "that" ...
+  const parts = t.split(/([.!?;,]+|\s+(?:and\s+then|and|but|then|because|since|so\s+that|if|when|while|until|unless|although|though|that|which|who)\s+)/i);
+  const kept: string[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const clause = (parts[i] ?? '').trim();
+    const joiner = parts[i + 1] ?? ' ';
+    if (!clause) continue;
+    const words = clause.toLowerCase().replace(/^(?:and|but|so|well|ok|okay|maybe|perhaps|honestly|really|just|now|today|then|please)\s+/g, '');
+    const keepsGoing = /^(?:don'?t|do\s+not|never)\s+stop\b/i.test(words);
+    if (!keepsGoing && NEGATOR.test(words)) continue;
+    // A clause that opens with somebody or something else and then a helping verb is a remark about them.
+    const first = words.split(/\s+/)[0] ?? '';
+    const opener = first.replace(/[^a-z']/g, '');
+    const aboutOther = others.has(opener.replace(/'s$/, ''))
+      || /^(?:this|that|these|those|the|a|an|my|your|his|her|their|our|its|he|she|it|they|everyone|everybody|someone|somebody|anyone|anybody|all|both|corporate|there)$/.test(opener)
+      || /'s$/.test(opener)
+      || (/ing$/.test(opener) && opener.length > 4);
+    if (aboutOther && AUX.test(words)) continue;
+    kept.push(clause, joiner);
+  }
+  return kept.join('').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * A power set off by an order needs words that cause it: "order pizza", "pull the fire alarm",
+ * "turn off the wifi", "start a fire". A sentence that only mentions pizza, money, an alarm clock
+ * or the internet is talk, not a pizza party, a shower of cash, a fire drill or a network failure.
+ */
+const ORDER_POWERS: readonly [RegExp, CustomPower][] = [
+  [/\b(?:start|light|set)\s+(?:a|the|another)\s+fire\b|\bset\s+fire\s+to\b|\bset\s+.{1,40}?\s+on\s+fire\b|\b(?:burn|torch)\s+(?:down\s+)?(?:the|this|that|it|down)\b|\barson\b/i, 'fire'],
+  [/\b(?:pull|sound|set\s+off|trigger|ring|hit|trip)\s+(?:the\s+|a\s+)?(?:fire\s+)?alarm\b|\bfire\s*alarm\b|\bevacuat\w*\b|\bbomb\s+(?:threat|scare)\b|\bfire\s+drill\b/i, 'fireDrill'],
+  [/\bflood\s+(?:the|this|that|it)\b|\bburst\s+(?:a|the)\s+pipe\b|\bstart\s+a\s+flood\b/i, 'flood'],
+  [/\b(?:cut|kill|turn\s+off|switch\s+off|shut\s+off|knock\s+out|trip)\s+(?:all\s+)?(?:the\s+)?(?:power|lights|electricity|fuse|fuses)\b|\b(?:cause|start|trigger)\s+a\s+(?:blackout|power\s+cut)\b/i, 'blackout'],
+  [/\b(?:cut|kill|turn\s+off|switch\s+off|shut\s+(?:off|down)|take\s+down|unplug|crash|hack|break)\s+(?:the\s+)?(?:wi-?fi|internet|router|network)\b/i, 'wifiDown'],
+  [/\b(?:start|throw|have|host|put\s+on|begin|get)\s+(?:a\s+|the\s+)?(?:disco|rave|dance\s+party)\b/i, 'disco'],
+  [/\b(?:release|unleash|let\s+(?:loose|out)|set\s+loose|bring\s+in|summon|free)\s+(?:the\s+|some\s+|a\s+swarm\s+of\s+)?(?:bees|wasps|hornets|swarm)\b/i, 'bees'],
+  [/\b(?:order|get|bring|buy|fetch|serve|hand\s+out)\s+(?:in\s+)?(?:some\s+|the\s+|a\s+|free\s+)?(?:pizzas?|donuts|doughnuts|tacos|burgers|food\s+for\s+(?:everyone|everybody|the\s+office)|lunch\s+for\s+(?:everyone|everybody|the\s+office))\b/i, 'pizza'],
+  [/\bmake\s+it\s+rain\b|\b(?:throw|hand\s+out|give\s+away|shower)\s+(?:\w+\s+){0,2}?(?:money|cash|banknotes)\b/i, 'moneyRain']
+];
+/** Powers whose words are rare enough to mean it whenever they appear ("earthquake", "zero gravity"). */
+const RARE_POWERS = new Set<CustomPower>(['quake', 'sleep', 'zeroG', 'timeFreeze']);
+
+export function orderPower(orderText: string): CustomPower {
+  const hit = ORDER_POWERS.find(([re]) => re.test(orderText));
+  if (hit) return hit[1];
+  const loose = powerFor(orderText);
+  return RARE_POWERS.has(loose) ? loose : 'none';
+}
+
+/**
+ * "finish Jim", "finish off Jim", "end him", "destroy Dwight": the person comes straight after the
+ * verb. In "finish the accounts with Angela" or "end this row with Oscar" the person is company, not the object.
+ */
+export function directObjectIsPerson(text: string, verb: RegExp, firstName: string): boolean {
+  const name = firstName ? firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+  const who = `(?:him|her|them|someone|somebody|anyone|anybody${name ? `|${name}` : ''})`;
+  return new RegExp(`\\b${verb.source}\\s+(?:off\\s+)?${who}\\b`, 'i').test(text);
+}
+
 /**
  * Leaving the job for good: "quit", "resign", "walk out", "pack up your things", "storm out",
  * "I'm done (here / with this place)". Not "quit hiding", "quit it", "quit worrying about Oscar"
  * (stop doing something), and not "I'm done with the report".
  */
 export function meansQuitting(text: string): boolean {
-  if (/\b(resign(?:ing)?|walk(?:ing)?\s+out|pack(?:ing)?\s+(?:up|your\s+things|my\s+things)|storm(?:ing)?\s+out)\b/i.test(text)) return true;
+  if (/\b(resign(?:ing)?|walk(?:ing)?\s+out|pack(?:ing)?\s+(?:up\s+)?(?:your|my|his|her|their)\s+(?:things|stuff|desk|box)|pack(?:ing)?\s+up\s+and\s+(?:leave|go|walk)|storm(?:ing)?\s+out|hand(?:ing)?\s+in\s+(?:your|my|his|her)\s+notice)\b/i.test(text)) return true;
   // "quit" followed by a doing-word, "it", "that" or "being ..." means stop, not resign.
   if (/\bquitt?(?:ing)?\b(?!\s+(?:\w+ing\b|it\b|that\b|this\s+\w+ing\b|being\b|while\b|your\s+\w+ing\b|my\s+\w+ing\b))/i.test(text)) return true;
   // "I'm done" on its own, or done with the place: not "I'm done with the report" or "I'm done hiding".
@@ -1484,6 +1599,7 @@ export class InstinctBrain implements Brain, Reflexes {
 
     const cleanPersonText = stripRoomPhrases(text);
     const targetPerson = findPrimaryTarget(text, req.actor.id);
+    const targetName = (req.people.find((p) => p.id === targetPerson)?.name ?? '').split(/\s+/)[0];
     const hasPersonTarget = !!targetPerson || /\b(someone|somebody|anyone|anybody|him|her|them)\b/i.test(cleanPersonText);
     const targetRoom = resolveRoomIn(text);
 
@@ -1502,28 +1618,30 @@ export class InstinctBrain implements Brain, Reflexes {
       }
     }
 
-    const power = powerFor(text);
-    const hasMachine = /\b(fax(?:\s+machine)?|printer|copier|coffee\s*(?:machine|maker)?|vending(?:\s+machine)?|fridge|microwave|computer|laptop|monitor|desk|router|wifi|phone)\b/i.test(text);
-    const inanimateTarget = !hasPersonTarget && /\b(wifi|power|lights?|internet|office|room|building)\b/i.test(text);
-    const phrasalOff = /\b(take|strip|rip|pull|get|back|tell|turn|shut|cut|blow|jerk|jack|rub|whack|lay|keep|stay|run|walk|storm|piss|fuck|screw|show|cool|knock|head|send|set|drop|kick|push|shove|kiss|make)\s+(?:\w+\s+){0,2}off\b/i.test(text);
-    const clothingWord = /\b(clothes|shirt|pants|dress|skirt|bra|underwear|trousers|blouse|boxers|panties)\b/i.test(text);
+    // Only words that can be an order or intention for this person decide the verb (see orderWords).
+    const vt = orderWords(text, req.actor.name, req.people.filter((p) => p.id !== req.actor.id).map((p) => p.name.split(/\s+/)[0]));
+    const power = orderPower(vt);
+    const hasMachine = /\b(fax(?:\s+machine)?|printer|copier|coffee\s*(?:machine|maker)?|vending(?:\s+machine)?|fridge|microwave|computer|laptop|monitor|desk|router|wifi|phone)\b/i.test(vt);
+    const inanimateTarget = !hasPersonTarget && /\b(wifi|power|lights?|internet|office|room|building)\b/i.test(vt);
+    const phrasalOff = /\b(take|strip|rip|pull|get|back|tell|turn|shut|cut|blow|jerk|jack|rub|whack|lay|keep|stay|run|walk|storm|piss|fuck|screw|show|cool|knock|head|send|set|drop|kick|push|shove|kiss|make)\s+(?:\w+\s+){0,2}off\b/i.test(vt);
+    const clothingWord = /\b(clothes|shirt|pants|dress|skirt|bra|underwear|trousers|blouse|boxers|panties)\b/i.test(vt);
 
-    const isDress = /\b(get\s+dressed|put\s+(?:(?:your|his|her|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|trousers|underwear|bra)\s+(?:back\s+)?on|put\s+on\s+(?:(?:your|his|her|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|trousers)|cover\s+(?:yourself|himself|herself|up|\w+\s+up)|dress\s+(?:yourself|\w+)|give\s+\w+\s+(?:clothes|a\s+robe|a\s+coat|a\s+shirt)|hand\s+\w+\s+a\s+(?:robe|coat|shirt|towel))\b/i.test(text);
-    const isRevive = /\b(revive|resurrect|bring\s+.+\s+back(?:\s+to\s+life)?|do\s+cpr\s+on|give\s+\w+\s+cpr)\b/i.test(text);
-    const isWake = /\b(wake\s+(?:up\s+)?\w+|wake\s+\w+\s+up|shake\s+\w+\s+awake|help\s+\w+\s+up|snap\s+\w+\s+out\s+of\s+it)\b/i.test(text);
-    const isNap = /\b(go\s+to\s+sleep|take\s+a\s+nap|fall\s+asleep|lie\s+down\s+and\s+sleep|nap\s+at)\b/i.test(text) && !/\bsleep\s+with\b/i.test(text) && power !== 'sleep';
+    const isDress = /\b(get\s+dressed|put\s+(?:(?:your|his|her|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|trousers|underwear|bra)\s+(?:back\s+)?on|put\s+on\s+(?:(?:your|his|her|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|trousers)|cover\s+(?:yourself|himself|herself|up|\w+\s+up)|dress\s+(?:yourself|\w+)|give\s+\w+\s+(?:clothes|a\s+robe|a\s+coat|a\s+shirt)|hand\s+\w+\s+a\s+(?:robe|coat|shirt|towel))\b/i.test(vt);
+    const isRevive = /\b(revive|resurrect|bring\s+.+\s+back(?:\s+to\s+life)?|do\s+cpr\s+on|give\s+\w+\s+cpr)\b/i.test(vt);
+    const isWake = /\b(wake\s+(?:up\s+)?\w+|wake\s+\w+\s+up|shake\s+\w+\s+awake|help\s+\w+\s+up|snap\s+\w+\s+out\s+of\s+it)\b/i.test(vt);
+    const isNap = /\b(go\s+to\s+sleep|take\s+a\s+nap|fall\s+asleep|lie\s+down\s+and\s+sleep|nap\s+at)\b/i.test(vt) && !/\bsleep\s+with\b/i.test(vt) && power !== 'sleep';
 
-    const isExpose = !isDress && /\b(stripp?(?:ing)?(?:\s+down)?|strip\s*tease|undress(?:ing)?|get(?:ting)?\s+(?:naked|nude|undressed)|go(?:ing)?\s+(?:naked|nude|topless|pantless|bottomless)|be\s+naked|naked|nude|topless|pantless|bottomless|skinny\s+dip(?:ping)?|tak(?:e|ing)\s+off\s+everything|tak(?:e|ing)\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear|trousers)\s+off|tak(?:e|ing)\s+off\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear|trousers)|ripp?(?:ing)?\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress)\s+off|ripp?(?:ing)?\s+off\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress)|dropp?(?:ing)?\s+(?:(?:your|his|her|their|my)\s+)?(?:pants|trousers|drawers|shorts|skirt)|pull(?:ing)?\s+down\s+(?:(?:your|her|his|their|my)\s+)?(?:pants|trousers|shorts|skirt|underwear)|bar(?:e|ing)\s+(?:(?:your|her|his|their|my)\s+)?(?:ass|butt|chest|boobs|breasts)|flash(?:ing)?|moon(?:ing)?|streak(?:ing)?)\b/i.test(text);
-    const selfPleasure = /\b(masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself))\b/i.test(text);
+    const isExpose = !isDress && /\b(stripp?(?:ing)?(?:\s+down)?|strip\s*tease|undress(?:ing)?|get(?:ting)?\s+(?:naked|nude|undressed)|go(?:ing)?\s+(?:naked|nude|topless|pantless|bottomless)|be\s+naked|naked|nude|topless|pantless|bottomless|skinny\s+dip(?:ping)?|tak(?:e|ing)\s+off\s+everything|tak(?:e|ing)\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear|trousers)\s+off|tak(?:e|ing)\s+off\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|bra|underwear|trousers)|ripp?(?:ing)?\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress)\s+off|ripp?(?:ing)?\s+off\s+(?:(?:your|her|his|their|my)\s+)?(?:clothes|shirt|pants|dress)|dropp?(?:ing)?\s+(?:(?:your|his|her|their|my)\s+)?(?:pants|trousers|drawers|shorts|skirt)|pull(?:ing)?\s+down\s+(?:(?:your|her|his|their|my)\s+)?(?:pants|trousers|shorts|skirt|underwear)|bar(?:e|ing)\s+(?:(?:your|her|his|their|my)\s+)?(?:ass|butt|chest|boobs|breasts)|flash(?:ing)?|moon(?:ing)?|streak(?:ing)?)\b/i.test(vt);
+    const selfPleasure = /\b(masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself))\b/i.test(vt);
     const isRomance = !selfPleasure && (
-      /\b(kiss(?:ing)?|smooch(?:ing)?|hugg?(?:ing)?|cuddl(?:e|ing)|embrac(?:e|ing)|mak(?:e|ing)\s+out|french\s+kiss(?:ing)?|propos(?:e|ing)|profess(?:ing)?\s+(?:your\s+)?love|confess(?:ing)?\s+(?:your\s+)?love|flirt(?:ing)?|romanc(?:e|ing)|marry(?:ing)?|seduc(?:e|ing)|hitt?(?:ing)?\s+on|hook(?:ing)?\s+up|sleep(?:ing)?\s+with|sleep(?:ing)?\s+together|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|shagg?(?:ing)?|grop(?:e|ing)|feel(?:ing)?\s+up|fondl(?:e|ing)|lap\s+danc(?:e|ing)|grind(?:ing)?\s+on|dry\s+hump(?:ing)?|spank(?:ing)?|affair|orgy|threesome|blowjob|handjob|motorboat(?:ing)?|eat(?:ing)?\s+\w+\s+out|suck(?:ing)?\s+\w+\s+off|finger(?:ing)?|turn(?:ing)?\s+\w+\s+on|sitt?(?:ing)?\s+on\s+(?:\w+'s\s+)?lap|straddl(?:e|ing)|lick(?:ing)?|nibbl(?:e|ing)|massag(?:e|ing)|caress(?:ing)?|strok(?:e|ing)|twerk(?:ing)?\s+on|ask(?:ing)?\s+\w+\s+out|rubb?(?:ing)?\s+(?:\w+'s\s+)?(?:shoulders|back|feet|leg|thigh|ass|butt)|(?:slapp?(?:ing)?|grabb?(?:ing)?|pinch(?:ing)?|smack(?:ing)?)\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty|boobs|chest|crotch)|giv(?:e|ing)\s+\w+\s+a\s+(?:lap\s+dance|massage|kiss|hickey|bj|blowjob|handjob)|bit(?:e|ing)\s+\w+'s\s+(?:neck|ear|lip)|pleasur(?:e|ing)\s+(?!yourself|himself|herself|myself)\w+)\b/i.test(text) ||
-      (/\b(fuck(?:ing)?(?!\s+(?:off|up|this|that|it|everything|around))|bang(?:ing)?|screw(?:ing)?(?!\s+(?:up|off|around))|bed|rid(?:e|ing)|blow(?:ing)?(?!\s+(?:up|off|away|out)))\b/i.test(text) && hasPersonTarget && !hasMachine)
+      /\b(kiss(?:ing)?|smooch(?:ing)?|hugg?(?:ing)?|cuddl(?:e|ing)|embrac(?:e|ing)|mak(?:e|ing)\s+out|french\s+kiss(?:ing)?|propos(?:e|ing)|profess(?:ing)?\s+(?:your\s+)?love|confess(?:ing)?\s+(?:your\s+)?love|flirt(?:ing)?|romanc(?:e|ing)|marry(?:ing)?|seduc(?:e|ing)|hitt?(?:ing)?\s+on|hook(?:ing)?\s+up|sleep(?:ing)?\s+with|sleep(?:ing)?\s+together|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|shagg?(?:ing)?|grop(?:e|ing)|feel(?:ing)?\s+up|fondl(?:e|ing)|lap\s+danc(?:e|ing)|grind(?:ing)?\s+on|dry\s+hump(?:ing)?|spank(?:ing)?|affair|orgy|threesome|blowjob|handjob|motorboat(?:ing)?|eat(?:ing)?\s+\w+\s+out|suck(?:ing)?\s+\w+\s+off|finger(?:ing)?|turn(?:ing)?\s+\w+\s+on|sitt?(?:ing)?\s+on\s+(?:\w+'s\s+)?lap|straddl(?:e|ing)|lick(?:ing)?|nibbl(?:e|ing)|massag(?:e|ing)|caress(?:ing)?|strok(?:e|ing)|twerk(?:ing)?\s+on|ask(?:ing)?\s+\w+\s+out|rubb?(?:ing)?\s+(?:\w+'s\s+)?(?:shoulders|back|feet|leg|thigh|ass|butt)|(?:slapp?(?:ing)?|grabb?(?:ing)?|pinch(?:ing)?|smack(?:ing)?)\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty|boobs|chest|crotch)|giv(?:e|ing)\s+\w+\s+a\s+(?:lap\s+dance|massage|kiss|hickey|bj|blowjob|handjob)|bit(?:e|ing)\s+\w+'s\s+(?:neck|ear|lip)|pleasur(?:e|ing)\s+(?!yourself|himself|herself|myself)\w+)\b/i.test(vt) ||
+      (/\b(fuck(?:ing)?(?!\s+(?:off|up|this|that|it|everything|around))|bang(?:ing)?|screw(?:ing)?(?!\s+(?:up|off|around))|bed|rid(?:e|ing)|blow(?:ing)?(?!\s+(?:up|off|away|out)))\b/i.test(vt) && hasPersonTarget && !hasMachine)
     );
-    const isPerform = /\b(danc(?:e|ing)|twerk(?:ing)?|boogi(?:e|eing)|scream(?:ing)?|shriek(?:ing)?|howl(?:ing)?|bark(?:ing)?|meow(?:ing)?|moo(?:ing)?|cluck(?:ing)?|hiss(?:ing)?|growl(?:ing)?|roar(?:ing)?|neigh(?:ing)?|oink(?:ing)?|quack(?:ing)?|squawk(?:ing)?|squeak(?:ing)?|screech(?:ing)?|cry(?:ing)?|sobb?(?:ing)?|weep(?:ing)?|laugh(?:ing)?|giggl(?:e|ing)|chuckl(?:e|ing)|cackl(?:e|ing)|sing(?:ing)?|rapp?(?:ing)?|opera|beatbox(?:ing)?|yodel(?:ing)?|whistl(?:e|ing)|serenad(?:e|ing)|applaud(?:ing)?|clapp?(?:ing)?|faint(?:ing)?|pass(?:ing)?\s+out|collaps(?:e|ing)|play(?:ing)?\s+dead|puk(?:e|ing)|vomit(?:ing)?|throw(?:ing)?\s+up|barf(?:ing)?|fart(?:ing)?|burp(?:ing)?|belch(?:ing)?|sneez(?:e|ing)|cough(?:ing)?|hiccup(?:ing)?|yawn(?:ing)?|snor(?:e|ing)|spitt?(?:ing)?|drool(?:ing)?|backflipp?(?:ing)?|cartwheel(?:ing)?|handstand|somersault(?:ing)?|moonwalk(?:ing)?|breakdanc(?:e|ing)|do(?:ing)?\s+(?:the\s+)?worm|air\s+guitar|jump(?:ing)?|hopp?(?:ing)?|spinn?(?:ing)?|stomp(?:ing)?|tantrum|chugg?(?:ing)?|get(?:ting)?\s+drunk|drink(?:ing)?\s+(?:vodka|whiskey|booze|alcohol)|tak(?:e|ing)\s+a\s+shot|do(?:ing)?\s+shots|eat(?:ing)?\s+paper|smok(?:e|ing)|vap(?:e|ing)|masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself)|act(?:ing)?\s+like\s+a|pretend(?:ing)?\s+to\s+be|impersonat(?:e|ing)|do(?:ing)?\s+an?\s+impression|mim(?:e|ing)|juggl(?:e|ing)|crawl(?:ing)?|roll(?:ing)?\s+around|flex(?:ing)?|pushups|jumping\s+jacks|stretch(?:ing)?|meditat(?:e|ing)|yoga|salut(?:e|ing)|bow(?:ing)?|curtsy(?:ing)?|kneel(?:ing)?|pray(?:ing)?|t-?pos(?:e|ing)|dabb?(?:ing)?|floss(?:ing)?|tickl(?:e|ing)|pok(?:e|ing)|high\s*fiv(?:e|ing)|fist\s*bump(?:ing)?|handshake|shak(?:e|ing)\s+hands|climb(?:ing)?\s+(?:on|onto)|stand(?:ing)?\s+on|hid(?:e|ing)\s+under|flipp?(?:ing)?\s+(?:the\s+)?(?:bird|off)|giv(?:e|ing)\s+\w+\s+the\s+(?:finger|middle\s+finger)|middle\s+finger)\b/i.test(text);
+    const isPerform = /\b(danc(?:e|ing)|twerk(?:ing)?|boogi(?:e|eing)|scream(?:ing)?|shriek(?:ing)?|howl(?:ing)?|bark(?:ing)?|meow(?:ing)?|moo(?:ing)?|cluck(?:ing)?|hiss(?:ing)?|growl(?:ing)?|roar(?:ing)?|neigh(?:ing)?|oink(?:ing)?|quack(?:ing)?|squawk(?:ing)?|squeak(?:ing)?|screech(?:ing)?|cry(?:ing)?|sobb?(?:ing)?|weep(?:ing)?|laugh(?:ing)?|giggl(?:e|ing)|chuckl(?:e|ing)|cackl(?:e|ing)|sing(?:ing)?|rapp?(?:ing)?|opera|beatbox(?:ing)?|yodel(?:ing)?|whistl(?:e|ing)|serenad(?:e|ing)|applaud(?:ing)?|clapp?(?:ing)?|faint(?:ing)?|pass(?:ing)?\s+out|collaps(?:e|ing)|play(?:ing)?\s+dead|puk(?:e|ing)|vomit(?:ing)?|throw(?:ing)?\s+up|barf(?:ing)?|fart(?:ing)?|burp(?:ing)?|belch(?:ing)?|sneez(?:e|ing)|cough(?:ing)?|hiccup(?:ing)?|yawn(?:ing)?|snor(?:e|ing)|spitt?(?:ing)?|drool(?:ing)?|backflipp?(?:ing)?|cartwheel(?:ing)?|handstand|somersault(?:ing)?|moonwalk(?:ing)?|breakdanc(?:e|ing)|do(?:ing)?\s+(?:the\s+)?worm|air\s+guitar|jump(?:ing)?|hopp?(?:ing)?|spinn?(?:ing)?|stomp(?:ing)?|tantrum|chugg?(?:ing)?|get(?:ting)?\s+drunk|drink(?:ing)?\s+(?:vodka|whiskey|booze|alcohol)|tak(?:e|ing)\s+a\s+shot|do(?:ing)?\s+shots|eat(?:ing)?\s+paper|smok(?:e|ing)|vap(?:e|ing)|masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself)|act(?:ing)?\s+like\s+a|pretend(?:ing)?\s+to\s+be|impersonat(?:e|ing)|do(?:ing)?\s+an?\s+impression|mim(?:e|ing)|juggl(?:e|ing)|crawl(?:ing)?|roll(?:ing)?\s+around|flex(?:ing)?|pushups|jumping\s+jacks|stretch(?:ing)?|meditat(?:e|ing)|yoga|salut(?:e|ing)|bow(?:ing)?|curtsy(?:ing)?|kneel(?:ing)?|pray(?:ing)?|t-?pos(?:e|ing)|dabb?(?:ing)?|floss(?:ing)?|tickl(?:e|ing)|pok(?:e|ing)|high\s*fiv(?:e|ing)|fist\s*bump(?:ing)?|handshake|shak(?:e|ing)\s+hands|climb(?:ing)?\s+(?:on|onto)|stand(?:ing)?\s+on|hid(?:e|ing)\s+under|flipp?(?:ing)?\s+(?:the\s+)?(?:bird|off)|giv(?:e|ing)\s+\w+\s+the\s+(?:finger|middle\s+finger)|middle\s+finger)\b/i.test(vt);
 
     let verb: DirectiveVerb = 'social';
     let finalItem = item;
-    if (/\b(fire\s*alarm|pull\s+(?:the\s+)?alarm|set\s+.+\s+on\s+fire|burn\s+(?:the\s+)?down)\b/i.test(text) && power !== 'none') {
+    if (/\b(fire\s*alarm|pull\s+(?:the\s+)?alarm|set\s+.+\s+on\s+fire|burn\s+(?:the\s+)?down)\b/i.test(vt) && power !== 'none') {
       verb = 'trigger_power';
     } else if (isDress) {
       verb = 'recover';
@@ -1538,41 +1656,41 @@ export class InstinctBrain implements Brain, Reflexes {
       verb = 'recover';
       finalItem = 'sleep';
     } else if (
-      (/\b(kill(?:ing)?|murder(?:ing)?|assassinate|execut(?:e|ing)|strangl(?:e|ing)|stabb?(?:ing)?|shoot(?:ing)?|poison(?:ing)?|slay(?:ing)?)\b/i.test(text) && !inanimateTarget) ||
-      (/\b(whack|off)\b/i.test(text) && hasPersonTarget && !inanimateTarget && !phrasalOff) ||
-      (/\b(eliminat(?:e|ing)|finish(?:ing)?|destroy(?:ing)?|end(?:ing)?)\b/i.test(text) && hasPersonTarget && !hasMachine)
+      (/\b(kill(?:ing)?|murder(?:ing)?|assassinate|execut(?:e|ing)|strangl(?:e|ing)|stabb?(?:ing)?|shoot(?:ing)?|poison(?:ing)?|slay(?:ing)?)\b/i.test(vt) && !inanimateTarget && (hasPersonTarget || /\b(everyone|everybody|them\s+all|you\s+all)\b/i.test(vt))) ||
+      (/\b(whack|off)\b/i.test(vt) && hasPersonTarget && !inanimateTarget && !phrasalOff) ||
+      (hasPersonTarget && !hasMachine && directObjectIsPerson(vt, /(?:eliminat(?:e|ing)|finish(?:ing)?|destroy(?:ing)?|end(?:ing)?)/, targetName))
     ) {
       verb = 'eliminate';
     } else if (
-      (/\b(knock(?:ing)?\s*out|punch(?:ing)?|hitt?(?:ing)?(?!\s+on)|tackl(?:e|ing)|beat(?:ing)?\s+up|chok(?:e|ing)|slapp?(?:ing)?(?!\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty))|smack(?:ing)?(?!\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty))|bonk(?:ing)?|clobber(?:ing)?|deck(?:ing)?|attack(?:ing)?|fight(?:ing)?|brawl(?:ing)?|kick(?:ing)?|headbutt(?:ing)?|dropkick(?:ing)?|suplex(?:ing)?|body\s*slam(?:ming)?|chair\s*slam(?:ming)?|elbow(?:ing)?|uppercut(?:ting)?|karate\s+chop(?:ping)?|roundhouse|pepper\s+spray(?:ing)?|tas(?:e|ing)|taser|mac(?:e|ing))\b/i.test(text) ||
-        (/\bbit(?:e|ing)\b/i.test(text) && !isRomance) ||
-        (/\bsmash(?:ing)?\b/i.test(text) && hasPersonTarget && !hasMachine))
+      (/\b(knock(?:ing)?\s*out|punch(?:ing)?|hitt?(?:ing)?(?!\s+on)|tackl(?:e|ing)|beat(?:ing)?\s+up|chok(?:e|ing)|slapp?(?:ing)?(?!\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty))|smack(?:ing)?(?!\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty))|bonk(?:ing)?|clobber(?:ing)?|deck(?:ing)?|attack(?:ing)?|fight(?:ing)?|brawl(?:ing)?|kick(?:ing)?|headbutt(?:ing)?|dropkick(?:ing)?|suplex(?:ing)?|body\s*slam(?:ming)?|chair\s*slam(?:ming)?|elbow(?:ing)?|uppercut(?:ting)?|karate\s+chop(?:ping)?|roundhouse|pepper\s+spray(?:ing)?|tas(?:e|ing)|taser|mac(?:e|ing))\b/i.test(vt) ||
+        (/\bbit(?:e|ing)\b/i.test(vt) && !isRomance) ||
+        (/\bsmash(?:ing)?\b/i.test(vt) && hasPersonTarget && !hasMachine))
     ) {
       verb = 'knockout';
     } else if (
-      /\b(dragg?(?:ing)?|haul(?:ing)?|kidnapp?(?:ing)?|abduct(?:ing)?|carry(?:ing)?|lugg?(?:ing)?|yank(?:ing)?)\b/i.test(text) ||
-      (/\bpull(?:ing)?\b/i.test(text) && hasPersonTarget && !isExpose) ||
-      (/\bbring(?:ing)?\b/i.test(text) && hasPersonTarget && !!targetRoom && !finalItem)
+      /\b(dragg?(?:ing)?|haul(?:ing)?|kidnapp?(?:ing)?|abduct(?:ing)?|carry(?:ing)?|lugg?(?:ing)?|yank(?:ing)?)\b/i.test(vt) ||
+      (/\bpull(?:ing)?\b/i.test(vt) && hasPersonTarget && !isExpose) ||
+      (/\bbring(?:ing)?\b/i.test(vt) && hasPersonTarget && !!targetRoom && !finalItem)
     ) {
       verb = 'drag';
-    } else if (/\b(lock(?:\s+in|\s+\w+\s+in)?|barricad(?:e|ing)|trapp?(?:ing)?|seal(?:ing)?|bolt(?:ing)?|lock\s+the\s+door)\b/i.test(text)) {
+    } else if (/\b(lock(?:\s+in|\s+\w+\s+in)?|barricad(?:e|ing)|trapp?(?:ing)?|seal(?:ing)?|bolt(?:ing)?|lock\s+the\s+door)\b/i.test(vt)) {
       verb = 'lock_in';
-    } else if (meansQuitting(text)) {
+    } else if (meansQuitting(vt)) {
       verb = 'walk_out';
     } else if (
-      /\b(shov(?:e|ing)|push(?:ing)?|tripp?(?:ing)?|yeet(?:ing)?|splash(?:ing)?|drench(?:ing)?|soak(?:ing)?|squirt(?:ing)?)\b/i.test(text) ||
-      (/\b(throw(?:ing)?|toss(?:ing)?|hurl(?:ing)?|fling(?:ing)?|pour(?:ing)?|dump(?:ing)?|spill(?:ing)?|spray(?:ing)?|spit(?:ting)?\s+on)\b/i.test(text) && !/\b(disco|party|meeting)\b/i.test(text) && (hasPersonTarget || !!finalItem))
+      /\b(shov(?:e|ing)|push(?:ing)?|tripp?(?:ing)?|yeet(?:ing)?|splash(?:ing)?|drench(?:ing)?|soak(?:ing)?|squirt(?:ing)?)\b/i.test(vt) ||
+      (/\b(throw(?:ing)?|toss(?:ing)?|hurl(?:ing)?|fling(?:ing)?|pour(?:ing)?|dump(?:ing)?|spill(?:ing)?|spray(?:ing)?|spit(?:ting)?\s+on)\b/i.test(vt) && !/\b(disco|party|meeting)\b/i.test(vt) && (hasPersonTarget || !!finalItem))
     ) {
       verb = 'shove';
     } else if (
-      (/\b(smash(?:ing)?|wreck(?:ing)?|break(?:ing)?|unplugg?(?:ing)?|vandaliz(?:e|ing)|sabotag(?:e|ing)|trash(?:ing)?|destroy(?:ing)?|ruin(?:ing)?|jamm?(?:ing)?|screw(?:ing)?\s+up|fuck(?:ing)?\s+up)\b/i.test(withoutBreakNouns(text)) ||
-        (/\bripp?(?:ing)?\b/i.test(text) && !clothingWord)) &&
+      (/\b(smash(?:ing)?|wreck(?:ing)?|break(?:ing)?|unplugg?(?:ing)?|vandaliz(?:e|ing)|sabotag(?:e|ing)|trash(?:ing)?|destroy(?:ing)?|ruin(?:ing)?|jamm?(?:ing)?|screw(?:ing)?\s+up|fuck(?:ing)?\s+up)\b/i.test(vt) ||
+        (/\bripp?(?:ing)?\b/i.test(vt) && !clothingWord)) &&
       (hasMachine || !hasPersonTarget)
     ) {
       verb = 'sabotage';
     } else if (power !== 'none') {
       verb = 'trigger_power';
-    } else if (/\b(steal(?:ing)?|swip(?:e|ing)|snatch(?:ing)?|thiev(?:e|ing)|robb?(?:ing)?|nick(?:ing)?|confiscat(?:e|ing))\b/i.test(text) || (/\btak(?:e|ing)\b/i.test(text) && /\bfrom\b/i.test(text) && hasPersonTarget)) {
+    } else if (/\b(steal(?:ing)?|swip(?:e|ing)|snatch(?:ing)?|thiev(?:e|ing)|robb?(?:ing)?|nick(?:ing)?|confiscat(?:e|ing))\b/i.test(vt) || (/\btak(?:e|ing)\b/i.test(vt) && /\bfrom\b/i.test(vt) && hasPersonTarget)) {
       verb = 'steal';
     } else if (isExpose) {
       verb = 'expose';
@@ -1580,13 +1698,13 @@ export class InstinctBrain implements Brain, Reflexes {
       verb = 'romance';
     } else if (isPerform) {
       verb = 'perform';
-    } else if (/\b(chas(?:e|ing)|hunt(?:ing)?|pursu(?:e|ing)|run(?:ning)?\s+after|corner(?:ing)?)\b/i.test(text)) {
+    } else if (/\b(chas(?:e|ing)|hunt(?:ing)?|pursu(?:e|ing)|run(?:ning)?\s+after|corner(?:ing)?)\b/i.test(vt)) {
       verb = 'chase';
-    } else if (/\b(follow(?:ing)?|shadow(?:ing)?|stalk(?:ing)?|tail(?:ing)?|trail(?:ing)?)\b/i.test(text)) {
+    } else if (/\b(follow(?:ing)?|shadow(?:ing)?|stalk(?:ing)?|tail(?:ing)?|trail(?:ing)?)\b/i.test(vt)) {
       verb = 'follow';
-    } else if (/\b(guard(?:ing)?|block(?:ing)?|stand(?:ing)?\s+watch|patrol(?:ling)?|bouncer)\b/i.test(text)) {
+    } else if (/\b(guard(?:ing)?|block(?:ing)?|stand(?:ing)?\s+watch|patrol(?:ling)?|bouncer)\b/i.test(vt)) {
       verb = 'guard';
-    } else if (targetRoom && /\b(go(?:ing)?\s+to|walk(?:ing)?\s+to|run(?:ning)?\s+to|head(?:ing)?\s+to|hid(?:e|ing)\s+in|wait(?:ing)?\s+in|stay(?:ing)?\s+in|get(?:ting)?\s+to)\b/i.test(text)) {
+    } else if (targetRoom && /\b(go(?:ing)?\s+to|walk(?:ing)?\s+to|run(?:ning)?\s+to|head(?:ing)?\s+to|hid(?:e|ing)\s+in|wait(?:ing)?\s+in|stay(?:ing)?\s+in|get(?:ting)?\s+to)\b/i.test(vt)) {
       verb = 'go_to';
     }
 

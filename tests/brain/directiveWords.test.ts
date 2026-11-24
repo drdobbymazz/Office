@@ -78,6 +78,14 @@ describe('typed orders in story mode: a careful reading', () => {
     expect((await ask('punch Basil', true)).verb).toBe('knockout');
   });
 
+  it('in story mode the plain words and the model must agree before anyone is hurt', async () => {
+    // The words say "punch", the model reads it as talk: in story mode nobody is hit.
+    reply = says('social');
+    expect((await ask('punch Basil', true)).verb).toBe('social');
+    // In the sandbox a timid model does not soften a plain order.
+    expect((await ask('punch Basil', false)).verb).toBe('knockout');
+  });
+
   it('outside story mode the model may read between the lines', async () => {
     reply = says('walk_out');
     expect((await ask('I have had enough of all of you, goodbye forever.', false)).verb).toBe('walk_out');
