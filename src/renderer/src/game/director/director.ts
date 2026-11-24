@@ -12,9 +12,11 @@
 // The sim keeps the office moving by itself in between. The director only
 // ever asks the sim to do things through its public surface.
 
-import type { Brain, DirectiveRequest, DirectiveResult, InterpretResult, MindResult, PersonBrief, ReportResult, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo, StoryTheme } from '@/game/brain/api';
+import type { Brain, DelegateTone, DirectiveRequest, DirectiveResult, InterpretResult, MindResult, PersonBrief, ReportResult, SceneDelegation, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo, StoryTheme } from '@/game/brain/api';
+import { isNegatedDirective, isStopCommand, normalizeDelegatedCommand, splitCompoundDirective } from '@/game/brain/instinct';
 import { detectChaos, storyThemeOf } from '@/game/brain/instinctRules';
 import type { ScriptLine } from '@/game/story/types';
+import { CAST } from '@/game/core/cast';
 import type { DirectorSimApi, SceneAsk, SceneHandle, SimApi, SimPerson } from '@/game/core/simApi';
 import type { CharId, LineAct, Plan, RoomId, ShiftKind, Speech, TargetRoomId } from '@/game/core/types';
 import { PLAN_KINDS, TARGET_ROOMS, formatClock, isCastId } from '@/game/core/types';
@@ -170,7 +172,16 @@ export class Director {
     this.brain = opts.brain;
     this.instinct = opts.instinct;
     this.guests = new Guests({ sim: opts.sim, scene: (ask, fromPlayer) => this.enqueue(ask, fromPlayer), slow: () => this.slow });
-    this.directives = new Directives({ sim: opts.sim, scene: (ask, fromPlayer) => this.enqueue(ask, fromPlayer) });
+    this.directives = new Directives({
+      sim: opts.sim,
+      scene: (ask, fromPlayer) => this.enqueue(ask, fromPlayer),
+      onChainNext: (actor, nextText, kind, allowDelegate) => {
+        if (this.disposed) return;
+        const cur = this.api.person(actor);
+        if (!cur || !cur.present) return;
+        this.dispatchDirective(actor, nextText, kind, this.buildDirectiveFallback(actor, nextText, kind), allowDelegate, 0);
+      }
+    });
   }
 
   setBrain(brain: Brain): void {
@@ -261,6 +272,16 @@ export class Director {
     const thought = tidy(text, 160);
     if (!p || !thought) return;
     this.clearTheWay();
+    if (isStopCommand(thought, p.name)) {
+      this.directives.cancelActor(who, true);
+      this.api.convince(who, null);
+      this.drives.delete(who);
+      this.api.setThought(who, '');
+      this.api.resume(who);
+      this.api.narrate(`You whisper to ${p.name}: "${thought}"`, { kind: 'overseer', icon: 'whisper', room: p.room });
+      this.api.narrate(`${p.name} lets it go.`, { kind: 'event', icon: 'whisper', room: p.room });
+      return;
+    }
     this.api.emote(who, 'idea');
     this.api.feel(who, 'surprised', 0.7, 3);
     this.api.setThought(who, thought);
@@ -269,19 +290,11 @@ export class Director {
     this.drives.set(who, { nextAt: this.api.time + 30 + this.api.rng() * 15, acts: 0 });
     this.api.remember([who], `A thought came into your head from nowhere, and it feels like your own: "${thought}"`, 2.5);
     this.api.narrate(`You whisper to ${p.name}: "${thought}"`, { kind: 'overseer', icon: 'whisper', room: p.room });
-    const near = this.companions(p, 1);
-    const fallbackScene = () => {
-      this.enqueue({
-        people: [who, ...near],
-        trigger: 'whisper',
-        why: `${p.name} has just had a sudden thought that feels like ${possessive(p.name)} own idea: "${thought}". ${p.name} believes it and acts on it.`,
-        priority: 10,
-        minLines: near.length ? 2 : 1,
-        maxLines: near.length ? 3 : 2,
-        staleAfter: 40
-      }, true);
-    };
-    this.dispatchDirective(who, thought, 'whisper', fallbackScene);
+    const steps = splitCompoundDirective(thought);
+    const first = steps[0] ?? thought;
+    if (steps.length > 1) this.directives.queueChain(who, steps.slice(1), 'whisper', true);
+    else this.directives.clearChain(who);
+    this.dispatchDirective(who, first, 'whisper', this.buildDirectiveFallback(who, first, 'whisper'), true, 0);
   }
 
   /** Speak to everyone over the loudspeaker. */
@@ -301,16 +314,96 @@ export class Director {
     // The people talking about it are, where possible, the ones who stayed put.
     const stayed = this.biggestGroup(4, sent);
     const group = stayed.length >= 2 ? stayed : this.biggestGroup(4);
-    if (!group.length) return;
+    const paDelegation = sent.length || keepsAway(said) || isNegatedDirective(said) || isStopCommand(said)
+      ? null
+      : this.parseLoudspeakerDemand(said, group);
+    const scenePeople = paDelegation
+      ? [...new Set([...(paDelegation.targets ?? [paDelegation.target]), ...group])].slice(0, 4)
+      : group;
+    if (!scenePeople.length) return;
+    const paLead = paDelegation?.tone === 'ask'
+      ? 'just asked over the office loudspeaker'
+      : paDelegation?.tone === 'dare'
+        ? 'just dared everyone over the office loudspeaker'
+        : 'just commanded over the office loudspeaker';
     this.enqueue({
-      people: group,
+      people: scenePeople,
       trigger: 'announce',
-      why: `A voice nobody recognises has just said over the office loudspeaker: "${said}"`,
+      why: paDelegation
+        ? `A voice nobody recognises ${paLead}: "${said}". Each person decides strictly in character whether to actually do it or refuse.`
+        : `A voice nobody recognises has just said over the office loudspeaker: "${said}"`,
+      ...(paDelegation ? { delegation: paDelegation } : {}),
       priority: 9,
-      minLines: Math.min(3, group.length + 1),
+      minLines: Math.min(3, scenePeople.length + 1),
       maxLines: 4,
       staleAfter: 40
     }, true);
+  }
+
+  private parseLoudspeakerDemand(said: string, fallbackGroup: CharId[]): SceneDelegation | null {
+    if (!this.instinct.interpretDirectiveNow) return null;
+    const presentCast = this.api
+      .people()
+      .filter((p) => p.isCast && p.present && !this.api.hasStatus(p.id, 'eliminated') && !this.api.hasStatus(p.id, 'quit'));
+    if (!presentCast.length) return null;
+    const clean = said.trim();
+    // Require an explicit group/person vocative or imperative opener so plain statements ("The printer is broken") aren't treated as orders.
+    const addrMatch = /^(?:attention(?:\s+(?:everyone|everybody|all\s+staff))?|everyone|everybody|all\s+staff|all\s+of\s+you|the\s+whole\s+office|hey\s+(?:everyone|everybody))[,:!.]?\s+(.+)$/i.exec(clean);
+    let innerAction = addrMatch ? addrMatch[1].trim() : clean;
+    let addressed: CharId[] = [];
+    if (!addrMatch) {
+      let rest = clean;
+      while (true) {
+        const matched = presentCast.find((p) => {
+          const firstEsc = p.name.split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(
+            `^${firstEsc}(?=(?:\\s+and\\s+|\\s*,\\s*|\\s*:\\s*|\\s+(?:strip|undress|get|put|dance|twerk|kiss|hug|punch|kill|eliminate|knock|shove|splash|quit|walk|bark|howl|scream|cry|wake|revive|resurrect|take|attack|fight|flash|moon|streak|seduce|tell)\\b))`,
+            'i'
+          ).test(rest);
+        });
+        if (!matched) break;
+        if (!addressed.includes(matched.id)) addressed.push(matched.id);
+        const firstEsc = matched.name.split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        rest = rest.replace(new RegExp(`^${firstEsc}(?:\\s*,\\s*|\\s*:\\s*|\\s+and\\s+|\\s+)`, 'i'), '').trim();
+      }
+      if (addressed.length) {
+        innerAction = rest || clean;
+      } else {
+        const startsImperative = /^(?:please\s+)?(?:strip|undress|get\s+(?:naked|nude|dressed)|put\s+(?:your\s+)?clothes|dance|twerk|kiss|hug|punch|kill|eliminate|knock\s*out|shove|splash|quit|walk\s+out|bark|howl|scream|cry|wake\s+up|revive|resurrect|take\s+off\s+(?:your\s+)?clothes|attack|fight|flash|moon|streak|seduce|tell\s+)/i.test(clean);
+        if (!startsImperative) return null;
+      }
+    }
+    const parsed = this.instinct.interpretDirectiveNow({
+      id: 'pa-check',
+      actor: { id: 'loudspeaker' as CharId, name: 'Loudspeaker', room: 'bullpen' },
+      kind: 'cue',
+      text: innerAction,
+      people: presentCast.map((p) => ({ id: p.id, name: p.name, room: p.room })),
+      rooms: TARGET_ROOMS.map((id) => ({ id: id as string, name: roomDef(id).name })),
+      allowDelegate: true
+    });
+    if (parsed.verb === 'social' || parsed.verb === 'go_to' || (parsed.verb === 'recover' && parsed.item === 'stop')) {
+      return null;
+    }
+    const targets = addressed.length
+      ? addressed.slice(0, 4)
+      : [...new Set([...fallbackGroup.filter((id) => isCastId(id)), ...presentCast.map((p) => p.id)])];
+    const finalTargets = targets.length ? targets : presentCast.map((p) => p.id);
+    if (!finalTargets.length) return null;
+    const tone: DelegateTone = /\bi\s+dare\b/i.test(clean)
+      ? 'dare'
+      : /\b(?:please|could\s+you|would\s+you)\b/i.test(clean)
+        ? 'ask'
+        : 'order';
+    return {
+      asker: 'loudspeaker',
+      target: finalTargets[0],
+      ...(finalTargets.length > 1 ? { targets: finalTargets } : {}),
+      tone,
+      action: innerAction.slice(0, 120),
+      command: normalizeDelegatedCommand(innerAction),
+      depth: 0
+    };
   }
 
   /**
@@ -392,6 +485,50 @@ export class Director {
     return went;
   }
 
+  private buildDirectiveFallback(who: CharId, what: string, kind: 'whisper' | 'cue'): () => void {
+    return () => {
+      const p = this.api.person(who);
+      if (!p || !p.present) return;
+      const roomName = roomDef(p.room).name;
+      const clean = withoutRooms(what);
+      const named = this.api.people().filter((o) => o.id !== who && o.present && mentions(clean, o.name)).map((o) => o.id).slice(0, 2);
+      const near = this.companions(p, 1);
+      const people = [who, ...(named.length ? named : near)];
+      if (kind === 'whisper') {
+        this.enqueue({
+          people,
+          trigger: 'whisper',
+          why: `${p.name} has just had a sudden thought that feels like ${possessive(p.name)} own idea: "${what}". ${p.name} believes it and acts on it.`,
+          priority: 10,
+          minLines: people.length > 1 ? 2 : 1,
+          maxLines: people.length > 1 ? 3 : 2,
+          staleAfter: 40
+        }, true);
+        return;
+      }
+      const negated = isNegatedDirective(what, p.name);
+      const talkOnly = negated || /^(say|tell|ask|apologiz|confess|admit|compliment|insult|argue|chat|talk|gossip|yell\s+at|shout\s+at|warn|thank|congratulate|invite|remind|explain|call)\b/i.test(what);
+      if (!talkOnly) {
+        this.api.react(who, 'cheer', 1.4);
+        this.api.fx({ kind: 'burst', what: 'sparkles', x: p.x, y: p.y - 14, count: 10 });
+        this.api.narrate(`${p.name} acts on an impulse in ${roomName}: ${what}!`, { kind: 'event', icon: 'tell', room: p.room, beat: true });
+      }
+      this.enqueue({
+        people,
+        trigger: 'cue',
+        why: negated
+          ? `${p.name} decides right now NOT to do this: ${what}. React in character.`
+          : talkOnly
+            ? `${p.name} decides right now to speak up and ${what}.`
+            : `${p.name} is physically doing this right now in ${roomName} in front of everyone: ${what}. (${p.name} is actually performing this action themselves — NOT merely talking about it or asking anyone else to do it.)`,
+        priority: 10,
+        minLines: people.length > 1 ? 2 : 1,
+        maxLines: people.length > 1 ? 4 : 2,
+        staleAfter: 45
+      }, true);
+    };
+  }
+
   /** Tell one person exactly what to do. */
   cue(who: CharId, instruction: string): void {
     const p = this.api.person(who);
@@ -402,36 +539,49 @@ export class Director {
     this.api.feel(who, 'determined', 0.75, 5);
     this.api.setThought(who, what);
     this.api.narrate(`You nudge ${p.name}: ${what}`, { kind: 'overseer', icon: 'tell', room: p.room });
-    // If the instruction names someone else, bring them into it.
-    const named = this.api.people().filter((o) => o.id !== who && o.present && mentions(what, o.name)).map((o) => o.id).slice(0, 2);
+    // If the instruction names someone else (outside room names), frame around them.
+    const named = this.api.people().filter((o) => o.id !== who && o.present && mentions(withoutRooms(what), o.name)).map((o) => o.id).slice(0, 2);
     const people = [who, ...(named.length ? named : this.companions(p, 1))];
-    const fallbackScene = () => {
-      this.enqueue({
-        people,
-        trigger: 'cue',
-        why: `${p.name} feels an urge ${p.name} cannot explain to do exactly this, right now: ${what}`,
-        priority: 10,
-        minLines: people.length > 1 ? 2 : 1,
-        maxLines: people.length > 1 ? 4 : 2,
-        staleAfter: 45
-      }, true);
-    };
-    this.dispatchDirective(who, what, 'cue', fallbackScene);
+    this.focusOn(people, 10);
+    const steps = splitCompoundDirective(what);
+    const first = steps[0] ?? what;
+    if (steps.length > 1) this.directives.queueChain(who, steps.slice(1), 'cue', true);
+    else this.directives.clearChain(who);
+    this.dispatchDirective(who, first, 'cue', this.buildDirectiveFallback(who, first, 'cue'), true, 0);
   }
 
-  private dispatchDirective(who: CharId, text: string, kind: 'whisper' | 'cue', fallbackScene: () => void): void {
+  private dispatchDirective(
+    who: CharId,
+    text: string,
+    kind: 'whisper' | 'cue',
+    fallbackScene: () => void,
+    allowDelegate = true,
+    delegateDepth = 0
+  ): void {
     const actor = this.api.person(who);
     if (!actor || !actor.present) return;
+    const includeEliminated = /\b(revive|resurrect|bring\s+.+\s+back|cpr)\b/i.test(text);
     const req: DirectiveRequest = {
       id: nextId('directive'),
-      actor: { id: actor.id, name: actor.name, room: actor.room },
+      actor: {
+        id: actor.id,
+        name: actor.name,
+        room: actor.room,
+        ...(isCastId(actor.id) ? { pronoun: CAST[actor.id].pronoun } : {})
+      },
       kind,
       text,
       people: this.api
         .people()
-        .filter((o) => o.present && !this.api.hasStatus(o.id, 'eliminated') && !this.api.hasStatus(o.id, 'quit'))
-        .map((o) => ({ id: o.id, name: o.name, room: o.room })),
-      rooms: TARGET_ROOMS.map((id) => ({ id: id as string, name: roomDef(id).name }))
+        .filter((o) => o.present && (includeEliminated || !this.api.hasStatus(o.id, 'eliminated')) && !this.api.hasStatus(o.id, 'quit'))
+        .map((o) => ({
+          id: o.id,
+          name: o.name,
+          room: o.room,
+          ...(isCastId(o.id) ? { pronoun: CAST[o.id].pronoun } : {})
+        })),
+      rooms: TARGET_ROOMS.map((id) => ({ id: id as string, name: roomDef(id).name })),
+      allowDelegate
     };
     const apply = (res: DirectiveResult): void => {
       if (this.disposed) return;
@@ -439,7 +589,10 @@ export class Director {
         const d = this.drives.get(who);
         if (d) d.directive = res;
       }
-      if (res.verb !== 'social' && this.directives.start(who, res, text, kind)) return;
+      if (res.verb !== 'social' && this.directives.start(who, res, text, kind, delegateDepth)) {
+        if (kind === 'cue') this.api.setThought(who, '');
+        return;
+      }
       fallbackScene();
     };
     const fallback = (): DirectiveResult => (
@@ -664,7 +817,7 @@ export class Director {
     const about = `"${text.length > 90 ? `${text.slice(0, 88)}...` : text}"`;
     const others = this.api.people().filter((o) => o.isCast && o.present && o.id !== p.id);
     if (!others.length) return null;
-    const named = others.filter((o) => mentions(text, o.name));
+    const named = others.filter((o) => mentions(withoutRooms(text), o.name));
     const nearest = (list: SimPerson[]): SimPerson | undefined =>
       list.slice().sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
     const t = text.toLowerCase();
@@ -705,7 +858,13 @@ export class Director {
     // The same goes for a conversation that is over and only waiting for its summary:
     // the player should not wait for paperwork.
     const r = this.running;
-    if (r && ask.priority >= 8 && (r.ask.priority <= 3 || r.releasedAt > 0)) this.stopScene(true);
+    if (
+      r &&
+      ask.priority >= 8 &&
+      (r.ask.priority <= 3 || r.releasedAt > 0 || (fromPlayer && !r.fromPlayer && r.ask.priority < ask.priority))
+    ) {
+      this.stopScene(true);
+    }
     this.report();
   }
 
@@ -1167,6 +1326,109 @@ export class Director {
     const canned = !this.brain.autonomous || this.brain.kind === 'instinct' ? 2.4 : 1;
     this.ambientAt = this.api.time + (5 + this.api.rng() * 6) * calm * canned / pace;
     this.report();
+
+    const del = r.ask.delegation;
+    if (del) {
+      const nextDepth = (del.depth ?? 0) + 1;
+      const nextAllowDelegate = nextDepth <= 1;
+      const cmd = del.command || del.action;
+      if (del.executor === 'asker') {
+        if (res?.complies && del.asker !== 'loudspeaker') {
+          const askerId = del.asker;
+          const askerPerson = this.api.person(askerId);
+          if (askerPerson && askerPerson.present && !this.api.hasStatus(askerId, 'eliminated') && !this.api.hasStatus(askerId, 'quit')) {
+            const steps = splitCompoundDirective(cmd);
+            const first = steps[0] || cmd;
+            if (steps.length > 1) this.directives.queueChain(askerId, steps.slice(1), 'cue', false);
+            this.dispatchDirective(askerId, first, 'cue', () => {
+              const cur = this.api.person(askerId);
+              if (!cur) return;
+              const rName = roomDef(cur.room).name;
+              this.api.react(askerId, 'cheer', 1.4);
+              this.api.fx({ kind: 'burst', what: 'sparkles', x: cur.x, y: cur.y - 14, count: 10 });
+              this.api.narrate(`${cur.name} gets the go-ahead in ${rName} and does it: ${cmd}!`, { kind: 'event', icon: 'tell', room: cur.room, beat: true });
+              const witnesses = this.companions(cur, 2);
+              this.enqueue({
+                people: [askerId, ...witnesses],
+                room: cur.room,
+                trigger: 'aftermath',
+                why: `${cur.name} just got permission and physically did this in ${rName}: ${cmd}. React directly to what ${cur.name} just did!`,
+                priority: 10,
+                minLines: witnesses.length ? 2 : 1,
+                maxLines: witnesses.length ? 3 : 2,
+                staleAfter: 40
+              }, true);
+            }, false, nextDepth);
+          }
+        }
+      } else {
+        const rawCompliers = del.targets && del.targets.length > 1
+          ? (res?.compliers ?? (res?.complies ? [del.target] : []))
+          : (res?.complies ? [del.target] : []);
+        const compliers = [...new Set(rawCompliers)].filter((tid) => {
+          const tp = this.api.person(tid);
+          return !!tp && tp.present && !this.api.hasStatus(tid, 'eliminated') && !this.api.hasStatus(tid, 'quit');
+        });
+        if (compliers.length) {
+          // Mutual two-person act ("tell Jim and Pam to kiss"): Jim walks up and kisses Pam rather than both acting at thin air.
+          const mutualMatch = /^(?:to\s+)?(kiss|make\s+out(?:\s+with)?|hug|cuddle|fight|brawl|wrestle|slap|punch|hook\s+up(?:\s+with)?|sleep\s+together|have\s+sex(?:\s+with)?)(?:\s+(?:with\s+)?each\s+other)?[.!?]*$/i.exec(cmd.trim());
+          if (mutualMatch && compliers.length === 2 && del.targets?.length === 2) {
+            const [aId, bId] = compliers;
+            const bName = this.api.person(bId)?.name.split(/\s+/)[0] ?? bId;
+            const baseVerb = mutualMatch[1].replace(/\s+with$/i, '');
+            const mutualCmd = baseVerb.toLowerCase() === 'make out' || baseVerb.toLowerCase() === 'hook up' || baseVerb.toLowerCase() === 'have sex'
+              ? `${baseVerb} with ${bName}`
+              : baseVerb.toLowerCase() === 'sleep together'
+                ? `sleep with ${bName}`
+                : `${baseVerb} ${bName}`;
+            const fallbackMutual = () => {
+              const cur = this.api.person(aId);
+              if (!cur) return;
+              const rName = roomDef(cur.room).name;
+              this.api.react(aId, 'cheer', 1.4);
+              this.api.fx({ kind: 'burst', what: 'sparkles', x: cur.x, y: cur.y - 14, count: 10 });
+              this.api.narrate(`${cur.name} goes through with it in ${rName}: ${mutualCmd}!`, { kind: 'event', icon: 'tell', room: cur.room, beat: true });
+              this.enqueue({
+                people: [aId, bId],
+                room: cur.room,
+                trigger: 'aftermath',
+                why: `${cur.name} and ${bName} just agreed to ${del.action} and actually do it in ${rName}!`,
+                priority: 10,
+                minLines: 2,
+                maxLines: 3,
+                staleAfter: 40
+              }, true);
+            };
+            this.dispatchDirective(aId, mutualCmd, 'cue', fallbackMutual, false, nextDepth);
+          } else {
+            for (const tid of compliers) {
+              const steps = splitCompoundDirective(cmd);
+              const first = steps[0] || cmd;
+              if (steps.length > 1) this.directives.queueChain(tid, steps.slice(1), 'cue', false);
+              this.dispatchDirective(tid, first, 'cue', () => {
+                const cur = this.api.person(tid);
+                if (!cur) return;
+                const rName = roomDef(cur.room).name;
+                this.api.react(tid, 'cheer', 1.4);
+                this.api.fx({ kind: 'burst', what: 'sparkles', x: cur.x, y: cur.y - 14, count: 10 });
+                this.api.narrate(`${cur.name} actually goes through with it in ${rName}: ${del.action}!`, { kind: 'event', icon: 'tell', room: cur.room, beat: true });
+                const witnesses = this.companions(cur, 2);
+                this.enqueue({
+                  people: [tid, ...witnesses],
+                  room: cur.room,
+                  trigger: 'aftermath',
+                  why: `${cur.name} just agreed to and physically did this in ${rName}: ${del.action}. React directly to ${cur.name} doing it!`,
+                  priority: 10,
+                  minLines: witnesses.length ? 2 : 1,
+                  maxLines: witnesses.length ? 3 : 2,
+                  staleAfter: 40
+                }, true);
+              }, nextAllowDelegate, nextDepth);
+            }
+          }
+        }
+      }
+    }
   }
 
   /** Abandon the scene in progress (the people are released; nothing is remembered). */
@@ -1181,7 +1443,13 @@ export class Director {
   }
 
   private buildRequest(id: string, ask: SceneAsk, ids: CharId[], room: RoomId): SceneRequest {
-    const people = ids.map((who) => this.sim.briefFor(who, ids.filter((o) => o !== who)));
+    const delExtra = ask.delegation
+      ? this.api
+          .people()
+          .filter((p) => p.isCast && p.present && !ids.includes(p.id) && mentions(withoutRooms(ask.delegation!.action), p.name))
+          .map((p) => p.id)
+      : [];
+    const people = ids.map((who) => this.sim.briefFor(who, [...ids.filter((o) => o !== who), ...delExtra]));
     const onlookers = this.api.peopleIn(room).filter((p) => p.present && !ids.includes(p.id)).map((p) => p.name).slice(0, 5);
     const solo = ids.length === 1;
     const lively = this.api.chaos > 45;
@@ -1200,7 +1468,8 @@ export class Director {
       minLines: ask.minLines ?? (solo ? 1 : 2),
       maxLines: ask.maxLines ?? (solo ? 2 : lively ? 4 : 3),
       chaos: Math.min(1, this.api.chaos / 100),
-      ...(topic ? { topic } : {})
+      ...(topic ? { topic } : {}),
+      ...(ask.delegation ? { delegation: ask.delegation } : {})
     };
   }
 

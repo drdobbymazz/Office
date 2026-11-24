@@ -198,7 +198,7 @@ export class Guests {
     };
     this.list.push(g);
 
-    sim.narrate(fact, { kind: 'event', icon: 'anything', room });
+    sim.narrate(fact, { kind: 'event', icon: 'anything', room, beat: true });
     sim.setFact(key, fact);
     sim.bumpChaos(6 + res.intensity * 6);
     sim.remember(everywhere ? 'all' : room, fact, 2);
@@ -225,8 +225,16 @@ export class Guests {
     g.lookKey = this.addLook(g, res.look, spot);
 
     // Who saw it. Two or three of them stay to speak in the first scene (chosen before
-    // anyone is sent anywhere); two more make plans; the rest react.
-    const witnesses = (everywhere ? sim.people() : sim.peopleIn(room)).filter((p) => p.present && p.available && p.isCast);
+    // anyone is sent anywhere); two more make plans; the rest react. If the chosen room
+    // was empty, pull the nearest available cast members over so the event never fizzles.
+    const inRoom = (everywhere ? sim.people() : sim.peopleIn(room)).filter((p) => p.present && p.available && p.isCast);
+    const witnesses = inRoom.length
+      ? inRoom
+      : sim
+          .people()
+          .filter((p) => p.present && p.available && p.isCast && !p.urgent)
+          .sort((a, b) => Math.hypot(a.x - spot.x, a.y - spot.y) - Math.hypot(b.x - spot.x, b.y - spot.y))
+          .slice(0, 3);
     const calm = witnesses.filter((p) => !p.urgent).sort(() => rng() - 0.5);
     const speakers = calm.slice(0, g.who ? 2 : 3).map((p) => p.id);
     const planners = calm.slice(speakers.length, speakers.length + 2);

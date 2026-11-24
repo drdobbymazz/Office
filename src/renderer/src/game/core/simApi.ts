@@ -13,7 +13,7 @@ import type { FixSkill } from './cast';
 import type { GameBus } from './bus';
 import type { EffectInstance, EmoteIcon, FxCue } from '@/game/view/api';
 import type { LoopId, SfxId } from '@/game/audio/api';
-import type { BarkKind, PersonBrief, SceneLine, SceneTrigger } from '@/game/brain/api';
+import type { BarkKind, PersonBrief, SceneDelegation, SceneLine, SceneTrigger } from '@/game/brain/api';
 
 /** Read-only view of one person. */
 export interface SimPerson {
@@ -133,6 +133,8 @@ export interface SceneAsk {
   gather?: boolean;
   /** (added) For trigger 'plan': the kind of plan that brought them together. */
   planKind?: PlanKind;
+  /** (added) Present when a speaker is asking or ordering another to do something. */
+  delegation?: SceneDelegation;
 }
 
 export interface SimApi {

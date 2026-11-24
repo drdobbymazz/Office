@@ -356,7 +356,7 @@ export function Subtitle({ right, bottom }: { right: number; bottom: number }) {
       <BeatCaption />
       {showSub && cap && (
         <div key={cap.id} className="gu-drop" data-avoid style={{
-          display: 'flex', alignItems: 'center', gap: 8, maxWidth: 520, minWidth: 0, padding: '6px 12px 6px 6px',
+          display: 'flex', alignItems: 'center', gap: 8, maxWidth: 'min(560px, 100%)', minWidth: 0, padding: '6px 12px 6px 6px',
           background: 'var(--cth-cream-50)', boxShadow: 'var(--cth-panel-border-dialog), 4px 4px 0 rgba(26,19,32,0.25)'
         }}>
           {cap.who && <Head src={person?.avatar ?? game.avatar(cap.who)} scale={2} box={14} ring={person?.color} />}
@@ -364,7 +364,7 @@ export function Subtitle({ right, bottom }: { right: number; bottom: number }) {
             <div style={{ fontSize: 13, lineHeight: '14px', color }}>{name}</div>
             <div style={{
               fontSize: 16, lineHeight: '20px', color: cap.kind === 'think' ? 'var(--cth-ink-500)' : 'var(--cth-ink-900)',
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+              overflowWrap: 'break-word'
             }}>{cap.text}</div>
           </div>
         </div>

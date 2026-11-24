@@ -344,12 +344,12 @@ export class SimCore implements DirectorSimApi {
 
   say(who: CharId, text: string, opts: SayOptions = {}): Speech {
     const p = this.map.get(who);
-    const clean = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 420);
+    const clean = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 720);
     const voice = voiceOf(who);
     const fast = p && p.has('caffeinated') ? 1.5 : 1;
     const cps = clamp(26 * voice.speed * fast, 12, 60);
     const typing = clean.length / cps;
-    const durationMs = Math.round(clamp(typing + 1.4, 1.4, 18) * 1000);
+    const durationMs = Math.round(clamp(typing + 1.4, 1.4, 30) * 1000);
     const kind = opts.kind ?? 'say';
     const speech: Speech = { id: this.nextId('s'), who, kind, text: clean, startedAt: this.now(), durationMs, cps };
     if (!p || !p.onFloor || !clean) {
@@ -1062,6 +1062,7 @@ export class SimCore implements DirectorSimApi {
       if (!changed) continue;
       const wasAsleep = p.has('asleep');
       const wasKo = p.has('knockedOut');
+      const wasNaked = p.has('naked');
       p.statuses = p.statuses.filter((s) => s.until > this.time);
       if (wasAsleep && !p.has('asleep') && p.onFloor) this.emote(p.id, 'alert');
       if (wasKo && !p.has('knockedOut') && p.onFloor) {
@@ -1070,6 +1071,7 @@ export class SimCore implements DirectorSimApi {
         this.feel(p.id, 'confused', 0.7, 6);
         if (p.job?.kind === 'settle' || !p.job) p.doing = 'getting up';
       }
+      if (wasNaked && !p.has('naked')) this.setFact(`naked:${p.id}`, null);
     }
   }
 

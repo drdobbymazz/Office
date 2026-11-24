@@ -24,6 +24,13 @@ describe('schemas', () => {
     expect(lines.items.properties.to.enum).toEqual(['Fern', 'Basil', 'all', 'none']);
     const plans = (s.properties.plans as { items: Obj }).items;
     expect(plans.properties.target.enum).toEqual(['Fern', 'Basil', 'Ivy', 'shop', 'yard', 'none']);
+    const d = sceneSchema({ speakers: ['Fern', 'Basil'], people: ['Fern', 'Basil'], rooms: ['shop'], minLines: 2, maxLines: 4, hasDelegation: true }) as unknown as Obj;
+    expect(Object.keys(d.properties)).toEqual(['lines', 'summary', 'shifts', 'plans', 'complies']);
+    expect(d.properties.complies.type).toBe('boolean');
+    const g = sceneSchema({ speakers: ['Fern', 'Basil', 'Ivy'], people: ['Fern', 'Basil', 'Ivy'], rooms: ['shop'], minLines: 2, maxLines: 4, hasDelegation: true, delegationTargets: ['Basil', 'Ivy'] }) as unknown as Obj;
+    expect(Object.keys(g.properties)).toEqual(['lines', 'summary', 'shifts', 'plans', 'complies', 'compliers']);
+    const compliers = g.properties.compliers as { items: { enum: string[] } };
+    expect(compliers.items.enum).toEqual(['Basil', 'Ivy']);
   });
 
   it('builds minds, interpret and report schemas', () => {
@@ -161,5 +168,55 @@ describe('story mode in the prompts', () => {
     const names = new NameMap([{ id: 'visitor:inspector', name: 'The Inspector' }, { id: 'fern', name: 'Fern Holloway' }]);
     const u = b.sceneUser(sceneReq({ people: [insp, person('fern')] }), names);
     expect(u).toContain('(The Inspector, a visitor: From head office. Talks: Flat and formal. Says things like "Carry on.")');
+  });
+
+  it('sceneUser appends REQUEST DECISION when a delegation is present', () => {
+    const names = new NameMap([{ id: 'fern', name: 'Fern Holloway' }, { id: 'basil', name: 'Basil Okafor' }]);
+    const u = book.sceneUser(sceneReq({
+      people: [person('fern'), person('basil')],
+      delegation: { asker: 'fern', target: 'basil', action: 'sing a song', command: 'sing a song' }
+    }), names);
+    expect(u).toContain('REQUEST DECISION');
+    expect(u).toContain('Fern is asking or ordering Basil to: "sing a song".');
+    expect(u).toContain('"complies": true');
+
+    const groupU = book.sceneUser(sceneReq({
+      people: [person('fern'), person('basil'), person('ivy')],
+      delegation: { asker: 'loudspeaker', target: 'basil', targets: ['basil', 'ivy'], action: 'dance on the desk', command: 'dance on the desk' }
+    }), new NameMap([{ id: 'fern', name: 'Fern Holloway' }, { id: 'basil', name: 'Basil Okafor' }, { id: 'ivy', name: 'Ivy Marsh' }]));
+    expect(groupU).toContain('GROUP REQUEST DECISION');
+    expect(groupU).toContain('The voice over the office loudspeaker is asking or ordering Basil, Ivy');
+    expect(groupU).toContain('"compliers"');
+
+    const permU = book.sceneUser(sceneReq({
+      people: [person('fern'), person('basil')],
+      delegation: { asker: 'fern', target: 'basil', executor: 'asker', action: 'massage him', command: 'massage Basil' }
+    }), names);
+    expect(permU).toContain('REQUEST DECISION');
+    expect(permU).toContain('Fern is asking Basil for permission to: "massage him".');
+    expect(permU).toContain('would let Fern do this right now');
+
+    const toneCases: Array<{ tone: 'order' | 'ask' | 'dare' | 'beg' | 'persuade'; lead: string; note: string }> = [
+      { tone: 'order', lead: 'Fern is bluntly ordering Basil to: "sing a song".', note: 'Tone: blunt command.' },
+      { tone: 'ask', lead: 'Fern is asking Basil to: "sing a song".', note: 'Tone: direct request (not a command).' },
+      { tone: 'dare', lead: 'Fern is daring Basil to: "sing a song".', note: 'Tone: dare/challenge.' },
+      { tone: 'beg', lead: 'Fern is desperately begging Basil to: "sing a song".', note: 'Tone: desperate pleading.' },
+      { tone: 'persuade', lead: 'Fern is trying to persuade Basil to: "sing a song".', note: 'Tone: persuasion pitch.' }
+    ];
+    for (const tc of toneCases) {
+      const tonedU = book.sceneUser(sceneReq({
+        people: [person('fern'), person('basil')],
+        delegation: { asker: 'fern', target: 'basil', tone: tc.tone, action: 'sing a song', command: 'sing a song' }
+      }), names);
+      expect(tonedU).toContain(tc.lead);
+      expect(tonedU).toContain(tc.note);
+    }
+
+    const begPermU = book.sceneUser(sceneReq({
+      people: [person('fern'), person('basil')],
+      delegation: { asker: 'fern', target: 'basil', executor: 'asker', tone: 'beg', action: 'massage him', command: 'massage Basil' }
+    }), names);
+    expect(begPermU).toContain('Fern is desperately begging Basil for permission to: "massage him".');
+    expect(begPermU).toContain('Tone: desperate pleading.');
   });
 });

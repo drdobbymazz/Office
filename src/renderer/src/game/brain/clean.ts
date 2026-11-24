@@ -112,7 +112,7 @@ export function cleanLine(raw: unknown, ctx: LineContext): SceneLine | null {
   const r = raw as Record<string, unknown>;
   const who = ctx.speakers.resolve(r.who);
   if (!who) return null;
-  const say = cleanSay(r.say, 60, (n) => ctx.speakers.resolve(n) !== null);
+  const say = cleanSay(r.say, 120, (n) => ctx.speakers.resolve(n) !== null);
   if (!say) return null;
   const key = lineKey(say);
   if (!key || ctx.seen.has(key)) return null;

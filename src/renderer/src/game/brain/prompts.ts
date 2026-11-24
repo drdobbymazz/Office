@@ -8,7 +8,8 @@
 
 import { EMOTIONS, LINE_ACTS } from '@/game/core/types';
 import type {
-  DirectiveRequest, InterpretRequest, MindsRequest, PersonBrief, ReportRequest, SagaEpisodeRequest, SceneRequest
+  DelegateTone, DirectiveRequest, InterpretRequest, MindsRequest, PersonBrief, ReportRequest, SagaEpisodeRequest,
+  SceneRequest
 } from './api';
 import { CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, DIRECTIVE_VERBS } from './api';
 import { NameMap, firstName } from './names';
@@ -110,7 +111,9 @@ export class PromptBook {
         '- shifts: only a real change in how one person feels about another, because of this scene. Often none. ' +
           'change: likes_more, likes_less, trusts_more, trusts_less, admires, resents, fancies, fears.',
         `- plans: what someone now decides to do next. Often none. plan: ${PLAN_LIST}.`,
-        `- Room ids: ${roomList}.`
+        '- Room ids: ' + roomList + '.',
+        '- If the scene ends with REQUEST DECISION, also include "complies": true or false in the JSON, matching whether the target genuinely agrees or refuses in character.',
+        '- If the scene ends with GROUP REQUEST DECISION, also include "compliers": [first names of ONLY the targets who genuinely agreed] and set "complies" to true if at least one agreed, else false.'
       ].join('\n'),
       minds: [
         'YOUR TASK',
@@ -152,7 +155,7 @@ export class PromptBook {
         '',
         'REPLY FORMAT',
         'Reply with one JSON object and nothing else:',
-        '{"verb":"action","targetPerson":"first name or none","targetRoom":"room id or none","power":"none or office power","item":"weapon or object word or empty","summary":"short action phrase"}',
+        '{"verb":"action","targetPerson":"first name or none","targetRoom":"room id or none","power":"none or office power","item":"weapon or object word or empty","summary":"short action phrase","delegatedAction":"inner action for targetPerson or empty"}',
         `- verb: ${DIRECTIVE_VERBS.join(', ')}.`,
         '- Never soften a physical, violent, romantic, sexual, criminal, or destructive request into social! Pick the most literal dramatic verb:',
         '  * eliminate: kill, murder, assassinate, execute, strangle, stab, shoot, poison, destroy a person.',
@@ -165,11 +168,16 @@ export class PromptBook {
         '  * sabotage: smash, wreck, break, unplug, destroy the fax machine, coffee machine, printer, or someone\'s desk.',
         '  * walk_out: quit, resign, pack up and walk out the front door.',
         '  * steal: steal, swipe, snatch something from someone.',
-        '  * romance: kiss, hug, make out, flirt, hit on, seduce, propose, profess love, hook up, sleep with, have sex, strip, undress, flash, lap dance, grope, spank, affair, or any romantic/sexual advance.',
+        '  * expose: strip, get naked, undress, take clothes off, flash, moon, streak — the actor strips or exposes THEMSELVES. Leave targetPerson as "none" unless they explicitly strip/flash AT a named person.',
+        '  * romance: kiss, hug, make out, flirt, hit on, seduce, propose, profess love, hook up, sleep with, have sex, lap dance, grope, spank, affair — an intimate or sexual advance toward a specific person.',
+        '  * perform: any physical stunt, spectacle, gesture, or bodily act on the floor (dance, twerk, scream, cry, bark, sing, faint, pass out, puke, throw up, backflip, jump on a desk, eat paper, chug vodka, masturbate, act like an animal, make a scene).',
+        '  * delegate: tell, ask, order, dare, convince, persuade, or make ANOTHER person, two people ("tell Jim and Pam to..."), or "everyone" do a physical action (e.g. "tell Meredith to take her clothes off", "dare Dwight to punch Jim", "tell everyone to strip"). Set targetPerson to the person being asked (or "none" for "someone" / "everyone") and delegatedAction to the exact action being requested of them. NEVER assign the other person\'s physical verb to the speaker!',
+        '  * recover: undo/reverse a physical state or calm down — get dressed / put clothes back on / cover up, wake up / help up / revive / resurrect someone, take a nap / go to sleep, or stop / cancel an active action.',
         '  * follow: shadow or stalk someone around.',
         '  * guard: guard or block a room doorway.',
         '  * go_to: just walk or run to a room.',
-        '  * social: ONLY for pure talking/apologizing/gossiping with no physical action.',
+        '  * social: ONLY for pure talking, saying, asking, telling, apologizing, gossiping, OR negated commands ("don\'t strip", "never punch Jim", "stop hitting Toby") that forbid an action.',
+        '- summary: short third-person present-tense action phrase describing what the actor physically DOES (e.g. "strips completely naked", "kisses Pam", "barks like a dog"). Never write an imperative command.',
         `- power: ${CUSTOM_POWERS.join(', ')}.`,
         `- Room ids: ${roomList}.`
       ].join('\n'),
@@ -266,10 +274,10 @@ export class PromptBook {
     const first = req.people[0] ? names.name(req.people[0].id) : 'Someone';
     switch (req.trigger) {
       case 'event': return 'It is happening right now. React to it.';
-      case 'aftermath': return 'It has just ended. They talk about what happened.';
+      case 'aftermath': return 'This physical event just happened on the floor right in front of them. React directly to what the actor actually did.';
       case 'whisper': return `The thought just popped into ${first}'s head. ${first} believes it is their own idea and acts on it.`;
       case 'announce': return 'Everyone heard it over the loudspeaker. Nobody knows who said it.';
-      case 'cue': return `${first} suddenly feels like doing this, and does it, sure it was their own idea.`;
+      case 'cue': return `${first} is actually doing this right now in front of everyone, sure it was their own idea — not merely talking about it.`;
       case 'custom': return 'This is really happening. React to it.';
       case 'plan': return `${first} came over on purpose.`;
       default: return '';
@@ -290,6 +298,89 @@ export class PromptBook {
     if (recent.length) {
       out.push('Said just before:');
       for (const r of recent) out.push(`${r.who}: ${r.say}`);
+    }
+    if (req.delegation) {
+      const askerLabel =
+        req.delegation.asker === 'loudspeaker'
+          ? 'The voice over the office loudspeaker'
+          : this.nameFor(req.delegation.asker, names);
+      const tone = req.delegation.tone;
+      const toneVerbPhrase: Record<DelegateTone, string> = {
+        order: 'is bluntly ordering',
+        ask: 'is asking',
+        dare: 'is daring',
+        beg: 'is desperately begging',
+        persuade: 'is trying to persuade'
+      };
+      const toneNoteFor = (t: DelegateTone): string => {
+        if (t === 'order') {
+          return `Tone: blunt command. ${askerLabel} barks it as an order; proud or resentful characters push back harder against being bossed around unless they defer to ${askerLabel}'s authority or are too wild to care.`;
+        }
+        if (t === 'ask') {
+          return `Tone: direct request (not a command). ${askerLabel} asks instead of ordering, and the target weighs whether they actually want to do ${askerLabel} this favor.`;
+        }
+        if (t === 'dare') {
+          return `Tone: dare/challenge. ${askerLabel} baits them; competitive, prideful, or reckless characters are tempted not to chicken out, while sensible or uptight ones still refuse.`;
+        }
+        if (t === 'beg') {
+          return `Tone: desperate pleading. ${askerLabel} begs; sympathetic friends may cave on harmless favors, while strict characters find it pathetic and still refuse outrageous requests.`;
+        }
+        return `Tone: persuasion pitch. ${askerLabel} tries to talk them into it; they decide in character whether they buy the pitch.`;
+      };
+      const targets = req.delegation.targets;
+      if (targets && targets.length > 1) {
+        const targetNames = targets.map((id) => this.nameFor(id, names));
+        const actionLine = tone
+          ? `${askerLabel} ${toneVerbPhrase[tone]} ${targetNames.join(', ')} to: "${req.delegation.action}".`
+          : `${askerLabel} is asking or ordering ${targetNames.join(', ')} to: "${req.delegation.action}".`;
+        out.push('GROUP REQUEST DECISION', actionLine);
+        if (tone) out.push(toneNoteFor(tone));
+        out.push(
+          `EACH person (${targetNames.join(', ')}) reacts and decides independently and strictly in character from their personality, mood, current state, and feelings about the asker and each other (for example, Meredith or Creed might laugh and go along, a loving pair may agree to kiss each other, while Angela or Pam refuses an outrageous request in horror).`,
+          `- Set "compliers" to an array of ONLY the first names among ${targetNames.join(', ')} who genuinely agreed out loud to do it.`,
+          '- Set "complies" to true if "compliers" is non-empty, else false.'
+        );
+      } else {
+        const targetName = this.nameFor(req.delegation.target, names);
+        const contextFeelings =
+          req.delegation.asker === 'loudspeaker'
+            ? `their personality, mood, and current state`
+            : `their personality, mood, current state, and feelings about ${askerLabel}`;
+        const loveHint =
+          req.delegation.asker === 'loudspeaker'
+            ? ''
+            : `, someone hopelessly in love with ${askerLabel}`;
+        const dislikeHint =
+          req.delegation.asker === 'loudspeaker'
+            ? ''
+            : `, or someone who dislikes ${askerLabel}`;
+        if (req.delegation.executor === 'asker') {
+          const permLead = tone === 'beg'
+            ? `${askerLabel} is desperately begging ${targetName} for permission to: "${req.delegation.action}".`
+            : `${askerLabel} is asking ${targetName} for permission to: "${req.delegation.action}".`;
+          out.push('REQUEST DECISION', permLead);
+          if (tone === 'beg') out.push('Tone: desperate pleading.');
+          else if (tone === 'ask') out.push('Tone: polite permission request (not a command).');
+          out.push(
+            `Decide strictly in character from ${targetName}'s ${contextFeelings}:`,
+            `- If ${targetName} would let ${askerLabel} do this right now (for example, Meredith being wild or unfiltered${loveHint}, or someone genuinely into it with ${askerLabel}), have ${targetName} agree out loud and set "complies": true.`,
+            `- If ${targetName} would refuse, scoff, be horrified, or shut it down (for example, Angela or Pam rejecting an unwanted advance${dislikeHint}), have ${targetName} refuse out loud and set "complies": false.`,
+            `Your "complies" boolean must match what ${targetName} says in the scene.`
+          );
+        } else {
+          const actionLine = tone
+            ? `${askerLabel} ${toneVerbPhrase[tone]} ${targetName} to: "${req.delegation.action}".`
+            : `${askerLabel} is asking or ordering ${targetName} to: "${req.delegation.action}".`;
+          out.push('REQUEST DECISION', actionLine);
+          if (tone) out.push(toneNoteFor(tone));
+          out.push(
+            `Decide strictly in character from ${targetName}'s ${contextFeelings}:`,
+            `- If ${targetName} would actually go along with this right now (for example, Meredith being wild or unfiltered, Dwight obeying Michael${loveHint}, or someone genuinely into the idea), have ${targetName} agree out loud and set "complies": true.`,
+            `- If ${targetName} would refuse, scoff, be horrified, or shut it down (for example, Angela or Pam rejecting an outrageous request${dislikeHint}), have ${targetName} refuse out loud and set "complies": false.`,
+            `Your "complies" boolean must match what ${targetName} says in the scene.`
+          );
+        }
+      }
     }
     const lo = Math.max(1, Math.min(req.minLines, req.maxLines));
     const hi = Math.max(lo, req.maxLines);

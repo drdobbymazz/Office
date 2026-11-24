@@ -9,11 +9,12 @@ import { pick, rr, type Env } from './core';
 import { C, CONFETTI_TINTS, framesOf, goldSparkleFrames, shapeTex, squareTex } from './art';
 import { confetti, emitBurst, emitDrift, emitPoof, sparkles } from './emit';
 import { Land, Layer } from './particles';
+import { INK, Pix } from './pix';
 
 const KINDS: readonly StatusKind[] = [
   'love', 'rage', 'truth', 'paranoid', 'caffeinated', 'sleepy', 'asleep', 'tiny', 'giant', 'swapped',
   'crowned', 'party', 'rich', 'spooked', 'abducted', 'stung', 'dizzy', 'wet', 'sooty', 'frizzy', 'frozen',
-  'knockedOut', 'eliminated', 'guilty', 'quit'
+  'knockedOut', 'eliminated', 'guilty', 'quit', 'naked'
 ];
 const IDX = new Map<StatusKind, number>(KINDS.map((k, i) => [k, i]));
 
@@ -22,7 +23,7 @@ const EVERY: Record<StatusKind, number> = {
   love: 0.55, rage: 0.32, truth: 0.22, paranoid: 0, caffeinated: 0.1, sleepy: 1.3, asleep: 0.75,
   tiny: 0, giant: 0, swapped: 0, crowned: 0.32, party: 0.09, rich: 0.45, spooked: 0.45,
   abducted: 0.14, stung: 0.55, dizzy: 0, wet: 0.8, sooty: 0.4, frizzy: 0.22, frozen: 0.38,
-  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0
+  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0, naked: 0.55
 };
 
 interface PFx {
@@ -35,7 +36,28 @@ interface PFx {
   eyes: Sprite[];
   swirl: Sprite[];
   anger: Sprite | null;
+  censor: Sprite | null;
   t: number;
+}
+
+function buildCensorFrames(): Texture[] {
+  const palette = [0xf5d6ba, 0xf2b59c, 0xfff0e4, 0xd49678, 0xe8a4b0];
+  return [0, 1].map((shift) => {
+    const px = new Pix(12, 12);
+    for (let gy = 0; gy < 4; gy++) {
+      for (let gx = 0; gx < 4; gx++) {
+        const idx = (gx * 3 + gy * 5 + shift * 2) % palette.length;
+        px.rect(gx * 3, gy * 3, 3, 3, palette[idx]);
+      }
+    }
+    px.rect(0, 0, 12, 1, INK);
+    px.rect(0, 11, 12, 1, INK);
+    px.rect(0, 0, 1, 12, INK);
+    px.rect(11, 0, 1, 12, INK);
+    // Thin dark censor strip across the middle that shifts on alternate frames.
+    px.rect(1, 5 + (shift % 2), 10, 2, INK);
+    return px.toTexture();
+  });
 }
 
 export class Statuses {
@@ -47,6 +69,7 @@ export class Statuses {
   private gold: Texture[];
   private eyeFrames: Texture[];
   private zs: Texture[];
+  private censorFrames: Texture[];
 
   constructor(private env: Env) {
     this.heart = shapeTex('heart');
@@ -56,12 +79,13 @@ export class Statuses {
     this.gold = goldSparkleFrames();
     this.eyeFrames = framesOf(['eye0', 'eye1', 'eye2', 'eye1'], true);
     this.zs = [shapeTex('z', true), shapeTex('zBig', true)];
+    this.censorFrames = buildCensorFrames();
   }
 
   private get(p: FxPerson): PFx {
     let s = this.map.get(p.id);
     if (!s) {
-      s = { id: p.id, seen: true, mask: 0, timers: new Float32Array(KINDS.length), box: null, stars: [], eyes: [], swirl: [], anger: null, t: Math.random() * 10 };
+      s = { id: p.id, seen: true, mask: 0, timers: new Float32Array(KINDS.length), box: null, stars: [], eyes: [], swirl: [], anger: null, censor: null, t: Math.random() * 10 };
       for (let i = 0; i < KINDS.length; i++) s.timers[i] = Math.random() * 0.5;
       this.map.set(p.id, s);
     }
@@ -78,6 +102,10 @@ export class Statuses {
     s.anger.anchor.set(0.5);
     s.anger.visible = false;
     box.addChild(s.anger);
+    s.censor = new Sprite(this.censorFrames[0]);
+    s.censor.anchor.set(0.5, 0.5);
+    s.censor.visible = false;
+    box.addChild(s.censor);
     this.env.high.addChild(box);
     s.box = box;
     return box;
@@ -104,7 +132,7 @@ export class Statuses {
         emitPoof(env.parts, p.x, p.y - 2, 0, 5, 0xffffff, 0, 0, 0, 0.4, Layer.Air, 0.6);
       }
       if (started & (1 << IDX.get('frozen')!)) emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 10);
-      const needBox = mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('knockedOut')!) | (1 << IDX.get('paranoid')!) | (1 << IDX.get('swapped')!) | (1 << IDX.get('rage')!));
+      const needBox = mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('knockedOut')!) | (1 << IDX.get('paranoid')!) | (1 << IDX.get('swapped')!) | (1 << IDX.get('rage')!) | (1 << IDX.get('naked')!));
       if (needBox || s.box) this.attached(s, p, mask, head);
       if (!mask || !onScreen) continue;
       for (let i = 0; i < KINDS.length; i++) {
@@ -170,7 +198,15 @@ export class Statuses {
       s.anger.visible = rage && Math.floor(t * 3) % 2 === 0;
       s.anger.position.set(7, 2);
     }
-    void head;
+    const naked = !!(mask & (1 << IDX.get('naked')!));
+    if (s.censor) {
+      s.censor.visible = naked;
+      if (naked) {
+        s.censor.texture = this.censorFrames[Math.floor(t * 4) % 2];
+        s.censor.position.set(0, Math.round(head * 0.56));
+        s.censor.scale.set(p.scale);
+      }
+    }
   }
 
   private emit(k: StatusKind, p: FxPerson, head: number): void {
@@ -250,6 +286,9 @@ export class Statuses {
         break;
       case 'guilty':
         q.x += pick([-6, 6]); q.z = head - 2; q.vz = -18; q.g = 90; q.life = 0.45; q.fadeOut = 0.35; tex = shapeTex('drop');
+        break;
+      case 'naked':
+        q.x += rr(-7, 7); q.z = rr(head * 0.35, head * 0.75); q.vz = rr(6, 12); q.frames = sparkles(); q.once = true; q.fps = 7; q.life = 0.5; tint = pick([0xff90b0, 0xffd23d, 0xffffff]);
         break;
       default:
         q.life = 0.01;

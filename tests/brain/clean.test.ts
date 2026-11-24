@@ -80,6 +80,16 @@ describe('cleanLines', () => {
     const fortyWords = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ');
     expect(cleanSay(fortyWords).endsWith('...')).toBe(true);
   });
+
+  it('preserves an 80-word natural speech line without cutting off', () => {
+    const line80 = Array.from({ length: 80 }, (_, i) => `word${i}`).join(' ') + '.';
+    const cleaned = cleanLine(
+      { who: 'Fern', say: line80, feel: 'angry', to: 'none', act: 'none' },
+      { speakers, maxLines: 2, seen: new Set([lineKey('other')]) }
+    );
+    expect(cleaned?.say).toBe(line80);
+    expect(cleaned?.say.endsWith('...')).toBe(false);
+  });
 });
 
 describe('shifts and plans', () => {

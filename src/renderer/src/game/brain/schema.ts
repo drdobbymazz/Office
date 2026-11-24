@@ -37,16 +37,19 @@ export interface SceneSchemaInput {
   rooms: readonly string[];
   minLines: number;
   maxLines: number;
+  hasDelegation?: boolean;
+  /** First names of targets when 2+ people are asked/ordered together. */
+  delegationTargets?: string[];
 }
 
 export function sceneSchema(s: SceneSchemaInput): JsonSchema {
   const speakers = s.speakers.length ? s.speakers : ['Someone'];
   const people = dedupe([...speakers, ...s.people]);
-  return obj({
+  const props: Record<string, JsonSchema> = {
     lines: arr(
       obj({
         who: oneOf(speakers),
-        say: str(360),
+        say: str(640),
         feel: oneOf(EMOTIONS),
         to: oneOf([...speakers, 'all', 'none']),
         act: oneOf(LINE_ACTS)
@@ -66,7 +69,12 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
       0,
       2
     )
-  });
+  };
+  if (s.hasDelegation) props.complies = { type: 'boolean' };
+  if (s.hasDelegation && s.delegationTargets && s.delegationTargets.length > 1) {
+    props.compliers = arr(oneOf(s.delegationTargets), 0, s.delegationTargets.length);
+  }
+  return obj(props);
 }
 
 export interface MindsSchemaInput {
@@ -82,7 +90,7 @@ export function mindsSchema(s: MindsSchemaInput): JsonSchema {
     minds: arr(
       obj({
         who: oneOf(s.people.length ? s.people : ['Someone']),
-        thought: str(220),
+        thought: str(360),
         feel: oneOf(EMOTIONS),
         plan: oneOf(s.allowed.length ? s.allowed : PLAN_KINDS),
         target: oneOf([...s.others, ...s.rooms, 'none']),
@@ -123,7 +131,8 @@ export function directiveSchema(people: string[], rooms: readonly string[]): Jso
     targetRoom: oneOf([...(rooms.length ? rooms : TARGET_ROOMS), 'none']),
     power: oneOf(CUSTOM_POWERS),
     item: str(32),
-    summary: str(120)
+    summary: str(120),
+    delegatedAction: str(120)
   });
 }
 

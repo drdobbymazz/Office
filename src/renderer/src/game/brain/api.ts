@@ -134,6 +134,25 @@ export type SceneTrigger =
   | 'cue'        // the Overseer told someone what to do
   | 'custom';    // a free-text event from the player
 
+export type DelegateTone = 'order' | 'ask' | 'dare' | 'beg' | 'persuade';
+
+export interface SceneDelegation {
+  asker: CharId | 'loudspeaker';
+  target: CharId;
+  /** Present when 2+ people are being asked/ordered together (group or loudspeaker demand). */
+  targets?: CharId[];
+  /** Who performs the action if target complies: 'target' (default: "tell X to...") or 'asker' ("ask X if you can..."). */
+  executor?: 'asker' | 'target';
+  /** Delivery tone of the request ("tell/order" vs "ask" vs "dare" vs "beg" vs "convince/persuade"). */
+  tone?: DelegateTone;
+  /** The inner action requested of `target` (e.g. "take her clothes off", "punch jim", "massage her"). */
+  action: string;
+  /** Normalized direct command for the executor if approved (e.g. "take your clothes off", "massage Pam"). */
+  command: string;
+  /** Nesting depth for chained delegations (0 = direct from player, max 1 nested hop). */
+  depth?: number;
+}
+
 /** "Write the next few lines of what these people say to each other." */
 export interface SceneRequest {
   id: string;
@@ -160,6 +179,8 @@ export interface SceneRequest {
   chaos: number;
   /** Story mode: the week's story theme this scene is about, so the written lines can match it. */
   topic?: StoryTheme;
+  /** Present when someone in the scene is ordering/asking another to perform an action. */
+  delegation?: SceneDelegation;
 }
 
 export interface SceneLine {
@@ -178,6 +199,10 @@ export interface SceneResult {
   shifts: RelationShift[];
   /** What some of them decide to do next. */
   plans: { who: CharId; plan: Plan }[];
+  /** For delegated requests: whether the target agreed in character to perform the action. */
+  complies?: boolean;
+  /** For group/loudspeaker delegated requests: which targets agreed in character to perform the action. */
+  compliers?: CharId[];
   /** 'model' when the language model wrote it, 'instinct' when it fell back to canned lines. */
   source: 'model' | 'instinct';
 }
@@ -356,26 +381,32 @@ export interface SagaEpisodeResult {
 export const DIRECTIVE_VERBS = [
   'eliminate', 'knockout', 'shove', 'chase', 'drag', 'lock_in',
   'sabotage', 'trigger_power', 'walk_out', 'steal', 'romance',
-  'follow', 'guard', 'go_to', 'social'
+  'expose', 'perform', 'delegate', 'recover', 'follow', 'guard', 'go_to', 'social'
 ] as const;
 export type DirectiveVerb = (typeof DIRECTIVE_VERBS)[number];
 
 export interface DirectiveRequest {
   id: string;
-  actor: { id: CharId; name: string; room: RoomId };
+  actor: { id: CharId; name: string; room: RoomId; pronoun?: 'he' | 'she' | 'they' };
   kind: 'whisper' | 'cue';
   text: string;
-  people: { id: CharId; name: string; room: RoomId }[];
+  people: { id: CharId; name: string; room: RoomId; pronoun?: 'he' | 'she' | 'they' }[];
   rooms: { id: string; name: string }[];
+  allowDelegate?: boolean;
 }
 
 export interface DirectiveResult {
   verb: DirectiveVerb;
   targetPerson: CharId | null;
+  targetPeople?: CharId[];
+  targetAll?: boolean;
+  delegateExecutor?: 'asker' | 'target';
+  delegateTone?: DelegateTone;
   targetRoom: TargetRoomId | null;
   power: CustomPower;
   item: string;
   summary: string;
+  delegatedText?: string;
   source: 'model' | 'instinct';
 }
 

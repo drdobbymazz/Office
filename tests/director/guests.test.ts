@@ -80,4 +80,25 @@ describe('Anything-power guests', () => {
     expect(sim.people().some((p) => !p.isCast)).toBe(false);
     expect(guests.count).toBe(0);
   });
+
+  it('spawning into an empty room still emits a beat narration and pulls nearby cast into a scene', () => {
+    const { sim, guests, feed, asks } = setup();
+    // Move everyone out of the annex before staging an event there.
+    const emptyRoom = (['annex', 'meeting', 'kitchen', 'accounts', 'boss', 'bullpen'] as const)
+      .find((r) => sim.peopleIn(r).filter((p) => p.present && p.isCast).length === 0) ?? 'annex';
+    for (const p of sim.peopleIn(emptyRoom)) {
+      sim.teleport(p.id, { x: 12, y: 15 });
+    }
+    const beats: string[] = [];
+    sim.bus.on('feed', (f) => {
+      if (f.beat) beats.push(f.text);
+    });
+    guests.stage(`a giant llama in ${emptyRoom}`, result({
+      kind: 'thing', name: '', room: emptyRoom, emoji: '🦙', fact: 'A giant golden trophy appeared in the room.'
+    }));
+    expect(feed.some((t) => t.includes('golden trophy'))).toBe(true);
+    expect(beats.some((t) => t.includes('golden trophy'))).toBe(true);
+    expect(asks.length).toBeGreaterThanOrEqual(1);
+    expect(asks[0].people?.length).toBeGreaterThan(0);
+  });
 });

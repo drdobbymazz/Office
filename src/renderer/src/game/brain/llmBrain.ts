@@ -27,7 +27,7 @@ import {
 import type { CustomPower } from './api';
 import { cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanShifts, cleanText, lineKey } from './clean';
 import type { LineContext } from './clean';
-import { InstinctBrain } from './instinct';
+import { InstinctBrain, inferDelegateTone, isNegatedDirective, stripRoomPhrases } from './instinct';
 import type { LooseBank } from './instinct';
 import { ArrayItemStream, parseLoose } from './jsonStream';
 import { NameMap } from './names';
@@ -333,20 +333,59 @@ export class LlmBrain implements Brain {
       const line = cleanLine(raw, ctx);
       if (line) emit(line);
     };
-    const build = (value: Record<string, unknown> | null): SceneResult => ({
-      lines: lines.slice(),
-      summary: cleanText(value?.summary, 200) || this.instinct.summarise(req, lines, names),
-      shifts: cleanShifts(value?.shifts, names, people),
-      plans: cleanPlans(value?.plans, names, people, this.rooms),
-      source: 'model'
-    });
+    const delTargets = req.delegation?.targets && req.delegation.targets.length > 1 ? req.delegation.targets : undefined;
+    const resolveTargetId = (raw: unknown): CharId | null => names.resolve(raw) ?? (typeof raw === 'string' ? this.index.idForName(raw) : null);
+    const delegationTargetNames = delTargets
+      ? delTargets.map((id) => (names.has(id) ? names.name(id) : this.index.nameOf(id)))
+      : undefined;
+
+    const build = (value: Record<string, unknown> | null): SceneResult => {
+      let complies: boolean | undefined;
+      let compliers: CharId[] | undefined;
+      if (req.delegation) {
+        if (delTargets) {
+          const parsed: CharId[] = [];
+          if (Array.isArray(value?.compliers)) {
+            for (const raw of value.compliers) {
+              const id = resolveTargetId(raw);
+              if (id && delTargets.includes(id) && !parsed.includes(id)) parsed.push(id);
+            }
+          }
+          if (!Array.isArray(value?.compliers) || (value?.complies === true && parsed.length === 0)) {
+            compliers = delTargets.filter((id) => this.instinct.decideComplianceFor(req, id, lines));
+          } else {
+            compliers = parsed;
+          }
+          complies = compliers.length > 0;
+        } else {
+          complies = typeof value?.complies === 'boolean' ? value.complies : this.instinct.decideCompliance(req, lines);
+        }
+      }
+      return {
+        lines: lines.slice(),
+        summary: cleanText(value?.summary, 200) || this.instinct.summarise(req, lines, names),
+        shifts: cleanShifts(value?.shifts, names, people),
+        plans: cleanPlans(value?.plans, names, people, this.rooms),
+        ...(complies !== undefined ? { complies } : {}),
+        ...(compliers !== undefined ? { compliers } : {}),
+        source: 'model'
+      };
+    };
 
     return this.run<SceneResult>({
       kind: 'scene',
       user: this.book.sceneUser(req, names),
-      schema: sceneSchema({ speakers: names.names, people: people.names, rooms: this.index.roomIds, minLines: req.minLines, maxLines }),
+      schema: sceneSchema({
+        speakers: names.names,
+        people: people.names,
+        rooms: this.index.roomIds,
+        minLines: req.minLines,
+        maxLines,
+        hasDelegation: !!req.delegation,
+        ...(delegationTargetNames ? { delegationTargets: delegationTargetNames } : {})
+      }),
       temperature: this.temp(req.chaos),
-      maxTokens: 60 + 45 * maxLines,
+      maxTokens: (delTargets ? 170 : req.delegation ? 140 : 120) + 95 * maxLines,
       signal: cb?.signal,
       onAttempt: () => {
         t0 = now();
@@ -399,7 +438,7 @@ export class LlmBrain implements Brain {
       user: this.book.mindsUser(req, names, others),
       schema: mindsSchema({ people: names.names, others: targetNames, rooms: this.index.roomIds, allowed }),
       temperature: this.temp(req.chaos),
-      maxTokens: 40 + 55 * req.people.length,
+      maxTokens: 60 + 85 * req.people.length,
       signal,
       parse: (text) => {
         const arr = parseLoose(text)?.value.minds;
@@ -410,7 +449,7 @@ export class LlmBrain implements Brain {
           const r = item as Record<string, unknown>;
           const who = names.resolve(r.who);
           if (!who || got.has(who)) continue;
-          const thought = cleanSay(r.thought, 36);
+          const thought = cleanSay(r.thought, 64);
           if (!thought) continue;
           const person = req.people.find((p) => p.id === who)!;
           const plan = cleanPlan(r, who, others, this.rooms, allowed) ?? this.instinct.mindFor(person, req).plan;
@@ -445,6 +484,8 @@ export class LlmBrain implements Brain {
         const intensity = Number(v.intensity);
         const oneOf = <T extends string>(list: readonly T[], raw: unknown, dflt: T): T =>
           typeof raw === 'string' && (list as readonly string[]).includes(raw.trim().toLowerCase()) ? (raw.trim().toLowerCase() as T) : dflt;
+        const rawPower = (CUSTOM_POWERS as readonly string[]).includes(String(v.power)) ? (v.power as CustomPower) : base.power;
+        const power = rawPower === 'none' && base.power !== 'none' ? base.power : rawPower;
         return {
           title,
           emoji: firstEmoji(v.emoji),
@@ -457,7 +498,7 @@ export class LlmBrain implements Brain {
           moves: typeof v.moves === 'boolean' ? v.moves : base.moves,
           kind: oneOf(CUSTOM_KINDS, v.kind, base.kind),
           name: cleanText(v.name, 30) || base.name,
-          power: (CUSTOM_POWERS as readonly string[]).includes(String(v.power)) ? (v.power as CustomPower) : 'none',
+          power,
           guest: {
             skin: oneOf(GUEST_SKINS, v.skin, base.guest.skin),
             hair: oneOf(GUEST_COLOURS, v.hair, base.guest.hair),
@@ -476,34 +517,90 @@ export class LlmBrain implements Brain {
     v: Record<string, unknown>,
     base: DirectiveResult,
     names: NameMap,
-    roomIds: string[]
+    roomIds: string[],
+    rawText: string,
+    allowDelegate = true,
+    actorName = ''
   ): DirectiveResult {
+    const cleanRaw = stripRoomPhrases(rawText);
+    const isMentionedInClean = (id: CharId): boolean => {
+      const fullName = names.name(id);
+      const firstName = fullName.split(/\s+/)[0] || fullName;
+      return [fullName, firstName]
+        .filter((s) => s.length >= 2)
+        .some((part) => new RegExp(`\\b${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(cleanRaw));
+    };
+
+    if (isNegatedDirective(rawText, actorName)) {
+      return {
+        verb: 'social',
+        targetPerson: base.targetPerson,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: base.summary,
+        source: 'model'
+      };
+    }
+
     const physicalPriority = new Set<DirectiveVerb>([
       'eliminate', 'knockout', 'shove', 'drag', 'lock_in', 'sabotage',
-      'trigger_power', 'walk_out', 'steal', 'romance', 'chase', 'follow', 'guard'
+      'trigger_power', 'walk_out', 'steal', 'romance', 'expose', 'perform',
+      'delegate', 'recover', 'chase', 'follow', 'guard'
     ]);
     let verb = (DIRECTIVE_VERBS as readonly string[]).includes(String(v.verb))
       ? (v.verb as DirectiveVerb)
       : base.verb;
+    if (!allowDelegate && verb === 'delegate') {
+      verb = base.verb === 'delegate' ? 'social' : base.verb;
+    }
     // Never let a timid model soften an unmistakable physical order into plain chat or walking.
     if (physicalPriority.has(base.verb) && (verb === 'social' || verb === 'go_to')) {
       verb = base.verb;
     }
-    const resolvedPerson = v.targetPerson && v.targetPerson !== 'none' ? names.resolve(v.targetPerson) : null;
-    const targetPerson = resolvedPerson ?? base.targetPerson;
+    // Keep self-exposure (stripping/flashing) on its own staging path rather than collapsing into interpersonal romance.
+    if (base.verb === 'expose' && verb === 'romance') {
+      verb = 'expose';
+    }
+    // Never let a reversal ("get dressed", "wake up jim", "stop") turn into exposing or attacking.
+    if (base.verb === 'recover') {
+      verb = 'recover';
+    }
+    const rawResolved = v.targetPerson && v.targetPerson !== 'none' ? names.resolve(v.targetPerson) : null;
+    const resolvedPerson = rawResolved && isMentionedInClean(rawResolved) ? rawResolved : null;
+    let targetPerson = resolvedPerson ?? base.targetPerson;
+    // Never let the model turn a delegated request into an action by the speaker.
+    if (allowDelegate && base.verb === 'delegate') {
+      verb = 'delegate';
+      targetPerson = base.targetPerson ?? resolvedPerson;
+    }
+    // Do not let the model invent a coworker target when the player ordered a solo expose/perform/recover stunt.
+    if ((verb === 'expose' || verb === 'perform' || verb === 'recover') && base.targetPerson === null && resolvedPerson) {
+      if (!isMentionedInClean(resolvedPerson)) targetPerson = null;
+    }
     const rawRoom = typeof v.targetRoom === 'string' && v.targetRoom !== 'none' ? v.targetRoom : '';
     const resolvedRoom = rawRoom ? (roomIds.includes(rawRoom) ? rawRoom : this.rooms(rawRoom)) : null;
     const targetRoom = ((resolvedRoom && roomIds.includes(resolvedRoom) ? resolvedRoom : null) ?? base.targetRoom) as DirectiveResult['targetRoom'];
     const power = (CUSTOM_POWERS as readonly string[]).includes(String(v.power))
       ? (v.power as CustomPower)
       : base.power;
+    const delegatedText = verb === 'delegate' ? (cleanText(v.delegatedAction, 120) || base.delegatedText || '') : '';
+    if (verb === 'delegate' && !delegatedText) {
+      verb = base.verb !== 'delegate' ? base.verb : 'social';
+    }
+    const item = base.verb === 'recover' ? (base.item || cleanText(v.item, 32)) : (base.item.includes(' ') ? base.item : (cleanText(v.item, 32) || base.item));
     return {
       verb,
       targetPerson,
+      ...(verb === 'delegate' && base.targetPeople?.length ? { targetPeople: base.targetPeople } : {}),
+      ...(verb === 'delegate' && base.targetAll ? { targetAll: true } : {}),
+      ...(verb === 'delegate' && base.delegateExecutor ? { delegateExecutor: base.delegateExecutor } : {}),
+      ...(verb === 'delegate' ? { delegateTone: base.delegateTone ?? inferDelegateTone(rawText) } : {}),
       targetRoom,
       power: power === 'none' && base.power !== 'none' ? base.power : power,
-      item: cleanText(v.item, 32) || base.item,
+      item,
       summary: cleanText(v.summary, 120) || base.summary,
+      ...(delegatedText ? { delegatedText } : {}),
       source: 'model'
     };
   }
@@ -512,17 +609,18 @@ export class LlmBrain implements Brain {
     const base = this.instinct.interpretDirectiveNow(req);
     const names = new NameMap(req.people.map((p) => ({ id: p.id, name: p.name })));
     const roomIds = req.rooms.map((r) => r.id as string);
+    const allowDelegate = req.allowDelegate !== false;
     return this.run<DirectiveResult>({
       kind: 'directive',
       user: this.book.directiveUser(req, names),
       schema: directiveSchema(names.names, roomIds),
       temperature: 0.25,
-      maxTokens: 160,
+      maxTokens: 200,
       signal,
       parse: (text) => {
         const v = parseLoose(text)?.value;
         if (!v) return null;
-        return this.normalizeDirective(v, base, names, roomIds);
+        return this.normalizeDirective(v, base, names, roomIds, req.text, allowDelegate, req.actor.name);
       },
       fallback: () => base
     });

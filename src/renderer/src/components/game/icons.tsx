@@ -1612,7 +1612,7 @@ const STATUS_ICON: Record<StatusKind, GIconName> = {
   sleepy: 'sleep', asleep: 'sleep', tiny: 'shrink', giant: 'giant', swapped: 'bodySwap', crowned: 'crown',
   party: 'birthday', rich: 'coin', spooked: 'ghost', abducted: 'ufo', stung: 'bees', dizzy: 'dizzy',
   wet: 'wet', sooty: 'sooty', frizzy: 'frizzy', frozen: 'timeFreeze',
-  knockedOut: 'dizzy', eliminated: 'skull', guilty: 'warn', quit: 'back'
+  knockedOut: 'dizzy', eliminated: 'skull', guilty: 'warn', quit: 'back', naked: 'warn'
 };
 export function statusIcon(s: StatusKind): GIconName { return STATUS_ICON[s] ?? 'sparkle'; }
 

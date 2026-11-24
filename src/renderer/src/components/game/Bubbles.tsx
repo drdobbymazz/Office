@@ -50,6 +50,7 @@ interface Node {
   w: number;
   h: number;
   shown: number;
+  typed: number;
   x: number;
   y: number;
   flipped: boolean;
@@ -181,7 +182,7 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       rest.style.display = 'none';
       const h = Math.ceil(box.getBoundingClientRect().height);
       if (sp.kind === 'shout') inner.insertBefore(shoutBg(w, h), box);
-      const n: Node = { sp, el, inner, box, rev, rest, tail, w, h, shown: 0, x: -999, y: -999, flipped: false, dying: false, tag: false, tagUntil: 0, dim: false };
+      const n: Node = { sp, el, inner, box, rev, rest, tail, w, h, shown: 0, typed: 0, x: -999, y: -999, flipped: false, dying: false, tag: false, tagUntil: 0, dim: false };
       setTail(n, false, w / 2);
       return n;
     }
@@ -208,13 +209,18 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
       window.setTimeout(() => { n.el.remove(); nodes.delete(id); }, 170);
     }
 
+    let prevNow = performance.now();
     function frame() {
       raf = requestAnimationFrame(frame);
       const now = performance.now();
+      const dt = Math.min(0.1, Math.max(0, (now - prevNow) / 1000));
+      prevNow = now;
+      const st = game.store.getState();
+      const rate = st.paused ? 0 : (st.speed || 1);
       const list = game.activeSpeech();
       const live = new Set<string>();
       for (const sp of list) {
-        if (now < sp.startedAt || now > sp.startedAt + sp.durationMs) continue;
+        if (now < sp.startedAt) continue;
         live.add(sp.id);
         if (!nodes.has(sp.id)) {
           // Narrower at the fitted zoom, where a 220 px bubble would cover a room and a half.
@@ -244,7 +250,8 @@ export function BubbleLayer({ bounds }: { bounds: MutableRefObject<Bounds> }) {
         if (n.dying) continue;
         const sp = n.sp;
         // typewriter
-        const count = Math.max(0, Math.min(sp.text.length, Math.floor(((now - sp.startedAt) / 1000) * sp.cps)));
+        n.typed = Math.min(sp.text.length, n.typed + dt * sp.cps * rate);
+        const count = Math.floor(n.typed);
         if (count !== n.shown) {
           n.shown = count;
           n.rev.textContent = sp.text.slice(0, count);

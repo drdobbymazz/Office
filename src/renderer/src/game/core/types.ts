@@ -99,7 +99,8 @@ export type StatusKind =
   | 'knockedOut'  // out cold on the floor
   | 'eliminated'  // taken out for the day
   | 'guilty'      // took someone out and everyone saw
-  | 'quit';       // walked out for the day
+  | 'quit'        // walked out for the day
+  | 'naked';      // stripped down, covered by a pixel censor mosaic
 
 export interface StatusEffect {
   kind: StatusKind;

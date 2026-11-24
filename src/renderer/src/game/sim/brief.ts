@@ -37,6 +37,7 @@ export function statusWords(core: SimCore, s: StatusEffect): string | null {
     case 'eliminated': return `eliminated by ${t}`;
     case 'guilty': return `just took out ${t} and everyone saw`;
     case 'quit': return 'stormed out and quit for the day';
+    case 'naked': return 'completely naked in the office (wearing no clothes at all)';
     default: return null;
   }
 }

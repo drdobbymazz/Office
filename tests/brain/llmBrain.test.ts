@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EMOTIONS, LINE_ACTS, PLAN_KINDS } from '@/game/core/types';
 import type { Brain, ChatRequest, ChatResponse, ChatTransport, SceneLine, SceneResult } from '@/game/brain/api';
 import { createBrain, LlmBrain } from '@/game/brain/index';
-import { BANK, WORLD, mindsReq, sceneReq, seeded, settings, startMock } from './fixtures';
+import { BANK, WORLD, mindsReq, person, sceneReq, seeded, settings, startMock } from './fixtures';
 import type { MockServer } from './fixtures';
 
 let mock: MockServer;
@@ -66,10 +66,10 @@ describe('LlmBrain against the mock', () => {
     await brain.scene({ ...req, chaos: 1, maxLines: 3 });
     const body = mock.requests.filter((r) => r.path === '/api/chat').pop()!.body as { options: { temperature: number; num_predict: number } };
     expect(body.options.temperature).toBeCloseTo(0.9 * 1.15, 5);
-    expect(body.options.num_predict).toBe(60 + 45 * 3);
+    expect(body.options.num_predict).toBe(120 + 95 * 3);
     await brain.minds(mindsReq());
     const b2 = mock.requests.filter((r) => r.path === '/api/chat').pop()!.body as { options: { num_predict: number } };
-    expect(b2.options.num_predict).toBe(40 + 55 * 2);
+    expect(b2.options.num_predict).toBe(60 + 85 * 2);
   });
 
   it('sends the same system message every time', async () => {
@@ -235,5 +235,113 @@ describe('createBrain', () => {
     expect(b.kind).toBe('instinct');
     expect((await b.status()).ok).toBe(true);
     expect((await b.scene(req)).source).toBe('instinct');
+  });
+
+  it('guards normalizeDirective against negations, room-name person hallucinations, recover overrides, and preserves interpret power & group compliers', async () => {
+    let reply = '{}';
+    const transport: ChatTransport = {
+      kind: 'ollama',
+      autonomous: true,
+      status: async () => ({ ok: true, models: [] }),
+      chat: async (): Promise<ChatResponse> => ({ text: reply, stats: { ms: 10, tokPerSec: 100 } })
+    };
+    const b = createBrain(settings(), { bank: BANK, world: WORLD, transport });
+
+    // 1. Negated command must remain social even if model tries to execute it
+    reply = JSON.stringify({ verb: 'expose', targetPerson: 'none', targetRoom: 'none', power: 'none', item: '', summary: 'strips naked', delegatedAction: '' });
+    const neg = await b.interpretDirective({
+      id: 'd1',
+      actor: { id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never },
+      kind: 'cue',
+      text: "don't strip naked",
+      people: [{ id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never }, { id: 'basil', name: 'Basil Okafor', room: 'bullpen' as never }],
+      rooms: [{ id: 'shop', name: 'the Shop Floor' }]
+    });
+    expect(neg.source).toBe('model');
+    expect(neg.verb).toBe('social');
+
+    // 2. Room name ("Michael's office") must not override direct target even if model hallucinates targetPerson
+    reply = JSON.stringify({ verb: 'romance', targetPerson: 'Fern', targetRoom: 'boss', power: 'none', item: '', summary: 'kisses Basil in the office', delegatedAction: '' });
+    const roomCol = await b.interpretDirective({
+      id: 'd2',
+      actor: { id: 'ivy', name: 'Ivy Marsh', room: 'bullpen' as never },
+      kind: 'cue',
+      text: "kiss basil in michael's office",
+      people: [
+        { id: 'ivy', name: 'Ivy Marsh', room: 'bullpen' as never },
+        { id: 'basil', name: 'Basil Okafor', room: 'bullpen' as never },
+        { id: 'michael', name: 'Michael Scott', room: 'boss' as never }
+      ],
+      rooms: [{ id: 'boss', name: "Michael's office" }, { id: 'bullpen', name: 'the Bullpen' }]
+    });
+    expect(roomCol.verb).toBe('romance');
+    expect(roomCol.targetPerson).toBe('basil');
+
+    // 3. "put clothes back on" stays recover even if model outputs expose
+    reply = JSON.stringify({ verb: 'expose', targetPerson: 'none', targetRoom: 'none', power: 'none', item: 'clothes', summary: 'gets dressed', delegatedAction: '' });
+    const rec = await b.interpretDirective({
+      id: 'd3',
+      actor: { id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never },
+      kind: 'cue',
+      text: 'put your clothes back on',
+      people: [{ id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never }],
+      rooms: [{ id: 'bullpen', name: 'the Bullpen' }]
+    });
+    expect(rec.verb).toBe('recover');
+    expect(rec.item).toBe('dress');
+
+    // 4. interpret retains heuristic base.power when model returns power: "none"
+    reply = JSON.stringify({
+      title: 'Dragon in the Office', emoji: '🐉', room: 'shop', fact: 'A dragon breathes flames in the shop.',
+      vibe: 'dangerous', intensity: 3, reaction: 'flee', look: 'smoke', moves: true, kind: 'creature',
+      name: 'Dragon', power: 'none', skin: 'green', hair: 'black', outfit: 'red', trim: 'gold', style: 'suit'
+    });
+    const interp = await b.interpret({ id: 'i1', text: 'a dragon breathing flames', rooms: [{ id: 'shop', name: 'the Shop Floor', people: ['Fern'] }] });
+    expect(interp.power).toBe('fire');
+
+    // 5. scene parses group delegation compliers cleanly
+    reply = JSON.stringify({
+      lines: [
+        { who: 'Fern', say: 'Everyone dance!', feel: 'excited', to: 'all', act: 'point' },
+        { who: 'Basil', say: 'Sure, watch this!', feel: 'happy', to: 'Fern', act: 'laugh' },
+        { who: 'Ivy', say: 'No chance.', feel: 'disgusted', to: 'Fern', act: 'shake_head' }
+      ],
+      summary: 'Fern told everyone to dance; Basil agreed and Ivy refused.',
+      shifts: [],
+      plans: [],
+      complies: true,
+      compliers: ['Basil']
+    });
+    const sc = await b.scene({
+      ...sceneReq({ people: [person('fern'), person('basil'), person('ivy')], maxLines: 3 }),
+      delegation: { asker: 'fern', target: 'basil', targets: ['basil', 'ivy'], action: 'dance', command: 'dance' }
+    });
+    expect(sc.source).toBe('model');
+    expect(sc.complies).toBe(true);
+    expect(sc.compliers).toEqual(['basil']);
+
+    // 6. interpretDirective preserves delegateTone ('ask' vs 'order') even when model returns generic delegate JSON
+    reply = JSON.stringify({ verb: 'delegate', targetPerson: 'Basil', targetRoom: 'none', power: 'none', item: '', summary: 'tells Basil to dance', delegatedAction: 'dance' });
+    const askDir = await b.interpretDirective({
+      id: 'd-ask',
+      actor: { id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never },
+      kind: 'cue',
+      text: 'ask basil to dance',
+      people: [{ id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never }, { id: 'basil', name: 'Basil Okafor', room: 'bullpen' as never }],
+      rooms: [{ id: 'bullpen', name: 'the Bullpen' }]
+    });
+    expect(askDir.verb).toBe('delegate');
+    expect(askDir.delegateTone).toBe('ask');
+
+    const orderDir = await b.interpretDirective({
+      id: 'd-order',
+      actor: { id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never },
+      kind: 'cue',
+      text: 'tell basil to dance',
+      people: [{ id: 'fern', name: 'Fern Holloway', room: 'bullpen' as never }, { id: 'basil', name: 'Basil Okafor', room: 'bullpen' as never }],
+      rooms: [{ id: 'bullpen', name: 'the Bullpen' }]
+    });
+    expect(orderDir.verb).toBe('delegate');
+    expect(orderDir.delegateTone).toBe('order');
   });
 });
