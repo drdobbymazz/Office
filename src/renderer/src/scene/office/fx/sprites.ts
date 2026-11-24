@@ -644,6 +644,18 @@ const ITEM_ROWS: Record<string, string[]> = {
     '..aaawwwwwssaaa..',
     '.....aaaaaaa.....'
   ],
+  // A closed briefcase lying flat: dark leather, a handle, two brass clasps.
+  briefcase: [
+    '....kkkk....',
+    '...k....k...',
+    '.kkkkkkkkkk.',
+    'kNNNNNNNNNNk',
+    'kNnyNNNNynNk',
+    'kNNNNNNNNNNk',
+    'kNnnnnnnnnNk',
+    'kNNNNNNNNNNk',
+    '.kkkkkkkkkk.'
+  ],
   wetFloorSign: [
     '...yyy...',
     '..yyyyy..',

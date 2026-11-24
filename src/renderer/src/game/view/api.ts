@@ -158,7 +158,7 @@ export type EffectInstance =
   /** Balloons bobbing about a room. */
   | { id: string; kind: 'balloons'; room: RoomId; count: number }
   /** A thing that has appeared on the floor. */
-  | { id: string; kind: 'item'; item: 'pizzaBoxes' | 'cake' | 'gift' | 'cashPile' | 'puddle' | 'scorch' | 'paperPile' | 'wetFloorSign' | 'foam' | 'snackPile' | 'chalkOutline' | 'scuffle' | 'brokenParts'; x: number; y: number }
+  | { id: string; kind: 'item'; item: 'pizzaBoxes' | 'cake' | 'gift' | 'cashPile' | 'puddle' | 'scorch' | 'paperPile' | 'wetFloorSign' | 'foam' | 'snackPile' | 'chalkOutline' | 'scuffle' | 'brokenParts' | 'briefcase'; x: number; y: number }
   /** Something summoned by a free-text event, drawn as a big emoji standing on the floor. */
   | { id: string; kind: 'emoji'; emoji: string; x: number; y: number; size: number; bob: boolean; /** Pixels above the ground (no shadow): a badge over someone's head. */ lift?: number }
   /** Time is stopped: a cool tint and hanging sparkles. level 0..1. */

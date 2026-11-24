@@ -275,6 +275,17 @@ export const SWITCH = {
 
 // ── Friday: The Screening ────────────────────────────────────────────────────
 
+/** Why someone talked, to follow "<name> talked" in the Log. */
+const TALK_WHY: Record<string, string> = {
+  none: '',
+  truth: ': the truth serum left no choice',
+  scared: ': too frightened to keep the story straight',
+  sad: ': too upset to keep the story straight',
+  nervous: ': too nervous, and nobody had whispered a steadying word',
+  mood: ': in too bad a mood to cover for anyone',
+  nerve: ': weak nerves, and nobody had whispered a steadying word',
+};
+
 export const SCREENING = {
   weekday: 'Friday',
   title: 'The Screening',
@@ -299,14 +310,14 @@ export const SCREENING = {
   },
   change: ['The right tape played at the screening', 'The screening went wrong'] as [string, string],
   hints: [
-    'A few minutes before each questioning, the Log says whom Ms Vane wants. Anyone nervous, scared, sad or in a bad mood will talk.',
-    `${listNames(LOW_NERVE.map((id) => CAST[id].name))} have weak nerves. A whisper steadies them, and so does a good mood.`,
-    'Carry the person she wants away while she is looking for them, and she settles for whoever is nearest her.',
+    'A few minutes before each questioning, the Log says whom Ms Vane wants. A tag over that person says whether they would talk right now.',
+    `${listNames(LOW_NERVE.map((id) => CAST[id].name))} have weak nerves and talk unless you whisper to them first. A whisper lasts all day.`,
+    'Anyone scared, sad or in a bad mood talks whatever you whisper. Cheer them up, or carry them away: Ms Vane settles for whoever is nearest her.',
     'Two people talking is too many. One is a risk the office can take.',
   ],
   help: [
-    'Whisper to each person before Ms Vane reaches them, for example "Stay calm, you know nothing about a tape".',
-    'Or carry the one she wants away and drop a steady person, like Dwight or Stanley, right beside her.',
+    'Whisper to each person Ms Vane wants before she reaches them, for example "Stay calm, you know nothing about a tape". Watch the tag over them turn to "steady now".',
+    'If the tag still says "would talk now", they are scared, sad or in a bad mood. Carry them away and drop a steady person, like Dwight or Stanley, right beside Ms Vane.',
     'Whisper to Michael before 13:20. He is always last.',
   ],
   suggest: {
@@ -324,14 +335,16 @@ export const SCREENING = {
   looking: (who: string) => `Ms Vane goes looking for ${who}.`,
   settles: (who: string, other: string) => `Ms Vane cannot find ${who}, so she settles for ${other}, who is nearest.`,
   held: (who: string) => `${who} kept the story straight.`,
-  talked: (who: string, k: number) => `${who} talked. Ms Vane writes it all down. ${k === 1 ? 'One person has talked; two would be too many.' : `${k} people have talked.`}`,
+  talked: (who: string, k: number, why: 'truth' | 'scared' | 'sad' | 'nervous' | 'mood' | 'nerve' | null = null) =>
+    `${who} talked${TALK_WHY[why ?? 'none']}. Ms Vane writes it all down. ${k === 1 ? 'One person has talked; two would be too many.' : `${k} people have talked.`}`,
   told: (who: string) => `${who} cannot keep a secret now, walks up to Ms Vane and tells her everything.`,
   leaked: (who: string) => `${who}'s secret went out to the whole office, and the plan to swap the tapes went out with it. Ms Vane has read it. That counts as one person talking.`,
   creedAside: 'Creed kept the story straight, and confessed to something else entirely.',
   callIn: 'Ms Vane calls everyone into the conference room for the screening.',
   caughtTwice: (who: string) => `Ms Vane caught ${who} at the case a second time. She keeps the case in her hand until the screening, with the wrong tape still in it.`,
   status: {
-    next: (q: number, k: number, who: string, time: string) => `Questioned ${q} of 5, ${k} talked. Next: ${who} at about ${time}.`,
+    next: (q: number, k: number, who: string, time: string, shaky: boolean | null = null) =>
+      `Questioned ${q} of 5, ${k} talked. Next: ${who} at about ${time}${shaky === null ? '' : shaky ? ', who would talk right now' : ', who is steady right now'}.`,
     nextUnknown: (q: number, k: number, time: string) => `Questioned ${q} of 5, ${k} talked. She questions someone else at about ${time}.`,
     now: (who: string, q: number, k: number) => `Ms Vane is questioning ${who}. Questioned ${q} of 5, ${k} talked.`,
     looking: (who: string) => `Ms Vane is looking for ${who}.`,
@@ -391,7 +404,7 @@ export const SCREENING = {
       ? ['Ms Vane is asking questions all morning.', 'Everyone has to keep their story straight until two.', 'Nobody knows anything about a tape. Nobody.']
       : ['The right tape is still not in the case.', 'Ms Vane is asking questions all morning.', 'Two o\'clock is getting nearer.'],
   tagVane: { looking: (who: string) => `looking for ${who}`, asking: (who: string) => `questioning ${who}` },
-  tagWanted: 'Ms Vane wants a word',
+  tagWanted: (talks: boolean) => (talks ? 'wanted: would talk now' : 'wanted: steady now'),
   warn: 'Today this makes someone tell Ms Vane everything. It counts as one person talking.',
 };
 

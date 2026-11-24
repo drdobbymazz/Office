@@ -544,6 +544,12 @@ describe('Episode 3, Friday: the screening', () => {
     expect(wouldTalk(s, 'dwight', true)).toBe(true);
     s.feel('creed', 'neutral', 1, 30);
     expect(wouldTalk(s, 'creed', false)).toBe(false);
+    // A whisper steadies nerves for the day: it covers plain nervousness, but not a fright or sadness.
+    s.feel('pam', 'nervous', 1, 60);
+    expect(wouldTalk(s, 'pam', false)).toBe(true);
+    expect(wouldTalk(s, 'pam', true)).toBe(false);
+    s.feel('pam', 'scared', 1, 60);
+    expect(wouldTalk(s, 'pam', true)).toBe(true);
   }, 60000);
 
   it('a low-nerve person she wants talks unless steadied by a whisper', async () => {
@@ -578,7 +584,8 @@ describe('Episode 3, Friday: the screening', () => {
     expect(shaky.length).toBeGreaterThanOrEqual(2);
     expect(left).not.toBeNull();
     expect(steadied).not.toBeNull();
-    expect(h.feed.some((t) => t.startsWith(`${CAST_NAME(left!)} talked.`))).toBe(true);
+    // The Log says why: weak nerves, and no whisper.
+    expect(h.feed.some((t) => t.startsWith(`${CAST_NAME(left!)} talked: weak nerves`))).toBe(true);
     expect(h.feed).toContain(`${CAST_NAME(steadied!)} kept the story straight.`);
     expect(st(h).cracks).toBe(1);
     expect(h.day.extraState('silent')).toBe('lost');
@@ -683,7 +690,8 @@ describe('Episode 3, Friday: the screening', () => {
     expect(h.day.nextBeat()).toBe(QUESTIONINGS[0] - 13);
     const who = await nextWanted(h);
     expect(h.feed).toContain(`At about 09:45 Ms Vane wants a word with ${CAST_NAME(who)}.`);
-    expect(h.day.marksUi()).toEqual(expect.arrayContaining([{ id: who, label: 'Ms Vane wants a word' }, { id: VANE, label: `looking for ${CAST_NAME(who)}` }]));
+    // The tag over the person she wants says whether they would talk if asked right now.
+    expect(h.day.marksUi()).toEqual(expect.arrayContaining([{ id: who, label: expect.stringMatching(/^wanted: (would talk|steady) now$/) }, { id: VANE, label: `looking for ${CAST_NAME(who)}` }]));
   }, 60000);
 });
 

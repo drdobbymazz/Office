@@ -502,7 +502,7 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
         display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: 0,
         border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left'
       }}>
-        <Label style={{ cursor: 'pointer' }}>How the week works</Label>
+        <Label style={{ cursor: 'pointer' }}>{`How ${(story.spanLabel ?? 'the week').toLowerCase()} works`}</Label>
         {/* The pixel heading font has no triangle glyphs: the kit's chevron, turned down when open. */}
         <GIcon name="chev-right" px={12} style={{ transform: howOpen ? 'rotate(90deg)' : 'none' }} />
       </button>
@@ -614,7 +614,7 @@ function Extras({ story }: { story: StoryUi }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <Label style={{ marginTop: 4 }}>
-        {saga ? 'Bonus goals: +3 standing each (everything stays free)' : `Extra goals: +${STANDING.extra} standing and +${EXTRA_INFLUENCE} influence each`}
+        {saga ? 'Bonus goals: +3 standing each (everything stays free)' : `Extra goals: +${STANDING.extra} ${story.standingMeaning ? (story.standingLabel ?? 'standing').toLowerCase() : 'standing'} and +${EXTRA_INFLUENCE} influence each`}
       </Label>
       {story.side.map((x) => <ExtraRow key={x.id} goal={x} live={false} worth={saga ? 3 : undefined} />)}
     </div>

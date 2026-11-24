@@ -176,6 +176,7 @@ export const HEIST_EPISODE: EpisodeDef = {
   stateKey: 'story.heist.state.v1',
   worldKey: 'story.heist.world.v1',
   blurb: HEIST_META.blurb,
+  standingMeaning: 'How well the office is hiding the switch from Corporate',
   spanLabel: HEIST_META.spanLabel,
   band: 'var(--cth-coral)',
   endHead: HEIST_META.endHead,

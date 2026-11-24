@@ -546,6 +546,7 @@ const WORKING = 'working at the case';
 /** The tile beside the case where someone sent to it stands. */
 export const CASE_SIDE: Tile = { x: 12, y: 7 };
 const CASE_FX = 'heist.case';
+const CASE_ITEM_FX = 'heist.case.item';
 
 interface SwitchHooks {
   /** Ms Vane cannot see the case right now. */
@@ -828,15 +829,18 @@ class TapeSwitch {
   }
 }
 
-/** Shows where the case sits on the conference table (a small warm light on the tabletop). */
+/** Shows the case where it sits on the conference table: the briefcase itself, in a small warm light. */
 function showCase(s: Sim, on: boolean): void {
   if (!on) {
     s.removeEffect(CASE_FX);
+    s.removeEffect(CASE_ITEM_FX);
     return;
   }
   if (s.effect(CASE_FX)) return;
   const f = feetOf(CASE_TILE);
   s.addEffect({ id: CASE_FX, kind: 'light', x: f.x, y: f.y - 6, radius: 14, color: 0xffc46b });
+  // Lifted off the floor line so it reads as lying on the tabletop, clear of the chairs.
+  s.addEffect({ id: CASE_ITEM_FX, kind: 'item', item: 'briefcase', x: f.x, y: f.y - 13 });
 }
 
 /**
@@ -1242,24 +1246,38 @@ const SCREENING_LONGEST = 30;
 /** More than this many talking loses the day. */
 const TALK_LIMIT = 1;
 const STEADY = new Set(['happy', 'amused', 'proud', 'determined']);
-const SHAKEN = new Set(['nervous', 'scared', 'sad']);
+
+/** Why someone would talk: the truth serum, a fright or sadness, a bad mood, or weak nerves nobody steadied. */
+export type TalkWhy = 'truth' | 'scared' | 'sad' | 'nervous' | 'mood' | 'nerve';
+
+/**
+ * Why this person would talk if questioned now, or null if they would keep the story straight.
+ * A whisper steadies nerves for the day: it covers weak nerves and plain nervousness, but not a
+ * fright, sadness or a bad mood (those need cheering up, or a swap).
+ */
+export function talkReason(s: Sim, id: CharId, steadied: boolean): TalkWhy | null {
+  const p = s.person(id);
+  if (!p) return null;
+  if (s.hasStatus(id, 'truth')) return 'truth';
+  if (p.emotion === 'scared') return 'scared';
+  if (p.emotion === 'sad') return 'sad';
+  if (p.emotion === 'nervous' && !steadied) return 'nervous';
+  if (p.mood < -0.3) return 'mood';
+  if (id === 'creed') return null;
+  const nerve = isCastId(id) ? CAST[id].temperament.nerve : 0.5;
+  if (nerve >= 0.5) return null;
+  return steadied || STEADY.has(p.emotion) ? null : 'nerve';
+}
 
 /** Would this person talk if questioned now? */
 export function wouldTalk(s: Sim, id: CharId, steadied: boolean): boolean {
-  const p = s.person(id);
-  if (!p) return false;
-  if (s.hasStatus(id, 'truth')) return true;
-  if (SHAKEN.has(p.emotion) || p.mood < -0.3) return true;
-  if (id === 'creed') return false;
-  const nerve = isCastId(id) ? CAST[id].temperament.nerve : 0.5;
-  if (nerve >= 0.5) return false;
-  return !(steadied || STEADY.has(p.emotion));
+  return talkReason(s, id, steadied) !== null;
 }
 
 type Ask =
   | { phase: 'idle' }
   | { phase: 'looking'; target: CharId; since: number; lostFor: number; settled: boolean }
-  | { phase: 'asking'; who: CharId; until: number; talks: boolean }
+  | { phase: 'asking'; who: CharId; until: number; talks: boolean; why: TalkWhy | null }
   | { phase: 'back' };
 
 class ScreeningRun implements ChapterRun {
@@ -1413,7 +1431,7 @@ class ScreeningRun implements ChapterRun {
       }
       return;
     }
-    if (this.ask.phase === 'asking' && s.time >= this.ask.until) this.finishAsk(this.ask.who, this.ask.talks);
+    if (this.ask.phase === 'asking' && s.time >= this.ask.until) this.finishAsk(this.ask.who, this.ask.talks, this.ask.why);
   }
 
   private nearestUnasked(v: SimPerson, not: CharId): CharId | null {
@@ -1430,8 +1448,9 @@ class ScreeningRun implements ChapterRun {
 
   private begin(who: CharId): void {
     const s = this.c.sim;
-    const talks = wouldTalk(s, who, this.whispered.has(who));
-    this.ask = { phase: 'asking', who, until: s.time + ASK_SECS, talks };
+    const why = talkReason(s, who, this.whispered.has(who));
+    const talks = why !== null;
+    this.ask = { phase: 'asking', who, until: s.time + ASK_SECS, talks, why };
     this.questioned.push(who);
     s.face(VANE, who);
     s.face(who, VANE);
@@ -1451,10 +1470,10 @@ class ScreeningRun implements ChapterRun {
     this.c.script(lines, { room: this.vane?.room, then: 'none' });
   }
 
-  private finishAsk(who: CharId | null, talks: boolean): void {
+  private finishAsk(who: CharId | null, talks: boolean, why: TalkWhy | null = null): void {
     const s = this.c.sim;
     if (who) {
-      if (talks) this.crack(who, SCREENING.talked(nameOf(who), this.cracks + (this.talkers.has(who) ? 0 : 1)));
+      if (talks) this.crack(who, SCREENING.talked(nameOf(who), this.cracks + (this.talkers.has(who) ? 0 : 1), why));
       else s.narrate(who === 'creed' ? SCREENING.creedAside : SCREENING.held(nameOf(who)), { icon: 'check', room: s.person(who)?.room, beat: true });
       const p = s.person(who);
       if (p && onFloor(s, p)) s.resume(who);
@@ -1624,8 +1643,9 @@ class ScreeningRun implements ChapterRun {
     const at = QUESTIONINGS[this.next];
     if (at !== undefined) {
       if (!this.wanted && this.next < QUESTIONINGS.length - 1) return { progress: base, status: SCREENING.status.nextUnknown(q, this.cracks, formatClock(at)) };
-      const who = this.wanted ? nameOf(this.wanted) : 'Michael';
-      return { progress: base, status: SCREENING.status.next(q, this.cracks, who, formatClock(at)) };
+      const id: CharId = this.wanted ?? 'michael';
+      const shaky = this.wanted ? wouldTalk(this.c.sim, id, this.whispered.has(id)) : null;
+      return { progress: base, status: SCREENING.status.next(q, this.cracks, nameOf(id), formatClock(at), shaky) };
     }
     return { progress: base, status: SCREENING.status.allAsked(q, this.cracks) };
   }
@@ -1639,7 +1659,9 @@ class ScreeningRun implements ChapterRun {
       out.push(label ? { id: VANE, label } : { id: VANE });
     }
     const wanted = this.ask.phase === 'looking' ? this.ask.target : this.wanted;
-    if (wanted && this.ask.phase !== 'asking' && this.c.sim.person(wanted)?.present) out.push({ id: wanted, label: SCREENING.tagWanted });
+    if (wanted && this.ask.phase !== 'asking' && this.c.sim.person(wanted)?.present) {
+      out.push({ id: wanted, label: SCREENING.tagWanted(wouldTalk(this.c.sim, wanted, this.whispered.has(wanted))) });
+    }
     const h = this.job && !this.job.done ? this.job.mark() : null;
     if (h && h.id !== wanted) out.push(h);
     return out;
