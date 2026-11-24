@@ -25,7 +25,7 @@ import {
   GUEST_SKINS, GUEST_STYLES
 } from './api';
 import type { CustomPower } from './api';
-import { cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanShifts, cleanText, lineKey } from './clean';
+import { cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanShifts, cleanStageAction, cleanText, lineKey } from './clean';
 import type { LineContext } from './clean';
 import { InstinctBrain, inferDelegateTone, isNegatedDirective, stripRoomPhrases } from './instinct';
 import type { LooseBank } from './instinct';
@@ -366,6 +366,8 @@ export class LlmBrain implements Brain {
           complies = typeof value?.complies === 'boolean' ? value.complies : this.instinct.decideCompliance(req, lines);
         }
       }
+      const stageAction = req.unleashed ? cleanStageAction(value?.stageAction, names, people) : undefined;
+      const rumor = req.unleashed ? cleanText(value?.rumor, 110) : '';
       return {
         lines: lines.slice(),
         summary: cleanText(value?.summary, 200) || this.instinct.summarise(req, lines, names),
@@ -373,10 +375,13 @@ export class LlmBrain implements Brain {
         plans: cleanPlans(value?.plans, names, people, this.rooms),
         ...(complies !== undefined ? { complies } : {}),
         ...(compliers !== undefined ? { compliers } : {}),
+        ...(stageAction ? { stageAction } : {}),
+        ...(rumor ? { rumor } : {}),
         source: 'model'
       };
     };
 
+    const baseTokens = (delTargets ? 170 : req.delegation ? 140 : 120) + 95 * maxLines;
     return this.run<SceneResult>({
       kind: 'scene',
       user: this.book.sceneUser(req, names),
@@ -387,10 +392,11 @@ export class LlmBrain implements Brain {
         minLines: req.minLines,
         maxLines,
         hasDelegation: !!req.delegation,
-        ...(delegationTargetNames ? { delegationTargets: delegationTargetNames } : {})
+        ...(delegationTargetNames ? { delegationTargets: delegationTargetNames } : {}),
+        ...(req.unleashed ? { unleashed: true } : {})
       }),
       temperature: this.temp(req.chaos),
-      maxTokens: (delTargets ? 170 : req.delegation ? 140 : 120) + 95 * maxLines,
+      maxTokens: baseTokens + (req.unleashed ? 95 : 0),
       signal: cb?.signal,
       onAttempt: () => {
         t0 = now();

@@ -5,7 +5,7 @@
 
 import { EMOTIONS, LINE_ACTS, PLAN_KINDS, SHIFT_KINDS } from '@/game/core/types';
 import type { CharId, EmotionId, LineAct, Plan, PlanKind, RelationShift, RoomId } from '@/game/core/types';
-import type { SceneLine } from './api';
+import { STAGE_ACTIONS, type SceneLine, type StageAction } from './api';
 import { NameMap, normName } from './names';
 
 /** Turns a room word into a room id (from the world), or null. */
@@ -149,9 +149,33 @@ export function cleanShifts(raw: unknown, speakers: NameMap, people: NameMap): R
     const change = typeof r.change === 'string' ? r.change.trim().toLowerCase() : '';
     if (!who || !about || who === about || !(SHIFT_KINDS as readonly string[]).includes(change)) continue;
     if (out.some((s) => s.who === who && s.about === about)) continue;
-    out.push({ who, about, change: change as RelationShift['change'] });
+    const note = cleanText(r.note, 70);
+    out.push({ who, about, change: change as RelationShift['change'], ...(note ? { note } : {}) });
   }
   return out.slice(0, 3);
+}
+
+const INTERPERSONAL_STAGE = new Set(['kiss', 'make_out', 'flirt', 'sneak_away', 'slap', 'shove', 'splash_drink', 'steal', 'hug']);
+
+export function cleanStageAction(raw: unknown, speakers: NameMap, people: NameMap): StageAction | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const kindRaw = typeof r.kind === 'string' ? r.kind.trim().toLowerCase() : '';
+  if (!kindRaw || kindRaw === 'none' || !(STAGE_ACTIONS as readonly string[]).includes(kindRaw)) return undefined;
+  const actor = speakers.resolve(r.actor);
+  if (!actor) return undefined;
+  let target = people.resolve(r.target);
+  if (target === actor) target = null;
+  if (INTERPERSONAL_STAGE.has(kindRaw) && !target) {
+    target = speakers.ids.find((id) => id !== actor) ?? null;
+    if (!target) return undefined;
+  }
+  return {
+    kind: kindRaw as StageAction['kind'],
+    actor,
+    target,
+    detail: cleanText(r.detail, 60)
+  };
 }
 
 /**

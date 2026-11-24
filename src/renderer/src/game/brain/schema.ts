@@ -5,7 +5,7 @@
 
 import { EMOTIONS, LINE_ACTS, PLAN_KINDS, SHIFT_KINDS, TARGET_ROOMS } from '@/game/core/types';
 import type { PlanKind } from '@/game/core/types';
-import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, DIRECTIVE_VERBS, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES } from './api';
+import { CUSTOM_KINDS, CUSTOM_LOOKS, CUSTOM_POWERS, CUSTOM_REACTIONS, CUSTOM_VIBES, DIRECTIVE_VERBS, GUEST_COLOURS, GUEST_SKINS, GUEST_STYLES, STAGE_ACTIONS } from './api';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -40,11 +40,16 @@ export interface SceneSchemaInput {
   hasDelegation?: boolean;
   /** First names of targets when 2+ people are asked/ordered together. */
   delegationTargets?: string[];
+  /** Adds stageAction, rumor, and shift notes when playing with Unleashed Model Mode. */
+  unleashed?: boolean;
 }
 
 export function sceneSchema(s: SceneSchemaInput): JsonSchema {
   const speakers = s.speakers.length ? s.speakers : ['Someone'];
   const people = dedupe([...speakers, ...s.people]);
+  const shiftObj = s.unleashed
+    ? obj({ who: oneOf(speakers), about: oneOf(people), change: oneOf(SHIFT_KINDS), note: str(70) })
+    : obj({ who: oneOf(speakers), about: oneOf(people), change: oneOf(SHIFT_KINDS) });
   const props: Record<string, JsonSchema> = {
     lines: arr(
       obj({
@@ -58,7 +63,7 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
       s.maxLines
     ),
     summary: str(200),
-    shifts: arr(obj({ who: oneOf(speakers), about: oneOf(people), change: oneOf(SHIFT_KINDS) }), 0, 2),
+    shifts: arr(shiftObj, 0, s.unleashed ? 3 : 2),
     plans: arr(
       obj({
         who: oneOf(speakers),
@@ -70,6 +75,15 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
       2
     )
   };
+  if (s.unleashed) {
+    props.stageAction = obj({
+      kind: oneOf(STAGE_ACTIONS),
+      actor: oneOf(speakers),
+      target: oneOf([...people, 'none']),
+      detail: str(60)
+    });
+    props.rumor = str(110);
+  }
   if (s.hasDelegation) props.complies = { type: 'boolean' };
   if (s.hasDelegation && s.delegationTargets && s.delegationTargets.length > 1) {
     props.compliers = arr(oneOf(s.delegationTargets), 0, s.delegationTargets.length);

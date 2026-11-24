@@ -249,6 +249,8 @@ export interface RelationShift {
   who: CharId;
   about: CharId;
   change: ShiftKind;
+  /** Optional custom relationship note written by the model. */
+  note?: string;
 }
 
 /** A gesture attached to a spoken line. */

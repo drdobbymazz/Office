@@ -108,7 +108,7 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
       else if (chemLabel && !love) text += `; ${chemLabel} ${oName} (chemistry ${chem}/100)`;
       return { about: o, text };
     });
-  const memories = core.memory.relevant(who, others, core.day, core.clock, 3);
+  const memories = core.memory.relevant(who, others, core.day, core.clock, 5);
   const brief: PersonBrief = {
     id: who,
     name,

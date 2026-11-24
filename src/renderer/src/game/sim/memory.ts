@@ -69,9 +69,9 @@ export class MemoryBook {
 
   /**
    * The most relevant few: recent and weighty, and above all ones that mention
-   * the people in `about`.
+   * the people in `about`, while preserving long-term multi-day takeaways.
    */
-  relevant(who: CharId, about: readonly CharId[], day: number, clock: number, n = 3): string[] {
+  relevant(who: CharId, about: readonly CharId[], day: number, clock: number, n = 5): string[] {
     const list = this.recent.get(who) ?? [];
     const names = about.map((a) => displayName(a).toLowerCase());
     const scored = list.map((m, i) => {
@@ -82,9 +82,11 @@ export class MemoryBook {
       return { s, text: m.text };
     });
     scored.sort((a, b) => b.s - a.s);
-    const out = scored.slice(0, n).map((x) => x.text);
     const lt = this.longTerm.get(who);
-    if (out.length < n && lt && lt.length) out.push(lt[lt.length - 1]);
+    const latestTakeaway = lt && lt.length ? lt[lt.length - 1] : '';
+    const recentLimit = latestTakeaway && n >= 2 ? n - 1 : n;
+    const out = scored.slice(0, recentLimit).map((x) => x.text);
+    if (latestTakeaway && out.length < n && !out.includes(latestTakeaway)) out.push(latestTakeaway);
     return out;
   }
 

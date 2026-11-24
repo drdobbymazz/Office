@@ -153,6 +153,18 @@ export interface SceneDelegation {
   depth?: number;
 }
 
+export const STAGE_ACTIONS = [
+  'none', 'kiss', 'make_out', 'flirt', 'sneak_away', 'strip', 'slap', 'shove', 'splash_drink', 'steal', 'hug', 'walk_out'
+] as const;
+export type StageActionKind = (typeof STAGE_ACTIONS)[number];
+
+export interface StageAction {
+  kind: Exclude<StageActionKind, 'none'>;
+  actor: CharId;
+  target: CharId | null;
+  detail: string;
+}
+
 /** "Write the next few lines of what these people say to each other." */
 export interface SceneRequest {
   id: string;
@@ -170,7 +182,9 @@ export interface SceneRequest {
   onlookers: string[];
   /** True things about the world right now: "The kitchen is on fire." */
   facts: string[];
-  /** The last few lines said in this place, oldest first. */
+  /** Rolling big events from today so the model can weave running callbacks. */
+  headlines?: string[];
+  /** The last few lines said in this place (or across rooms), oldest first. */
   recent: { who: string; say: string }[];
   /** How many lines to write. */
   minLines: number;
@@ -181,6 +195,8 @@ export interface SceneRequest {
   topic?: StoryTheme;
   /** Present when someone in the scene is ordering/asking another to perform an action. */
   delegation?: SceneDelegation;
+  /** Enables Unleashed Model Mode schema fields (stageAction, rumor, shift notes). */
+  unleashed?: boolean;
 }
 
 export interface SceneLine {
@@ -203,6 +219,10 @@ export interface SceneResult {
   complies?: boolean;
   /** For group/loudspeaker delegated requests: which targets agreed in character to perform the action. */
   compliers?: CharId[];
+  /** Optional physical act triggered organically by the model from the dialogue. */
+  stageAction?: StageAction;
+  /** Optional juicy office rumor spawned from this scene. */
+  rumor?: string;
   /** 'model' when the language model wrote it, 'instinct' when it fell back to canned lines. */
   source: 'model' | 'instinct';
 }
@@ -214,6 +234,8 @@ export interface MindsRequest {
   clock: string;
   people: (PersonBrief & { place: string; doing: string })[];
   facts: string[];
+  /** Rolling big events from today for callbacks. */
+  headlines?: string[];
   /** Plans they may choose from. */
   allowed: PlanKind[];
   /** Everyone they could pick as a target, with where that person is. */

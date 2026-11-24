@@ -19,7 +19,7 @@ import { WorldIndex } from './world';
 export type RequestKind = 'scene' | 'minds' | 'interpret' | 'directive' | 'report' | 'saga';
 
 /** Most words one person's entry in the system message may use. */
-export const PERSONA_WORDS = 45;
+export const PERSONA_WORDS = 68;
 
 const words = (s: string): number => (s.trim() ? s.trim().split(/\s+/).length : 0);
 const firstSentence = (s: string): string => {
@@ -35,8 +35,7 @@ const sentence = (s: string): string => {
 
 /**
  * One compact line per person: name and role, who they are, how they talk,
- * and one example line, trimmed to PERSONA_WORDS. Pieces are added in order of
- * importance and shortened to their first sentence when they do not fit.
+ * wants/quirk/fears, and up to two example lines, trimmed to PERSONA_WORDS.
  */
 export function personaEntry(p: BrainPersona): string {
   const head = `${firstName(p.name)}${p.role ? ` (${p.role})` : ''}:`;
@@ -54,8 +53,10 @@ export function personaEntry(p: BrainPersona): string {
   };
   add(p.summary);
   add(p.speech, 'Talks: ');
-  const ex = p.examples.find((e) => e.trim());
-  if (ex) {
+  add(p.wants, 'Wants: ');
+  add(p.quirk, 'Quirk: ');
+  add(p.fears, 'Fears: ');
+  for (const ex of p.examples.filter((e) => e.trim()).slice(0, 2)) {
     const piece = `"${ex.trim()}"`;
     if (words([...parts, piece].join(' ')) <= PERSONA_WORDS) parts.push(piece);
   }
@@ -270,7 +271,7 @@ export class PromptBook {
     if (p.state.length) parts.push(sentence(p.state.join(', ')).replace(/^./, (c) => c.toUpperCase()));
     if (p.goal) parts.push(`Wants: ${sentence(p.goal)}`);
     for (const f of p.feelings) if (f.text) parts.push(`About ${this.nameFor(f.about, names)}: ${sentence(f.text)}`);
-    if (p.memories.length) parts.push(`Remembers: ${p.memories.slice(0, 3).map((m) => m.trim().replace(/\.$/, '')).join('; ')}.`);
+    if (p.memories.length) parts.push(`Remembers: ${p.memories.slice(0, 5).map((m) => m.trim().replace(/\.$/, '')).join('; ')}.`);
     if (p.secret) parts.push(`Secret (it may slip out now): ${sentence(p.secret)}`);
     if (p.hidden) parts.push(`Hidden from everyone, shows only as nerves unless they cannot lie: ${sentence(p.hidden)}`);
     return parts.join(' ');
@@ -300,7 +301,8 @@ export class PromptBook {
     for (const p of req.people) out.push(this.personLines(p, names));
     if (req.onlookers.length) out.push(`Also here, not speaking: ${req.onlookers.join(', ')}.`);
     if (req.facts.length) out.push(`True right now: ${req.facts.map(sentence).join(' ')}`);
-    const recent = req.recent.slice(-6);
+    if (req.headlines?.length) out.push(`Today's big office headlines: ${req.headlines.slice(-4).map(sentence).join(' ')}`);
+    const recent = req.recent.slice(-8);
     if (recent.length) {
       out.push('Said just before:');
       for (const r of recent) out.push(`${r.who}: ${r.say}`);
@@ -403,6 +405,14 @@ export class PromptBook {
     } else if (/\b(strip|hookup|hooking up|quickie|hot and bothered|sexual tension|hands-on|shamelessly|secret office fling|scandal|flirt)\b/.test(spicyText)) {
       out.push('Tone cue: bold R-rated office sitcom banter - lean into sexual tension, crude in-character jokes, lust, or scathing shutdowns when chemistry is zero.');
     }
+    if (req.unleashed) {
+      out.push(
+        'UNLEASHED SCENE CONTROLS: let banter escalate naturally with interruptions and callbacks. ' +
+        'For any shift include a sharp 1-phrase custom "note" (e.g. "fuming she caught them in the annex"). ' +
+        'Set "stageAction.kind" to "none" for normal talk, or pick kiss/make_out/flirt/sneak_away/strip/slap/shove/splash_drink/steal/hug/walk_out ONLY if the scene genuinely erupts into that real physical act right now. ' +
+        'Optionally set "rumor" to one spicy sentence other rooms will gossip about, else "".'
+      );
+    }
     const who = req.people.map((p) => names.name(p.id));
     out.push(who.length > 1 ? `Write ${count}, taking turns: ${who.join(', ')}.` : `Write ${count}, all said by ${who[0] ?? 'them'}.`);
     return out.join('\n');
@@ -414,6 +424,7 @@ export class PromptBook {
     out.push('Each person is on their own:');
     for (const p of req.people) out.push(this.personLines(p, names, `in ${p.place}, ${p.doing || 'doing nothing much'}`));
     if (req.facts.length) out.push(`True right now: ${req.facts.map(sentence).join(' ')}`);
+    if (req.headlines?.length) out.push(`Today's big headlines: ${req.headlines.slice(-4).map(sentence).join(' ')}`);
     if (req.others.length) out.push(`People they could go to: ${req.others.map((o) => `${others.name(o.id)} (${o.place})`).join(', ')}.`);
     out.push(`Plans allowed now: ${req.allowed.join(', ')}.`);
     out.push(`Write one entry for each of: ${req.people.map((p) => names.name(p.id)).join(', ')}.`);

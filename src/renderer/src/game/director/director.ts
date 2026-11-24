@@ -12,7 +12,7 @@
 // The sim keeps the office moving by itself in between. The director only
 // ever asks the sim to do things through its public surface.
 
-import type { Brain, DelegateTone, DirectiveRequest, DirectiveResult, InterpretResult, MindResult, PersonBrief, ReportResult, SceneDelegation, SceneLine, SceneRequest, SceneResult, SceneTrigger, StoryReportInfo, StoryTheme } from '@/game/brain/api';
+import type { Brain, DelegateTone, DirectiveRequest, DirectiveResult, InterpretResult, MindResult, PersonBrief, ReportResult, SceneDelegation, SceneLine, SceneRequest, SceneResult, SceneTrigger, StageAction, StoryReportInfo, StoryTheme } from '@/game/brain/api';
 import { isNegatedDirective, isStopCommand, normalizeDelegatedCommand, splitCompoundDirective } from '@/game/brain/instinct';
 import { detectChaos, storyThemeOf } from '@/game/brain/instinctRules';
 import type { ScriptLine } from '@/game/story/types';
@@ -162,6 +162,11 @@ export class Director {
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   private lastAutoRendezvousAt = -999;
+  private lastModelActionAt = -999;
+  private lastModelRumorAt = -999;
+  private lastModelActivityAt = -999;
+  private dayHeadlines: string[] = [];
+  private lastSpokenByPerson = new Map<CharId, { who: string; say: string; at: number }>();
   /** Free-text events currently on the floor, to be cleared when their time is up. */
   /** What the Anything power put on the floor: guests, creatures, things (director/guests.ts). */
   private guests: Guests;
@@ -232,6 +237,11 @@ export class Director {
     this.breaking = null;
     this.drives.clear();
     this.lastAutoRendezvousAt = -999;
+    this.lastModelActionAt = -999;
+    this.lastModelRumorAt = -999;
+    this.lastModelActivityAt = -999;
+    this.dayHeadlines = [];
+    this.lastSpokenByPerson.clear();
   }
 
   /** Story mode: what the office is talking about now (empty in the sandbox). */
@@ -697,10 +707,11 @@ export class Director {
       // Conversations come first. A round of private thoughts costs a slow model
       // twenty seconds, so it waits for a quiet moment and happens less often.
       const slow = this.slow;
-      const owed = this.scenesSinceMinds >= (slow ? 3 : 1);
+      const model = this.brain.autonomous && this.brain.kind !== 'instinct';
+      const owed = this.scenesSinceMinds >= (slow ? (model ? 2 : 3) : 1);
       if (this.queue.length && !owed) this.mindsAt = now + 3;
       else {
-        this.mindsAt = now + (slow ? 70 + this.api.rng() * 30 : 28 + this.api.rng() * 14);
+        this.mindsAt = now + (slow ? (model ? 45 : 70) + this.api.rng() * (model ? 20 : 30) : (model ? 24 : 28) + this.api.rng() * (model ? 12 : 14));
         this.scenesSinceMinds = 0;
         this.mindsRound(slow ? 2 : 3);
       }
@@ -726,7 +737,17 @@ export class Director {
     this.breakNews(fresh, now, false);
   }
 
+  private rememberHeadline(text: string): void {
+    const clean = text.trim();
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (this.dayHeadlines.some((h) => h.toLowerCase() === key)) return;
+    this.dayHeadlines.push(clean);
+    if (this.dayHeadlines.length > 8) this.dayHeadlines.shift();
+  }
+
   private breakNews(text: string, now: number, topic: boolean): void {
+    this.rememberHeadline(text);
     this.breaking = { fact: text, at: now, scenes: 0, topic };
     const r = this.running;
     if (r && r.ask.trigger === 'ambient' && !r.fromPlayer && !r.releasedAt) this.stopScene(true);
@@ -1043,10 +1064,21 @@ export class Director {
       const line: [string, string] = ['conviction', `${who.name} has been sure all day that "${sure.text}", and brings it up with ${other.name} again.`];
       topics.push(line, line);
     }
-    topics.push(['doing', `A quiet moment in ${place}. ${a.name} is ${a.doing} and ${b.name} is ${b.doing}.`]);
-    if (clock < 10 * 60) topics.push(['early', `It is early and nobody in ${place} has done any work yet. ${a.name} says so to ${b.name}.`]);
-    else if (clock >= 11 * 60 + 30 && clock < 13 * 60) topics.push(['lunch', `It is nearly lunch. ${a.name} and ${b.name} are talking about anything except work.`]);
-    else if (clock >= 15 * 60 + 30) topics.push(['late', `The afternoon is dragging in ${place}. ${a.name} wants to go home and says so to ${b.name}.`]);
+    if (this.brain.kind !== 'instinct') {
+      topics.push([
+        'emergent',
+        `${a.name} (${a.emotion}) and ${b.name} (${b.emotion}) cross paths in ${place}. Let them spark a natural conversation grounded in their real feelings, crushes, grudges, memories, or today's office drama.`
+      ]);
+      if (this.dayHeadlines.length) {
+        const hl = this.dayHeadlines[Math.floor(rng() * this.dayHeadlines.length)];
+        topics.push(['headline', `${a.name} and ${b.name} react in ${place} to today's office headline: ${hl}`]);
+      }
+    } else {
+      topics.push(['doing', `A quiet moment in ${place}. ${a.name} is ${a.doing} and ${b.name} is ${b.doing}.`]);
+      if (clock < 10 * 60) topics.push(['early', `It is early and nobody in ${place} has done any work yet. ${a.name} says so to ${b.name}.`]);
+      else if (clock >= 11 * 60 + 30 && clock < 13 * 60) topics.push(['lunch', `It is nearly lunch. ${a.name} and ${b.name} are talking about anything except work.`]);
+      else if (clock >= 15 * 60 + 30) topics.push(['late', `The afternoon is dragging in ${place}. ${a.name} wants to go home and says so to ${b.name}.`]);
+    }
     // Not the same kind of chat twice running.
     const fresh = topics.filter((t) => t[0] !== this.lastTopic);
     const [kind, why] = (fresh.length ? fresh : topics)[Math.floor(rng() * (fresh.length || topics.length))];
@@ -1146,6 +1178,9 @@ export class Director {
       r.spoken += 1;
       r.dotted = false;
       this.lastSpoke.set(line.who, now);
+      if (speech.text) {
+        this.lastSpokenByPerson.set(line.who, { who: this.api.person(line.who)?.name ?? line.who, say: speech.text, at: now });
+      }
       if (r.topic) this.storySaid.add(`${line.who}|${speech.text}`);
       const gap = 0.25 + this.api.rng() * 0.35;
       r.nextAt = now + speech.durationMs / 1000 + gap;
@@ -1325,15 +1360,19 @@ export class Director {
     this.running = null;
     this.scenesSinceMinds += 1;
     if (res) {
+      if (res.source === 'model') this.lastModelActivityAt = this.api.time;
       const onlookers = this.api.peopleIn(r.room).filter((p) => p.present && !r.people.includes(p.id)).map((p) => p.id);
       // Memories and feelings are for the staff: a guest from the Anything power comes and goes.
-      if (res.summary) this.api.remember([...r.people, ...onlookers].filter((id) => isCastId(id)), res.summary);
+      if (res.summary) {
+        this.api.remember([...r.people, ...onlookers].filter((id) => isCastId(id)), res.summary);
+        if (r.ask.priority >= 8 || res.stageAction || res.rumor) this.rememberHeadline(res.summary);
+      }
       for (const s of res.shifts) {
         if (s.who === s.about || !isCastId(s.who) || !isCastId(s.about)) continue;
         const base = SHIFT_DELTA[s.change] ?? 0;
         // Story mode: today's chapter may adjust (or ignore) the change while it counts progress itself.
         const delta = this.opts.vetoShift ? this.opts.vetoShift(s.who, s.about, base) : base;
-        if (delta) this.api.shiftBond(s.who, s.about, delta, res.summary);
+        if (delta) this.api.shiftBond(s.who, s.about, delta, s.note || res.summary);
         if (s.change === 'fancies') {
           this.api.shiftChemistry(s.who, s.about, 14);
           if (this.api.bond(s.about, s.who) >= 0) this.api.shiftChemistry(s.about, s.who, 6);
@@ -1349,6 +1388,15 @@ export class Director {
           this.api.addStatus(p0, 'aroused', 45, p1);
           this.api.addStatus(p1, 'aroused', 45, p0);
         }
+      }
+      if (res.rumor && this.api.time - this.lastModelRumorAt >= 60) {
+        this.lastModelRumorAt = this.api.time;
+        this.api.setFact('rumor:model', `Office gossip: ${res.rumor}`, 180);
+        this.api.narrate(`Rumor spreads: ${res.rumor}`, { kind: 'event', icon: 'rumour', room: r.room });
+        this.rememberHeadline(res.rumor);
+      }
+      if (res.stageAction) {
+        this.executeModelStageAction(res.stageAction);
       }
       // One plan per conversation, and one follow-up at most: a plan to go straight
       // back to the person you were just talking to is only allowed once, or the
@@ -1520,6 +1568,7 @@ export class Director {
     const onlookers = this.api.peopleIn(room).filter((p) => p.present && !ids.includes(p.id)).map((p) => p.name).slice(0, 5);
     const solo = ids.length === 1;
     const lively = this.api.chaos > 45;
+    const modelActive = this.brain.kind !== 'instinct';
     const topic = this.topicFor(ask);
     const facts = this.sim.facts().slice(0, 10);
     if (
@@ -1532,6 +1581,24 @@ export class Director {
     if (getWorldLocation() === 'park') {
       facts.push('Everyone is outdoors at Scranton Community Park, away from the usual office rules.');
     }
+    const recent = this.sim.recentLines(room, modelActive ? 7 : 5);
+    if (modelActive && recent.length < 2) {
+      const seenLine = new Set(recent.map((l) => `${l.who}:${l.say}`));
+      for (const id of ids) {
+        const last = this.lastSpokenByPerson.get(id);
+        if (last && this.api.time - last.at <= 45 && !seenLine.has(`${last.who}:${last.say}`)) {
+          recent.push({ who: last.who, say: last.say });
+          seenLine.add(`${last.who}:${last.say}`);
+        }
+      }
+    }
+    const dramatic = ask.priority >= 8 && !solo;
+    const defaultMin = dramatic && modelActive ? 3 : solo ? 1 : 2;
+    const defaultMax = solo
+      ? 2
+      : modelActive
+        ? (dramatic ? (ids.length >= 3 ? 6 : 5) : lively ? 5 : 4)
+        : lively ? 4 : 3;
     return {
       id,
       day: this.api.day,
@@ -1542,10 +1609,12 @@ export class Director {
       people,
       onlookers,
       facts,
-      recent: this.sim.recentLines(room, 5),
-      minLines: ask.minLines ?? (solo ? 1 : 2),
-      maxLines: ask.maxLines ?? (solo ? 2 : lively ? 4 : 3),
+      ...(modelActive && this.dayHeadlines.length ? { headlines: this.dayHeadlines.slice(-4) } : {}),
+      recent,
+      minLines: ask.minLines ?? defaultMin,
+      maxLines: ask.maxLines ?? defaultMax,
       chaos: Math.min(1, this.api.chaos / 100),
+      ...(modelActive ? { unleashed: true } : {}),
       ...(topic ? { topic } : {}),
       ...(ask.delegation ? { delegation: ask.delegation } : {})
     };
@@ -1582,6 +1651,7 @@ export class Director {
           return { ...this.sim.briefFor(p.id, withIds), place: roomDef(p.room).name, doing: p.doing };
         }),
         facts: this.sim.facts().slice(0, 8),
+        ...(this.dayHeadlines.length ? { headlines: this.dayHeadlines.slice(-4) } : {}),
         allowed: [...PLAN_KINDS],
         others,
         chaos: Math.min(1, this.api.chaos / 100)
@@ -1598,6 +1668,7 @@ export class Director {
   }
 
   private applyMinds(minds: MindResult[]): void {
+    this.lastModelActivityAt = this.api.time;
     let shown = 0;
     for (const m of minds) {
       const p = this.api.person(m.who);
@@ -1654,9 +1725,79 @@ export class Director {
     }, raw, 'cue', 0);
   }
 
-  /** An idle thought from the written bank, so the office has life while the model is busy or absent. */
+  /** Execute a physical act triggered organically by the model from scene dialogue. */
+  private executeModelStageAction(act: StageAction): boolean {
+    if (this.api.time - this.lastModelActionAt < 35) return false;
+    if (this.opts.pinned?.(act.actor) || (act.target && this.opts.pinned?.(act.target))) return false;
+    const grave = new Set<StageAction['kind']>(['slap', 'shove', 'splash_drink', 'steal', 'walk_out']);
+    if (this.opts.carefulOrders?.() && grave.has(act.kind)) return false;
+    const a = this.api.person(act.actor);
+    if (!a || !a.present || this.api.hasStatus(act.actor, 'eliminated') || this.api.hasStatus(act.actor, 'quit')) return false;
+    const t = act.target ? this.api.person(act.target) : undefined;
+    if (act.target && (!t || !t.present || this.api.hasStatus(act.target, 'eliminated') || this.api.hasStatus(act.target, 'quit'))) return false;
+    const tName = t?.name ?? 'someone';
+    let res: DirectiveResult;
+    let raw: string;
+    switch (act.kind) {
+      case 'kiss':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `kisses ${tName}`, source: 'model' };
+        raw = `kiss ${tName}`;
+        break;
+      case 'make_out':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `makes out with ${tName}`, source: 'model' };
+        raw = `make out with ${tName}`;
+        break;
+      case 'flirt':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `flirts shamelessly with ${tName}`, source: 'model' };
+        raw = `flirt with ${tName}`;
+        break;
+      case 'hug':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `pulls ${tName} into a close hug`, source: 'model' };
+        raw = `hug ${tName}`;
+        break;
+      case 'sneak_away':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `sneaks away with ${tName}`, source: 'model' };
+        raw = `sneak away with ${tName}`;
+        break;
+      case 'strip':
+        res = { verb: 'expose', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'strips completely naked', source: 'model' };
+        raw = act.target ? `strip naked in front of ${tName}` : 'strip naked';
+        break;
+      case 'slap':
+        res = { verb: 'knockout', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `slaps ${tName}`, source: 'model' };
+        raw = `slap ${tName}`;
+        break;
+      case 'shove':
+        res = { verb: 'shove', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `shoves ${tName}`, source: 'model' };
+        raw = `shove ${tName}`;
+        break;
+      case 'splash_drink':
+        res = { verb: 'shove', targetPerson: act.target, targetRoom: null, power: 'none', item: 'coffee', summary: `splashes coffee on ${tName}`, source: 'model' };
+        raw = `splash coffee on ${tName}`;
+        break;
+      case 'steal': {
+        const item = act.detail || 'stapler';
+        res = { verb: 'steal', targetPerson: act.target, targetRoom: null, power: 'none', item, summary: `snatches ${tName}'s ${item}`, source: 'model' };
+        raw = `steal ${tName}'s ${item}`;
+        break;
+      }
+      case 'walk_out':
+        res = { verb: 'walk_out', targetPerson: null, targetRoom: null, power: 'none', item: '', summary: 'storms out for the day', source: 'model' };
+        raw = 'quit';
+        break;
+      default:
+        return false;
+    }
+    this.lastModelActionAt = this.api.time;
+    return this.directives.start(act.actor, res, raw, 'cue', 0);
+  }
+
+  /** An idle thought from the written bank, only when no autonomous model is actively running the show. */
   private async musing(): Promise<void> {
     if (this.api.chaos > 60) return;
+    if (this.brain.kind !== 'instinct' && this.brain.autonomous) {
+      if (this.running || this.sideN > 0 || this.api.time - this.lastModelActivityAt < 55) return;
+    }
     const now = this.api.time;
     const idle = this.api.people().filter((p) => p.present && p.available && p.isCast && !p.speaking && now - (this.lastSpoke.get(p.id) ?? -99) > 20);
     if (!idle.length) return;
