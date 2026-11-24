@@ -78,7 +78,8 @@ While you play:
   after you have failed that day once, next to "Stuck? Ways that work" on the card.
 - In the story, a whisper or an order is read by its plain words. With the model online, the words and the
   model must agree before anyone is hurt, quits or is locked away, so an innocent sentence cannot wreck a day.
-  A deliberate order ("quit your job") still works.
+  A mild order stays mild ("follow Jim" is never an attack), and nobody is removed for the day unless the
+  words say so ("punch Jim" is never an elimination). A deliberate order ("quit your job") still works.
 
 The story saves itself separately from the sandbox. Announcements that name a room send people there, and
 people you drop stay put for a while: both work in the sandbox too.

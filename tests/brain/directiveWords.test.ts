@@ -86,6 +86,30 @@ describe('typed orders in story mode: a careful reading', () => {
     expect((await ask('punch Basil', false)).verb).toBe('knockout');
   });
 
+  it('a mild physical order is not turned into a grave one', async () => {
+    // "follow" is a real order, and it is not an attack. The model alone cannot make it one.
+    reply = says('knockout');
+    expect((await ask('follow Basil', true)).verb).toBe('follow');
+    expect((await ask('follow Basil', false)).verb).toBe('knockout');
+    reply = says('drag');
+    expect((await ask('flirt with Basil', true)).verb).toBe('romance');
+    reply = says('lock_in');
+    expect((await ask('guard Basil', true)).verb).toBe('guard');
+  });
+
+  it('removing someone for the day needs the words to say exactly that', async () => {
+    reply = says('eliminate');
+    expect((await ask('punch Basil', true)).verb).toBe('knockout');
+    expect((await ask('kill Basil', true)).verb).toBe('eliminate');
+    reply = says('walk_out');
+    expect((await ask('shove Basil', true)).verb).toBe('shove');
+  });
+
+  it('between two grave readings of grave words, the model may still choose', async () => {
+    reply = says('drag');
+    expect((await ask('shove Basil', true)).verb).toBe('drag');
+  });
+
   it('outside story mode the model may read between the lines', async () => {
     reply = says('walk_out');
     expect((await ask('I have had enough of all of you, goodbye forever.', false)).verb).toBe('walk_out');

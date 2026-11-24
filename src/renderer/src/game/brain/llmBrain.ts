@@ -79,6 +79,8 @@ interface RunSpec<T> {
 
 /** Readings that take a person out of the day or wreck something: never accepted from the model alone in story mode. */
 const GRAVE_VERBS = new Set<DirectiveVerb>(['eliminate', 'knockout', 'walk_out', 'sabotage', 'lock_in', 'drag', 'trigger_power', 'shove', 'steal']);
+// The two that take someone out of the day for good. In story mode the plain words must say exactly this.
+const REMOVAL_VERBS = new Set<DirectiveVerb>(['eliminate', 'walk_out']);
 
 export class LlmBrain implements Brain {
   readonly kind: BrainSettings['provider'];
@@ -565,10 +567,13 @@ export class LlmBrain implements Brain {
     if (physicalPriority.has(base.verb) && (verb === 'social' || verb === 'go_to') && !needsAgreement) {
       verb = base.verb;
     }
-    // Story mode: a model may not escalate. When the plain words carry no physical order at all, a
-    // reading that removes someone from the day or wrecks something is the model's invention.
-    if (careful && GRAVE_VERBS.has(verb) && !physicalPriority.has(base.verb)) {
-      verb = base.verb;
+    // Story mode: a model may not escalate. A reading that hurts someone, removes them or wrecks
+    // something stands only when the plain words are that grave too. "follow Jim" stays following,
+    // whatever the model makes of it. Removing someone for the day needs the words to say exactly that:
+    // "punch Jim" can never become an elimination.
+    if (careful && GRAVE_VERBS.has(verb)) {
+      const wordsAgree = REMOVAL_VERBS.has(verb) ? base.verb === verb : GRAVE_VERBS.has(base.verb);
+      if (!wordsAgree) verb = base.verb;
     }
     // Keep self-exposure (stripping/flashing) on its own staging path rather than collapsing into interpersonal romance.
     if (base.verb === 'expose' && verb === 'romance') {
