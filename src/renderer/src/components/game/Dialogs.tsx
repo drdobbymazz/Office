@@ -421,7 +421,7 @@ function Opening({ vp, story, onNext }: { vp: Viewport; story: StoryUi; onNext: 
             // A new episode starts here: its title banner before chapter 1.
             <div className="sc-drop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '16px', padding: '4px 6px 2px', background: 'var(--cth-ink-900)', color: 'var(--cth-cream-50)' }}>
-                {(story.episodeName ?? STORY_TITLE).toUpperCase()}
+                {(story.episodeBanner ?? story.episodeName ?? STORY_TITLE).toUpperCase()}
               </span>
               <span style={{ fontSize: 14, lineHeight: '17px', color: 'var(--cth-ink-500)' }}>
                 {story.episodeBlurb ?? 'A story in five days, Monday to Friday'}
@@ -529,7 +529,9 @@ function Briefing({ vp, story, onBack }: { vp: Viewport; story: StoryUi; onBack:
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <GIcon name="branch" px={16} style={{ marginTop: 1 }} />
               <span style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
-                Standing is {STANDING_NOTE.charAt(0).toLowerCase() + STANDING_NOTE.slice(1)}. {MARKS_NOTE}
+                {story.standingMeaning
+                  ? `${story.standingLabel ?? 'Standing'}: ${story.standingMeaning.charAt(0).toLowerCase() + story.standingMeaning.slice(1)}. ${story.endingRule ?? ''}`
+                  : <>Standing is {STANDING_NOTE.charAt(0).toLowerCase() + STANDING_NOTE.slice(1)}. {MARKS_NOTE}</>}
               </span>
             </div>
           </>
@@ -922,7 +924,7 @@ function ResultPage({ vp, story }: { vp: Viewport; story: StoryUi }) {
     <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <GIcon name="branch" px={16} />
-        <Label style={{ flex: 1 }}>Branch standing</Label>
+        <Label style={{ flex: 1 }}>{story.standingMeaning ? (story.standingLabel ?? 'Standing') : 'Branch standing'}</Label>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontFamily: 'var(--cth-font-mono)' }}>
         <span style={{ fontSize: 24, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>{Math.round(result.standingBefore)}</span>
@@ -934,7 +936,9 @@ function ResultPage({ vp, story }: { vp: Viewport; story: StoryUi }) {
       </div>
       <StandingBar value={shownStanding} from={result.standingBefore} h={16} style={{ margin: '2px 0' }} />
       <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-        {STANDING_NOTE}: <span style={{ color: 'var(--cth-ink-700)' }}>{standingWord(done ? result.standingAfter : shownStanding).toLowerCase()}.</span>
+        {story.standingMeaning
+          ? `${story.standingMeaning}.`
+          : <>{STANDING_NOTE}: <span style={{ color: 'var(--cth-ink-700)' }}>{standingWord(done ? result.standingAfter : shownStanding).toLowerCase()}.</span></>}
       </div>
       <div className={flipped && !seen ? 'sc-flip' : undefined} style={{ marginTop: 4 }}>
         <WeekStrip week={week} current={story.chapter} />

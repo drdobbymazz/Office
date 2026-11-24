@@ -30,8 +30,15 @@ export interface EpisodeDef {
   readonly standingStart: number;
   readonly stateKey: string;
   readonly worldKey: string;
+  /** The title banner on the episode's first card. Defaults to the title. */
+  readonly banner?: string;
   /** One line under the title banner on the episode's first card. */
   readonly blurb: string;
+  /**
+   * What this episode's standing number means, in a few plain words ("How well the outing is going").
+   * When absent the cards use Episode 1's own wording for Branch standing.
+   */
+  readonly standingMeaning?: string;
   /** What the whole episode is called on the report and ending cards ("The week"). */
   readonly spanLabel: string;
   /** The episode's colour for its cards (a CSS colour). */
@@ -63,6 +70,7 @@ export const OFFICE_EPISODE: EpisodeDef = {
   standingStart: STANDING_START,
   stateKey: 'story.state.v1',
   worldKey: 'story.world.v1',
+  banner: STORY_TITLE,
   blurb: 'A story in five days, Monday to Friday',
   spanLabel: 'The week',
   band: 'var(--cth-lemon)',
@@ -118,6 +126,7 @@ export const PARK_EPISODE: EpisodeDef = {
   stateKey: 'story.park.state.v1',
   worldKey: 'story.park.world.v1',
   blurb: 'An outdoor outing in three acts',
+  standingMeaning: 'How well the outing is going',
   spanLabel: 'The outing',
   band: 'var(--cth-mint)',
   endHead: 'LATE AFTERNOON',

@@ -134,8 +134,12 @@ export interface StoryUi {
   standingLabel?: string;
   standingNote?: string;
   endingRule?: string;
+  /** The title banner on the episode's first card ("CLOSING TIME"); absent: the episode's name. */
+  episodeBanner?: string;
   /** One line under the episode's title banner on its first card ("A story in five days, Monday to Friday"). */
   episodeBlurb?: string;
+  /** What this episode's standing number means, in plain words; absent: Episode 1's Branch standing wording. */
+  standingMeaning?: string;
   /** What the whole episode is called on the report and ending cards ("The week", "The outing", "The job"). */
   spanLabel?: string;
   /** The episode's colour for card bands (a CSS colour). */

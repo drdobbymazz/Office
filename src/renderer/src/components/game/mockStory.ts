@@ -396,6 +396,7 @@ export function buildStory(o: BuildOpts): StoryUi {
     // The first episode's own labels, as the real story fills them (episodes.ts).
     episodeId: 'office',
     episodeName: 'Office',
+    episodeBanner: 'Closing Time',
     unitLabel: 'Day',
     episodeBlurb: 'A story in five days, Monday to Friday',
     spanLabel: 'The week',

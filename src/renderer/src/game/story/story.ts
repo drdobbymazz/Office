@@ -411,7 +411,9 @@ export class Story {
     const next = nextEpisode(ep.id);
     const marks = day ? day.marksUi() : null;
     return {
+      episodeBanner: ep.banner ?? ep.title,
       episodeBlurb: ep.blurb,
+      ...(ep.standingMeaning ? { standingMeaning: ep.standingMeaning } : {}),
       spanLabel: ep.spanLabel,
       band: ep.band,
       endHead: ep.endHead,
