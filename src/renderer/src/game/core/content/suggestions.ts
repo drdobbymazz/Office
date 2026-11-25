@@ -34,7 +34,10 @@ export const SUGGESTIONS: Suggestions = {
     '{other} is about to get fired, and only you know.',
     'Your chair has been swapped with an identical chair.',
     'You owe {other} an apology.',
-    'Everyone is laughing at your shoes.'
+    'Everyone is laughing at your shoes.',
+    'You know a dirty secret about {other} that could make them obey anything.',
+    'Nobody in this office can stop staring if you strip right now.',
+    '{other} secretly wants you to take charge and tie them up.'
   ],
   announcements: [
     'The fridge will be emptied at noon. Everything goes.',
@@ -105,6 +108,9 @@ export const SUGGESTIONS: Suggestions = {
     'Sing a song about {other}.',
     'Make peace with {other}.',
     'Blame {other} for everything that has gone wrong today.',
-    'Go home early without telling anyone.'
+    'Go home early without telling anyone.',
+    'Handcuff {other} and dare them to beg to be let loose.',
+    'Blackmail {other} with their juiciest secret.',
+    'Climb onto the table and put on a shameless strip show.'
   ]
 };

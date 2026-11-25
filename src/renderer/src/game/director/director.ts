@@ -169,6 +169,7 @@ export class Director {
   private lastSpoke = new Map<CharId, number>();
   private lastMinded = new Map<CharId, number>();
   private lastAutoRendezvousAt = -999;
+  private lastAutoWildAt = -999;
   private lastModelActionAt = -999;
   private lastModelRumorAt = -999;
   private lastModelActivityAt = -999;
@@ -244,6 +245,7 @@ export class Director {
     this.breaking = null;
     this.drives.clear();
     this.lastAutoRendezvousAt = -999;
+    this.lastAutoWildAt = -999;
     this.lastModelActionAt = -999;
     this.lastModelRumorAt = -999;
     this.lastModelActivityAt = -999;
@@ -1072,6 +1074,21 @@ export class Director {
     if (a.statuses.some((s) => s.kind === 'scandal') || b.statuses.some((s) => s.kind === 'scandal')) {
       topics.push(['scandal', `Explicit office sex-and-exposure gossip is ripping through ${place} around ${a.name} and ${b.name} after an earlier incident.`]);
     }
+    if (a.statuses.some((s) => s.kind === 'bound') || b.statuses.some((s) => s.kind === 'bound')) {
+      topics.push(['bound', `Someone in ${place} is still playfully cuffed in front of everyone while they trade cheeky safe-word jokes.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'dominated') || b.statuses.some((s) => s.kind === 'dominated')) {
+      topics.push(['dominated', `The dom/sub power-play energy between ${a.name} and ${b.name} has everyone in ${place} staring.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'blackmailed') || b.statuses.some((s) => s.kind === 'blackmailed')) {
+      topics.push(['blackmailed', `Someone in ${place} is sweating bullets over blackmail leverage and trying to buy silence.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'voyeur') || b.statuses.some((s) => s.kind === 'voyeur')) {
+      topics.push(['voyeur', `Everyone in ${place} knows someone was just caught sneaking a voyeur peek on their coworkers.`]);
+    }
+    if (a.statuses.some((s) => s.kind === 'exhibitionist') || b.statuses.some((s) => s.kind === 'exhibitionist')) {
+      topics.push(['exhibitionist', `Someone in ${place} is riding a shameless exhibitionist thrill and daring the office to keep staring.`]);
+    }
     if (a.thought) topics.push(['thought', `${a.name} keeps thinking: "${a.thought}" Now ${a.name} says something about it to ${b.name}.`]);
     // A whispered idea is what they most want to talk about, all day. Not someone keeping a secret for
     // the story: they act on what they are sure of but would never bring it up.
@@ -1085,10 +1102,50 @@ export class Director {
       topics.push(line, line);
     }
     if (this.brain.kind !== 'instinct') {
-      topics.push([
-        'emergent',
-        `${a.name} (${a.emotion}) and ${b.name} (${b.emotion}) cross paths in ${place}. Let them spark a natural conversation grounded in their real feelings, crushes, grudges, memories, or today's office drama.`
-      ]);
+      const wildSparks: [string, string][] = [
+        [
+          'emergent',
+          `${a.name} (${a.emotion}) and ${b.name} (${b.emotion}) cross paths in ${place}. Let them spark a natural conversation grounded in their real feelings, crushes, grudges, memories, or today's office drama.`
+        ],
+        [
+          'wild_dare',
+          `${a.name} challenges ${b.name} to an outrageous truth-or-dare or strip bet right in ${place} while nobody from corporate is looking.`
+        ],
+        [
+          'wild_heat',
+          `The AC is broken and ${place} is stiflingly hot - ${a.name} and ${b.name} complain about sweating through their clothes and threaten to start peeling layers off.`
+        ],
+        [
+          'wild_scheme',
+          `${a.name} pulls ${b.name} aside in ${place} with an unhinged scheme, illicit desk flask, or weird conspiracy about a coworker.`
+        ],
+        [
+          'wild_showoff',
+          `${a.name} tries to impress or scandalize ${b.name} in ${place} by boasting, flexing, or threatening an impromptu stunt or lap dance.`
+        ]
+      ];
+      if (!this.opts.carefulOrders?.()) {
+        wildSparks.push(
+          [
+            'wild_blackmail',
+            `${a.name} hints at dirty compromising dirt on ${b.name} in ${place}, teasing an outrageous blackmail favor to keep quiet.`
+          ],
+          [
+            'wild_kink_dare',
+            `${a.name} dares ${b.name} into a cheeky boss-and-pet or fuzzy-cuffs power-play bet right in ${place}.`
+          ],
+          [
+            'wild_exhibition',
+            `${a.name} brags to ${b.name} in ${place} about climbing onto a desk for a shameless strip dare while corporate isn't watching.`
+          ],
+          [
+            'wild_voyeur',
+            `${a.name} whispers to ${b.name} in ${place} about who was just spotted peeping around the annex doors.`
+          ]
+        );
+      }
+      const pickWild = wildSparks[Math.floor(rng() * wildSparks.length)];
+      topics.push(pickWild);
       if (this.dayHeadlines.length) {
         const hl = this.dayHeadlines[Math.floor(rng() * this.dayHeadlines.length)];
         topics.push(['headline', `${a.name} and ${b.name} react in ${place} to today's office headline: ${hl}`]);
@@ -1422,11 +1479,19 @@ export class Director {
       // back to the person you were just talking to is only allowed once, or the
       // same two people would hold the floor all day.
       const followUp = r.ask.trigger === 'plan';
+      const hotKinds = new Set(['aroused', 'flustered', 'afterglow', 'scandal', 'naked', 'bound', 'dominated', 'blackmailed', 'voyeur', 'exhibitionist']);
+      const hotPair =
+        !this.opts.carefulOrders?.() &&
+        this.brain.kind !== 'instinct' &&
+        r.people.length >= 2 &&
+        (this.api.isFling(r.people[0], r.people[1]) ||
+          r.people.some((id) => this.api.person(id)?.statuses.some((s) => hotKinds.has(s.kind))));
       for (const p of res.plans) {
         if (!isCastId(p.who) || !this.api.person(p.who)?.present) continue;
         const again = typeof p.plan.target === 'string' && r.people.includes(p.plan.target);
-        if (this.tryModelRendezvous(p.who, p.plan)) break;
-        if (again && followUp) continue;
+        if (res.source === 'model' && (this.tryModelRendezvous(p.who, p.plan) || this.tryModelWildAct(p.who, p.plan))) break;
+        const keepGoing = hotPair && p.plan.kind !== 'talk';
+        if (again && followUp && !keepGoing) continue;
         this.api.setPlan(p.who, p.plan);
         break;
       }
@@ -1598,7 +1663,7 @@ export class Director {
     const lively = this.api.chaos > 45;
     const modelActive = this.brain.kind !== 'instinct';
     const topic = this.topicFor(ask);
-    const facts = this.sim.facts().slice(0, 10);
+    const facts = this.sim.facts().slice(0, modelActive ? 12 : 10);
     if (
       ids.length === 2 &&
       (room === 'annex' || room === 'meeting' || room === 'boss' || room === 'accounts') &&
@@ -1609,24 +1674,31 @@ export class Director {
     if (getWorldLocation() === 'park') {
       facts.push('Everyone is outdoors at Scranton Community Park, away from the usual office rules.');
     }
-    const recent = this.sim.recentLines(room, modelActive ? 7 : 5);
-    if (modelActive && recent.length < 2) {
+    const recent = this.sim.recentLines(room, modelActive ? 10 : 5);
+    if (modelActive && recent.length < 3) {
       const seenLine = new Set(recent.map((l) => `${l.who}:${l.say}`));
       for (const id of ids) {
         const last = this.lastSpokenByPerson.get(id);
-        if (last && this.api.time - last.at <= 45 && !seenLine.has(`${last.who}:${last.say}`)) {
+        if (last && this.api.time - last.at <= 150 && !seenLine.has(`${last.who}:${last.say}`)) {
           recent.push({ who: last.who, say: last.say });
           seenLine.add(`${last.who}:${last.say}`);
         }
       }
     }
+    const unleashedArc = modelActive && !solo && !this.opts.carefulOrders?.();
     const dramatic = ask.priority >= 8 && !solo;
-    const defaultMin = dramatic && modelActive ? 3 : solo ? 1 : 2;
+    const defaultMin = unleashedArc
+      ? (dramatic ? (ids.length >= 3 ? 5 : 4) : 3)
+      : (solo ? 1 : 2);
     const defaultMax = solo
       ? 2
-      : modelActive
-        ? (dramatic ? (ids.length >= 3 ? 6 : 5) : lively ? 5 : 4)
-        : lively ? 4 : 3;
+      : unleashedArc
+        ? (dramatic ? (ids.length >= 3 ? 7 : 6) : (ids.length >= 3 ? 6 : 5))
+        : modelActive
+          ? (dramatic ? 5 : lively ? 4 : 3)
+          : (lively ? 4 : 3);
+    const minLines = unleashedArc ? Math.max(ask.minLines ?? 0, defaultMin) : (ask.minLines ?? defaultMin);
+    const maxLines = unleashedArc ? Math.max(minLines, ask.maxLines ?? 0, defaultMax) : (ask.maxLines ?? defaultMax);
     return {
       id,
       day: this.api.day,
@@ -1637,10 +1709,10 @@ export class Director {
       people,
       onlookers,
       facts,
-      ...(modelActive && this.dayHeadlines.length ? { headlines: this.dayHeadlines.slice(-4) } : {}),
+      ...(modelActive && this.dayHeadlines.length ? { headlines: this.dayHeadlines.slice(-6) } : {}),
       recent,
-      minLines: ask.minLines ?? defaultMin,
-      maxLines: ask.maxLines ?? defaultMax,
+      minLines,
+      maxLines,
       chaos: Math.min(1, this.api.chaos / 100),
       ...(modelActive ? { unleashed: true } : {}),
       ...(topic ? { topic } : {}),
@@ -1711,7 +1783,7 @@ export class Director {
         }
       }
       if (m.plan && m.plan.kind !== 'work') {
-        if (!this.tryModelRendezvous(m.who, m.plan)) this.api.setPlan(m.who, m.plan);
+        if (!this.tryModelRendezvous(m.who, m.plan) && !this.tryModelWildAct(m.who, m.plan)) this.api.setPlan(m.who, m.plan);
       }
     }
   }
@@ -1727,7 +1799,7 @@ export class Director {
   /** Turn bold model-chosen flirt/hookup plans into an actual private-room rendezvous on the floor. */
   private tryModelRendezvous(who: CharId, plan: Plan): boolean {
     if (plan.kind !== 'flirt' || typeof plan.target !== 'string' || !isCastId(who) || !isCastId(plan.target)) return false;
-    if (this.opts.carefulOrders?.() || this.api.time - this.lastAutoRendezvousAt < 120) return false;
+    if (this.opts.carefulOrders?.() || this.api.time - this.lastAutoRendezvousAt < 75) return false;
     if (this.opts.pinned?.(who) || this.opts.pinned?.(plan.target)) return false;
     const a = this.api.person(who);
     const t = this.api.person(plan.target);
@@ -1753,11 +1825,133 @@ export class Director {
     }, raw, 'cue', 0);
   }
 
+  /** Trigger spontaneous stripping or bold stunts from autonomous model plans in unlocked modes. */
+  private tryModelWildAct(who: CharId, plan: Plan): boolean {
+    if (!isCastId(who) || this.opts.carefulOrders?.() || this.opts.pinned?.(who)) return false;
+    if (this.api.time - this.lastAutoWildAt < 45) return false;
+    const a = this.api.person(who);
+    if (!a || !a.present || !a.available || a.sceneId) return false;
+    if (this.api.hasStatus(who, 'eliminated') || this.api.hasStatus(who, 'quit') || this.api.hasStatus(who, 'naked')) return false;
+
+    const about = (plan.about ?? '').toLowerCase();
+    const wantsStrip = /\b(strip|naked|nude|flash|undress|streak|clothes\s+off|topless|skinny)\b/.test(about);
+    const wantsTableDance = /\b(table\s*danc|exhibition)\b/.test(about);
+    const wantsKink = /\b(whip|cuff|handcuff|tie\s+up|dominat|worship|lick|kink)\b/.test(about);
+    const wantsBlackmail = /\b(blackmail|extort)\b/.test(about);
+    const wantsVoyeur = /\b(peep|voyeur|spy)\b/.test(about);
+    const wantsLap = /\b(lap\s*danc|twerk|grind|seduce|show\s+off)\b/.test(about);
+    const wildCast = who === 'meredith' || who === 'creed' || who === 'kelly' || who === 'ryan' || who === 'michael' || who === 'andy' || who === 'kevin';
+    const hot = a.statuses.some((s) => s.kind === 'aroused' || s.kind === 'party' || s.kind === 'afterglow' || s.kind === 'exhibitionist');
+    const chaotic = this.api.chaos >= 55;
+    const boldPlan = plan.kind === 'flirt' || plan.kind === 'prank' || plan.kind === 'wander';
+    if (!wantsStrip && !wantsTableDance && !wantsKink && !wantsBlackmail && !wantsVoyeur && !wantsLap && !((wildCast || chaotic) && hot && boldPlan)) return false;
+
+    this.lastAutoWildAt = this.api.time;
+    const tId = typeof plan.target === 'string' && isCastId(plan.target) && plan.target !== who && !this.opts.pinned?.(plan.target)
+      ? plan.target
+      : null;
+    const t = tId ? this.api.person(tId) : undefined;
+    const targetOk = !!t && t.present && !this.api.hasStatus(t.id, 'eliminated') && !this.api.hasStatus(t.id, 'quit');
+    if (wantsBlackmail && targetOk) {
+      return this.directives.start(who, {
+        verb: 'romance',
+        targetPerson: t.id,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: `blackmails ${t.name} with dirty secrets`,
+        source: 'model'
+      }, `blackmail ${t.name}`, 'cue', 0);
+    }
+    if (wantsKink && targetOk) {
+      const summary = /\bcuff|tie/.test(about)
+        ? `handcuffs ${t.name} in a kinky dare`
+        : /\bworship/.test(about)
+          ? `worships at ${t.name}'s feet`
+          : /\bwhip/.test(about)
+            ? `playfully whips ${t.name}`
+            : /\blick/.test(about)
+              ? `licks ${t.name} shamelessly`
+              : `dominates ${t.name} in a kinky dare`;
+      const raw = /\bcuff|tie/.test(about)
+        ? `handcuff ${t.name}`
+        : /\bworship/.test(about)
+          ? `worship ${t.name}`
+          : /\bwhip/.test(about)
+            ? `whip ${t.name}`
+            : /\blick/.test(about)
+              ? `lick ${t.name}`
+              : `dominate ${t.name}`;
+      return this.directives.start(who, {
+        verb: 'romance',
+        targetPerson: t.id,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary,
+        source: 'model'
+      }, raw, 'cue', 0);
+    }
+    if (wantsVoyeur) {
+      return this.directives.start(who, {
+        verb: targetOk ? 'romance' : 'perform',
+        targetPerson: targetOk ? t.id : null,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: targetOk ? `peeps shamelessly on ${t.name}` : 'sneaks a voyeur peek around the room',
+        source: 'model'
+      }, targetOk ? `peep on ${t.name}` : 'peep around', 'cue', 0);
+    }
+    if (wantsTableDance) {
+      return this.directives.start(who, {
+        verb: 'expose',
+        targetPerson: targetOk ? t.id : null,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: 'puts on a tabletop strip show',
+        source: 'model'
+      }, 'table dance and strip naked', 'cue', 0);
+    }
+    if (wantsLap && /\blap\s*danc|seduce|grind/.test(about) && targetOk) {
+      return this.directives.start(who, {
+        verb: 'romance',
+        targetPerson: t.id,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: `gives ${t.name} an impromptu lap dance`,
+        source: 'model'
+      }, `give ${t.name} a lap dance`, 'cue', 0);
+    }
+    if (wantsLap && /\btwerk/.test(about)) {
+      return this.directives.start(who, {
+        verb: 'perform',
+        targetPerson: targetOk ? t.id : null,
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: 'twerks shamelessly right on the floor',
+        source: 'model'
+      }, 'twerk wildly', 'cue', 0);
+    }
+    return this.directives.start(who, {
+      verb: 'expose',
+      targetPerson: targetOk ? t.id : null,
+      targetRoom: null,
+      power: 'none',
+      item: '',
+      summary: wantsStrip ? 'rips off their clothes completely naked' : 'strips naked without warning',
+      source: 'model'
+    }, targetOk ? `strip naked in front of ${t.name}` : 'strip naked', 'cue', 0);
+  }
+
   /** Execute a physical act triggered organically by the model from scene dialogue. */
   private executeModelStageAction(act: StageAction): boolean {
-    if (this.api.time - this.lastModelActionAt < 35) return false;
+    if (this.api.time - this.lastModelActionAt < 18) return false;
     if (this.opts.pinned?.(act.actor) || (act.target && this.opts.pinned?.(act.target))) return false;
-    const grave = new Set<StageAction['kind']>(['slap', 'shove', 'splash_drink', 'steal', 'walk_out']);
+    const grave = new Set<StageAction['kind']>(['slap', 'shove', 'splash_drink', 'steal', 'walk_out', 'blackmail']);
     if (this.opts.carefulOrders?.() && grave.has(act.kind)) return false;
     const a = this.api.person(act.actor);
     if (!a || !a.present || this.api.hasStatus(act.actor, 'eliminated') || this.api.hasStatus(act.actor, 'quit')) return false;
@@ -1790,6 +1984,66 @@ export class Director {
       case 'strip':
         res = { verb: 'expose', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'strips completely naked', source: 'model' };
         raw = act.target ? `strip naked in front of ${tName}` : 'strip naked';
+        break;
+      case 'flash':
+        res = { verb: 'expose', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || (act.target ? `flashes ${tName}` : 'flashes everyone'), source: 'model' };
+        raw = act.target ? `flash ${tName}` : 'flash everyone';
+        break;
+      case 'lap_dance':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `gives ${tName} a shameless lap dance`, source: 'model' };
+        raw = `give ${tName} a lap dance`;
+        break;
+      case 'grope':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `gropes and spanks ${tName}`, source: 'model' };
+        raw = `grope and spank ${tName}`;
+        break;
+      case 'quickie':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `pulls ${tName} into a frantic quickie`, source: 'model' };
+        raw = `have a quickie with ${tName}`;
+        break;
+      case 'whip':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `playfully whips ${tName}`, source: 'model' };
+        raw = `whip ${tName}`;
+        break;
+      case 'tie_up':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `handcuffs ${tName} in a kinky dare`, source: 'model' };
+        raw = `handcuff ${tName}`;
+        break;
+      case 'worship':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `drops to worship ${tName}`, source: 'model' };
+        raw = `worship ${tName}`;
+        break;
+      case 'dominate':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `dominates ${tName}`, source: 'model' };
+        raw = `dominate ${tName}`;
+        break;
+      case 'lick':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `licks ${tName} shamelessly`, source: 'model' };
+        raw = `lick ${tName}`;
+        break;
+      case 'table_dance':
+        res = { verb: 'expose', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'puts on a tabletop strip show', source: 'model' };
+        raw = 'table dance and strip naked';
+        break;
+      case 'blackmail':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `blackmails ${tName} over dirty secrets`, source: 'model' };
+        raw = `blackmail ${tName}`;
+        break;
+      case 'peep':
+        res = { verb: act.target ? 'romance' : 'perform', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || (act.target ? `peeps on ${tName}` : 'peeps around'), source: 'model' };
+        raw = act.target ? `peep on ${tName}` : 'peep around';
+        break;
+      case 'exhibit':
+        res = { verb: 'expose', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'puts on a brazen exhibitionist strip show', source: 'model' };
+        raw = act.target ? `strip naked in front of ${tName}` : 'exhibitionist strip show';
+        break;
+      case 'twerk':
+        res = { verb: 'perform', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'twerks shamelessly right on the floor', source: 'model' };
+        raw = 'twerk wildly';
+        break;
+      case 'stunt':
+        res = { verb: 'perform', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'does a wild backflip', source: 'model' };
+        raw = act.detail || 'backflip';
         break;
       case 'slap':
         res = { verb: 'knockout', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: `slaps ${tName}`, source: 'model' };
@@ -1917,7 +2171,17 @@ export class Director {
   // ── choosing people ────────────────────────────────────────────────────────
 
   private talkedLately(a: CharId, b: CharId, now: number): boolean {
-    return now - (this.pairAt.get(pairKey(a, b)) ?? -999) < 90;
+    if (this.brain.kind === 'instinct' || this.opts.carefulOrders?.()) {
+      return now - (this.pairAt.get(pairKey(a, b)) ?? -999) < 90;
+    }
+    const pa = this.api.person(a);
+    const pb = this.api.person(b);
+    const hotKinds = new Set(['aroused', 'flustered', 'afterglow', 'scandal', 'naked', 'bound', 'dominated', 'blackmailed', 'voyeur', 'exhibitionist']);
+    const hot =
+      this.api.isFling(a, b) ||
+      !!pa?.statuses.some((s) => hotKinds.has(s.kind)) ||
+      !!pb?.statuses.some((s) => hotKinds.has(s.kind));
+    return now - (this.pairAt.get(pairKey(a, b)) ?? -999) < (hot ? 40 : 90);
   }
 
   private canSpeak(id: CharId): boolean {

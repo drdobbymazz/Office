@@ -7,13 +7,13 @@ import type { EffectInstance } from '@/game/view/api';
 import type { RoomId, Tile, Vec } from '@/game/core/types';
 import { TILE, roomRectPx, walkableTilesIn, isWalkable, roomAt } from '@/game/core/world';
 import { Lasting, approach, pick, rr, type Env } from './core';
-import { C, CONFETTI_TINTS, framesOf, goldSparkleFrames, shapeTex, squareTex } from './art';
+import { C, CONFETTI_TINTS, framesOf, goldSparkleFrames, shapeTex, squareTex, textPix } from './art';
 import { emitBurst, emitDrift, emitDrop, emitPoof, emitSpark, confetti, sparkles } from './emit';
 import { Land, Layer } from './particles';
 import { flameFrames, poolTex, puffTex, shadowTex } from './procedural';
 import { FLAT_ITEMS, balloonTex, BALLOON_COLORS, beeFrames, housingTex, itemFrames, noSignalTex, offScreenTex, shutterFootTex, slatTex, stringFrames } from './sprites';
 import { emojiTex } from './emoji';
-import { canvasTexture, easeOutBack, hash2, stepA, strHash } from './pix';
+import { INK, Pix, canvasTexture, easeOutBack, hash2, stepA, strHash } from './pix';
 
 type Of<K extends EffectInstance['kind']> = Extract<EffectInstance, { kind: K }>;
 
@@ -999,5 +999,121 @@ export class Screens extends Lasting<Of<'screens'>> {
   dispose(): void {
     for (const p of this.patches) p.destroy();
     for (const s of this.signs) s.destroy();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CensorCloud: lively animated NSFW censor mosaic over entangled couples
+// ─────────────────────────────────────────────────────────────────────────────
+
+type CensorStyle = 'hot' | 'kink' | 'taboo';
+
+const CENSOR_PALETTES: Record<CensorStyle, readonly number[]> = {
+  hot: [0xf5d6ba, 0xff86a8, 0xf2b59c, 0xd0507a, 0x241822, 0xfff0e4],
+  kink: [0xd03060, 0x5a2458, 0x241822, 0xff86a8, 0x3b183e, 0xffd2e4],
+  taboo: [0xb82438, 0xffd93d, 0x241822, 0xff5a8a, 0x501822, 0xfff0e4]
+};
+
+const CENSOR_LABEL: Record<CensorStyle, { text: string; color: number }> = {
+  hot: { text: 'CENSORED', color: C.pink },
+  kink: { text: 'KINKY!', color: 0xff5a8a },
+  taboo: { text: 'HR ALERT', color: C.yellow }
+};
+
+function buildCensorCloudFrames(style: CensorStyle): Texture[] {
+  const pal = CENSOR_PALETTES[style];
+  return [0, 1, 2].map((shift) => {
+    const px = new Pix(36, 22);
+    for (let gy = 0; gy < 7; gy++) {
+      for (let gx = 0; gx < 12; gx++) {
+        const idx = (gx * 3 + gy * 5 + shift * 2) % pal.length;
+        px.rect(gx * 3, Math.min(18, gy * 3), 3, 4, pal[idx]);
+      }
+    }
+    px.rect(0, 0, 36, 1, INK);
+    px.rect(0, 21, 36, 1, INK);
+    px.rect(0, 0, 1, 22, INK);
+    px.rect(35, 0, 1, 22, INK);
+    px.rect(1, 7, 34, 8, INK);
+    return px.toTexture();
+  });
+}
+
+export class CensorCloud extends Lasting<Of<'censorCloud'>> {
+  private box = new Container();
+  private frames: Texture[];
+  private bg: Sprite;
+  private label: Sprite;
+  private labelTex: Texture;
+  private style: CensorStyle;
+  private t = 0;
+  private heartAcc = 0;
+  private puffAcc = 0;
+  private clothesAcc = 0;
+  private sparkAcc = 0;
+
+  constructor(inst: Of<'censorCloud'>, env: Env) {
+    super(inst, env);
+    this.introT = 0.25;
+    this.outroT = 0.35;
+    this.style = inst.style ?? 'hot';
+    this.frames = buildCensorCloudFrames(this.style);
+    this.bg = new Sprite(this.frames[0]);
+    this.bg.anchor.set(0.5, 0.5);
+    const lbl = CENSOR_LABEL[this.style];
+    this.labelTex = textPix(lbl.text, lbl.color).toTexture();
+    this.label = new Sprite(this.labelTex);
+    this.label.anchor.set(0.5, 0.5);
+    this.box.addChild(this.bg, this.label);
+    env.high.addChild(this.box);
+  }
+
+  tick(dt: number): void {
+    const { inst, env } = this;
+    this.t += dt;
+    const drive = Math.max(0.5, inst.intensity ?? 1);
+    const bounce = Math.abs(Math.sin(this.t * 10 * drive));
+    this.bg.texture = this.frames[Math.floor(this.t * 7) % this.frames.length];
+    this.box.position.set(Math.round(inst.x + Math.sin(this.t * 13) * 1.6), Math.round(inst.y - 16 - bounce * 2));
+    this.box.scale.set(1 + bounce * 0.08, 1 - bounce * 0.06);
+    this.box.alpha = stepA(this.vis, 3);
+
+    this.heartAcc += dt * 2.8 * drive * this.vis;
+    while (this.heartAcc >= 1) {
+      this.heartAcc -= 1;
+      emitBurst(env.parts, 'hearts', inst.x + rr(-8, 8), inst.y, rr(18, 28), 2);
+    }
+    this.puffAcc += dt * 4.5 * drive * this.vis;
+    while (this.puffAcc >= 1) {
+      this.puffAcc -= 1;
+      const puffPal = this.style === 'kink'
+        ? [0xd05090, 0x8030a0, 0xffa6c4]
+        : this.style === 'taboo'
+          ? [0xffb0b8, 0xffe080, 0xff7090]
+          : [0xffd2e4, 0xffffff, 0xffa6c4];
+      emitDrift(env.parts, inst.x + rr(-10, 10), inst.y, rr(10, 22), rr(2.5, 4), pick(puffPal), rr(-10, 10), 0, rr(10, 18), 0.7, 0.75, Layer.High);
+    }
+    if (this.style !== 'kink') {
+      this.clothesAcc += dt * 0.45 * drive * this.vis;
+      while (this.clothesAcc >= 1) {
+        this.clothesAcc -= 1;
+        emitBurst(env.parts, 'clothes', inst.x, inst.y, 14, 3);
+      }
+    }
+    if (this.style === 'kink' || this.style === 'taboo') {
+      this.sparkAcc += dt * 5.0 * drive * this.vis;
+      while (this.sparkAcc >= 1) {
+        this.sparkAcc -= 1;
+        const a = Math.random() * Math.PI * 2;
+        const col = this.style === 'kink' ? pick([0xff5a8a, 0xd03060, 0xc8a0ff]) : pick([0xffd93d, 0xff5a8a, 0xffffff]);
+        emitSpark(env.parts, inst.x + rr(-6, 6), inst.y, rr(10, 22), Math.cos(a) * rr(18, 42), Math.sin(a) * rr(6, 14), rr(18, 40), col, 0.45, 1, 90, Layer.High);
+      }
+    }
+  }
+
+  dispose(): void {
+    this.box.destroy({ children: true });
+    for (const f of this.frames) f.destroy(true);
+    this.labelTex.destroy(true);
   }
 }

@@ -12,7 +12,17 @@ import type { DirectorSimApi, SceneAsk, SimPerson } from '@/game/core/simApi';
 import { feetOf, room as roomDef, roomCentrePx, walkableTilesIn } from '@/game/core/world';
 import type { BurstKind } from '@/game/view/api';
 
-export type RomanceTier = 'flirt' | 'bold' | 'rendezvous' | 'matchmaker' | 'jealousy';
+export type RomanceTier =
+  | 'flirt'
+  | 'bold'
+  | 'rendezvous'
+  | 'matchmaker'
+  | 'jealousy'
+  | 'kink_dom'
+  | 'kink_bind'
+  | 'kink_lick'
+  | 'blackmail'
+  | 'voyeur';
 
 export function classifyRomanceTier(rawText: string, summary = ''): RomanceTier {
   const s = `${rawText} ${summary}`.toLowerCase();
@@ -22,12 +32,29 @@ export function classifyRomanceTier(rawText: string, summary = ''): RomanceTier 
   if (/\bmake\s+\w+\s+jealous\b/i.test(s)) {
     return 'jealousy';
   }
+  if (/\b(blackmail\w*|extort\w*|threaten\w*\s+to\s+expose|leverage\s+dirty)\b/i.test(s)) {
+    return 'blackmail';
+  }
+  if (/\b(peep(?:ing)?\s+on|spy(?:ing)?\s+on|voyeur\w*)\b/i.test(s)) {
+    return 'voyeur';
+  }
+  if (/\b(tie\s+up|tying\s+up|handcuff\w*|cuff\w*|bind(?:ing)?\s+\w+|collar\w*|leash\w*)\b/i.test(s)) {
+    return 'kink_bind';
+  }
+  if (/\b(whipp?\w*|flogg?\w*|crop(?:ping)?|dominat\w*|submit\w*\s+to|worship\w*|kneel\w*\s+(?:for|before|to))\b/i.test(s)) {
+    return 'kink_dom';
+  }
+  if (/\b(lick\w*|body\s*shot|nibbl\w*|suck\w*)\b/i.test(s)) {
+    return 'kink_lick';
+  }
+  const explicitPublic = /\b(right\s+here|right\s+now\s+in|in\s+front\s+of|on\s+the\s+(?:floor|desk|table|copier)|public(?:ly)?|in\s+the\s+middle\s+of|in\s+the\s+bullpen)\b/i.test(s);
   if (
-    /\b(sneak(?:ing)?\s+(?:away|off)|slip(?:ping)?\s+away|hook(?:ing)?\s+up|sleep(?:ing)?\s+(?:with|together)|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|get(?:ting)?\s+a\s+room|shagg?(?:ing)?|affair|fool(?:ing)?\s+around|quickie|closet|alone\s+in\s+the\s+(?:annex|conference\s+room|meeting\s+room))\b/i.test(s)
+    /\b(sneak(?:ing)?\s+(?:away|off)|slip(?:ping)?\s+away|get(?:ting)?\s+a\s+room|closet|alone\s+in\s+the\s+(?:annex|conference\s+room|meeting\s+room))\b/i.test(s) ||
+    (!explicitPublic && /\b(hook(?:ing)?\s+up|sleep(?:ing)?\s+(?:with|together)|hav(?:e|ing)\s+sex|mak(?:e|ing)\s+love|get(?:ting)?\s+laid|shagg?(?:ing)?|affair|fool(?:ing)?\s+around|quickie)\b/i.test(s))
   ) {
     return 'rendezvous';
   }
-  const hasBold = /\b(kiss(?:ing)?|smooch|mak(?:e|ing)\s+out|massag|lap\s+danc|spank|grop|straddl|seduc|cuddl|slow\s+danc|serenad|rubb?(?:ing)?|fondl|dry\s+hump|grind|lick|nibbl|bit(?:e|ing)|slapp?|smack|pinch|grabb?)\b/i.test(s);
+  const hasBold = /\b(kiss\w*|smooch\w*|mak(?:e|ing)\s+out|massag\w*|lap\s*danc\w*|spank\w*|grop\w*|straddl\w*|seduc\w*|cuddl\w*|slow\s+danc\w*|serenad\w*|rubb?\w*|fondl\w*|dry\s*hump\w*|grind\w*|bit(?:e|ing)|slapp?\w*|smack\w*|pinch\w*|grabb?\w*)\b/i.test(s);
   if (
     !hasBold &&
     /\b(wink(?:ing)?|flirt(?:ing)?|compliment(?:ing)?|sweet\s*talk|charm(?:ing)?|blow(?:ing)?\s+a\s+kiss|check(?:ing)?\s+\w+\s+out|hit(?:ting)?\s+on|ask(?:ing)?\s+\w+\s+out|love\s+note|profess|confess)\b/i.test(s)
@@ -85,6 +112,8 @@ interface ActiveDirective {
   destTile?: Tile;
   destRoom?: TargetRoomId;
   lockAfter?: boolean;
+  censorId?: string;
+  seizedTarget?: boolean;
 }
 
 interface ScheduledTimer {
@@ -165,7 +194,16 @@ function formatAction(summary: string, rawText: string, actorName: string): stri
 
 function performStyle(text: string): { anim: AnimId; burst: BurstKind; sfx: SfxId; doing: string } {
   const s = text.toLowerCase();
-  if (/\b(dance|twerk|boogie|moonwalk|breakdance|floss|dab)\b/.test(s)) return { anim: 'dance', burst: 'confetti', sfx: 'pop', doing: 'dancing wildly' };
+  if (/\b(masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself))\b/.test(s)) {
+    return { anim: 'selfTouch', burst: 'hearts', sfx: 'heart', doing: 'doing something deeply NSFW right at the desk' };
+  }
+  if (isVoyeurText(s)) return { anim: 'peep', burst: 'sparkles', sfx: 'pop', doing: 'sneaking a voyeur peek' };
+  if (isTableStripText(s)) return { anim: 'tableDance', burst: 'clothes', sfx: 'boing', doing: 'putting on a tabletop strip show' };
+  if (/\b(twerk\w*)\b/.test(s)) return { anim: 'twerk', burst: 'hearts', sfx: 'boing', doing: 'twerking shamelessly' };
+  if (/\b(backflip|cartwheel|somersault|do\s+a\s+flip|frontflip)\b/.test(s)) return { anim: 'backflip', burst: 'stars', sfx: 'boing', doing: 'pulling off wild acrobatics' };
+  if (/\b(flex|muscle|pose|strut|show\s+off)\b/.test(s)) return { anim: 'flex', burst: 'sparkles', sfx: 'pop', doing: 'flexing dramatically' };
+  if (/\b(seduce|strip\s*tease|model|flirt)\b/.test(s)) return { anim: 'seduce', burst: 'hearts', sfx: 'heart', doing: 'putting on a sultry show' };
+  if (/\b(dance|boogie|moonwalk|breakdance|floss|dab)\b/.test(s)) return { anim: 'dance', burst: 'confetti', sfx: 'pop', doing: 'dancing wildly' };
   if (/\b(cry|sob|weep)\b/.test(s)) return { anim: 'cry', burst: 'tears', sfx: 'pop', doing: 'sobbing dramatically' };
   if (/\b(faint|pass\s+out|collapse|play\s+dead)\b/.test(s)) return { anim: 'lie', burst: 'stars', sfx: 'thud', doing: 'collapsed on the floor' };
   if (/\b(puke|vomit|throw\s+up|barf|spit)\b/.test(s)) return { anim: 'cower', burst: 'bubbles', sfx: 'splash', doing: 'retching violently' };
@@ -174,8 +212,77 @@ function performStyle(text: string): { anim: AnimId; burst: BurstKind; sfx: SfxI
   if (/\b(drink|chug|vodka|whiskey|booze|shot)\b/.test(s)) return { anim: 'drink', burst: 'bubbles', sfx: 'pop', doing: 'chugging aggressively' };
   if (/\b(eat)\b/.test(s)) return { anim: 'eat', burst: 'crumbs', sfx: 'pop', doing: 'eating shamelessly' };
   if (/\b(sing|serenade|rap|opera|yodel|whistle)\b/.test(s)) return { anim: 'cheer', burst: 'confetti', sfx: 'pop', doing: 'belting out a song' };
-  if (/\b(pray|kneel|meditate|yoga|bow|salute)\b/.test(s)) return { anim: 'nod', burst: 'sparkles', sfx: 'pop', doing: 'performing a formal gesture' };
+  if (/\b(pray|kneel|meditate|yoga|bow|salute|propose|worship)\b/.test(s)) return { anim: 'kneel', burst: 'sparkles', sfx: 'pop', doing: 'dropping to their knees' };
   return { anim: 'cheer', burst: 'sparkles', sfx: 'boing', doing: 'making a scene' };
+}
+
+function isSelfPleasureText(text: string): boolean {
+  return /\b(masturbat\w*|jerk(?:ing)?\s+off|jack(?:ing)?\s+off|touch(?:ing)?\s+(?:yourself|himself|herself|myself)|pleasur(?:e|ing)\s+(?:yourself|himself|herself|myself))\b/i.test(text);
+}
+
+function isTableStripText(text: string): boolean {
+  return /\b(table\s*danc\w*|(?:dance|strip)\s+on\s+(?:the\s+)?(?:desk|table|copier)|exhibitionis[mt](?:\s+show)?)\b/i.test(text);
+}
+
+function isVoyeurText(text: string): boolean {
+  return /\b(peep\w*|voyeur\w*)\b/i.test(text);
+}
+
+function isSubmissiveActText(text: string): boolean {
+  return /\b(worship\w*|kneel\w*\s+(?:for|before|to)|submit\w*\s+to)\b/i.test(text);
+}
+
+type RomanceActVisual = {
+  actorAnim: AnimId;
+  targetAnim: AnimId | null;
+  dur: number;
+  censored: boolean;
+  publicSex: boolean;
+  cloud: boolean;
+  censorStyle?: 'hot' | 'kink' | 'taboo';
+};
+
+function romanceVisual(tier: RomanceTier, rawText: string, summary = ''): RomanceActVisual {
+  const s = `${rawText} ${summary}`.toLowerCase();
+  if (tier === 'flirt') return { actorAnim: 'seduce', targetAnim: null, dur: 2.8, censored: false, publicSex: false, cloud: false };
+  if (tier === 'kink_bind') {
+    return { actorAnim: 'dominate', targetAnim: 'tieUp', dur: 5.0, censored: true, publicSex: false, cloud: true, censorStyle: 'kink' };
+  }
+  if (tier === 'kink_dom') {
+    if (isSubmissiveActText(s)) {
+      return { actorAnim: 'worship', targetAnim: 'dominate', dur: 5.2, censored: true, publicSex: false, cloud: true, censorStyle: 'kink' };
+    }
+    const actorAnim: AnimId = /\b(whip\w*|flogg?\w*|crop(?:ping)?)\b/.test(s) ? 'whip' : 'dominate';
+    return { actorAnim, targetAnim: 'worship', dur: 5.2, censored: true, publicSex: false, cloud: true, censorStyle: 'kink' };
+  }
+  if (tier === 'kink_lick') {
+    return { actorAnim: 'lick', targetAnim: 'seduce', dur: 4.5, censored: true, publicSex: false, cloud: true, censorStyle: 'hot' };
+  }
+  if (tier === 'blackmail') {
+    return { actorAnim: 'dominate', targetAnim: 'cower', dur: 3.8, censored: false, publicSex: false, cloud: false };
+  }
+  if (tier === 'voyeur') {
+    return { actorAnim: 'peep', targetAnim: null, dur: 4.2, censored: false, publicSex: false, cloud: false };
+  }
+  if (/\b(have\s+sex|fuck\w*|bang\w*|screw\w*|shagg?\w*|quickie|sleep\w*\s+with|mak(?:e|ing)\s+love|get(?:ting)?\s+laid)\b/.test(s)) {
+    return { actorAnim: 'grinding', targetAnim: 'grinding', dur: 6.5, censored: true, publicSex: true, cloud: true, censorStyle: 'taboo' };
+  }
+  if (/\b(lap\s*danc\w*|straddl\w*|dry\s*hump\w*|grind\w*)\b/.test(s)) {
+    return { actorAnim: 'lapDance', targetAnim: 'seduce', dur: 5.5, censored: true, publicSex: false, cloud: true, censorStyle: 'hot' };
+  }
+  if (/\b(mak(?:e|ing)\s+out|french\s+kiss\w*)\b/.test(s)) {
+    return { actorAnim: 'makeOut', targetAnim: 'makeOut', dur: 4.8, censored: false, publicSex: false, cloud: false };
+  }
+  if (/\b(spank\w*|grop\w*|fondl\w*|slapp?\w*\s+(?:\w+'s\s+)?(?:ass|butt|booty)|smack\w*|pinch\w*)\b/.test(s)) {
+    return { actorAnim: 'spank', targetAnim: null, dur: 3.8, censored: true, publicSex: false, cloud: false, censorStyle: 'kink' };
+  }
+  if (/\b(kiss\w*|smooch\w*)\b/.test(s)) {
+    return { actorAnim: 'kiss', targetAnim: 'kiss', dur: 3.5, censored: false, publicSex: false, cloud: false };
+  }
+  if (/\b(danc\w*|serenad\w*)\b/.test(s)) {
+    return { actorAnim: 'dance', targetAnim: null, dur: 3.2, censored: false, publicSex: false, cloud: false };
+  }
+  return { actorAnim: 'makeOut', targetAnim: 'kiss', dur: 3.6, censored: false, publicSex: false, cloud: false };
 }
 
 function delegateStagingFor(tone: DelegateTone | undefined, isPermission = false): {
@@ -277,6 +384,9 @@ export class Directives {
       sim.release(d.actor, d.id);
       if (d.target) sim.release(d.target, d.id);
       if (d.scuffleId) sim.removeEffect(d.scuffleId);
+      if (d.censorId) sim.removeEffect(d.censorId);
+      sim.removeStatus(d.actor, 'censored');
+      if (d.target) sim.removeStatus(d.target, 'censored');
     }
     this.active.clear();
     this.pendingChains.clear();
@@ -327,8 +437,12 @@ export class Directives {
     if (prev.target) {
       sim.release(prev.target, prev.id);
       if (prev.phase === 'rendezvous_walk' || prev.phase === 'rendezvous_hold') sim.resume(prev.target);
+      sim.removeStatus(prev.target, 'censored');
+      if (prev.romanceTier === 'blackmail') sim.setProp(prev.actor, null);
     }
+    sim.removeStatus(prev.actor, 'censored');
     if (prev.scuffleId) sim.removeEffect(prev.scuffleId);
+    if (prev.censorId) sim.removeEffect(prev.censorId);
     this.active.delete(who);
   }
 
@@ -511,7 +625,8 @@ export class Directives {
         this.focusPeople([actor, target.id]);
         return true;
       }
-      // dress / cover up
+      // dress / cover up / unbind
+      const recoverKind = res.item === 'unbind' ? 'unbind' : 'dress';
       const tgt = res.targetPerson && res.targetPerson !== actor ? sim.person(res.targetPerson) : undefined;
       if (tgt && this.isAliveAndPresent(tgt)) {
         const d: ActiveDirective = {
@@ -523,7 +638,7 @@ export class Directives {
           rawText,
           summary: res.summary,
           kind,
-          item: 'dress',
+          item: recoverKind,
           power: 'none',
           phase: 'approach',
           timer: 0,
@@ -544,7 +659,7 @@ export class Directives {
         rawText,
         summary: res.summary,
         kind,
-        item: 'dress',
+        item: recoverKind,
         power: 'none',
         phase: 'perform',
         timer: 0,
@@ -980,22 +1095,65 @@ export class Directives {
       }
 
       if (d.phase === 'perform') {
+        const tableStrip = d.verb === 'expose' && isTableStripText(`${d.rawText} ${d.summary}`);
+        const selfPleasure = d.verb === 'perform' && isSelfPleasureText(d.rawText);
+        const voyeur = d.verb === 'perform' && isVoyeurText(d.rawText);
         if (now >= d.burstAt) {
-          d.burstAt = now + 0.65;
-          const burst = d.verb === 'expose' ? 'confetti' : performStyle(d.rawText).burst;
+          d.burstAt = now + 0.85;
+          const burst = d.verb === 'expose' ? 'clothes' : performStyle(d.rawText).burst;
           sim.fx({ kind: 'burst', what: burst, x: a.x, y: a.y - 12, count: 8 });
+          if (d.verb === 'expose') {
+            const cues = tableStrip
+              ? ['*desk strip show!*', '*clothes flying!*', '*totally naked!*']
+              : ['*shirt off!*', '*clothes flying!*', '*totally naked!*'];
+            sim.fx({ kind: 'floatText', x: a.x, y: a.y - 28, text: cues[Math.floor(d.timer / 0.85) % cues.length], color: 0xff5a8a });
+          } else if (selfPleasure) {
+            const cues = ['*nsfw noises*', '*heavy breathing*', '*shameless*'];
+            sim.fx({ kind: 'floatText', x: a.x, y: a.y - 28, text: cues[Math.floor(d.timer / 0.85) % cues.length], color: 0xff5a8a });
+          } else if (voyeur) {
+            sim.fx({ kind: 'floatText', x: a.x, y: a.y - 28, text: '*sneaky peek*', color: 0xe880c8 });
+          }
         }
-        if (d.timer >= 1.8) this.finishPerform(d, a, t);
+        const dur = tableStrip ? 5.5 : d.verb === 'expose' ? 4.0 : selfPleasure ? 5.0 : voyeur ? 4.0 : 2.6;
+        if (d.timer >= dur) this.finishPerform(d, a, t);
         continue;
       }
 
       if (d.phase === 'romance_act' && t) {
+        const tier = d.romanceTier ?? 'bold';
+        const vis = romanceVisual(tier, d.rawText, d.summary);
         if (now >= d.burstAt) {
-          d.burstAt = now + 0.75;
-          sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: a.y - 16, count: 8 });
+          d.burstAt = now + 0.9;
+          const mx = (a.x + t.x) / 2;
+          const my = (a.y + t.y) / 2;
+          if (tier === 'kink_bind') {
+            sim.fx({ kind: 'burst', what: 'sparkles', x: t.x, y: t.y - 14, count: 8 });
+            const cues = ['*click... cuffed!*', '*safe word?!*'];
+            sim.fx({ kind: 'floatText', x: mx, y: my - 28, text: cues[Math.floor(d.timer / 0.9) % cues.length], color: 0xff5a8a });
+          } else if (tier === 'kink_dom') {
+            sim.fx({ kind: 'burst', what: 'hearts', x: mx, y: my - 16, count: 8 });
+            const cues = ['*crack!*', '*yes, boss!*'];
+            sim.fx({ kind: 'floatText', x: mx, y: my - 28, text: cues[Math.floor(d.timer / 0.9) % cues.length], color: 0xff5a8a });
+          } else if (tier === 'kink_lick') {
+            sim.fx({ kind: 'burst', what: 'hearts', x: mx, y: my - 16, count: 8 });
+            const cues = ['*lick!*', '*mmm...*'];
+            sim.fx({ kind: 'floatText', x: mx, y: my - 28, text: cues[Math.floor(d.timer / 0.9) % cues.length], color: 0xff5a8a });
+          } else if (tier === 'blackmail') {
+            sim.fx({ kind: 'burst', what: 'sweat', x: t.x, y: t.y - 16, count: 6 });
+            sim.fx({ kind: 'floatText', x: t.x, y: t.y - 28, text: '*uh oh...*', color: 0xb48cf0 });
+          } else if (tier === 'voyeur') {
+            sim.fx({ kind: 'burst', what: 'sparkles', x: a.x, y: a.y - 14, count: 6 });
+            sim.fx({ kind: 'floatText', x: a.x, y: a.y - 28, text: '*peeping...*', color: 0xe880c8 });
+          } else {
+            sim.fx({ kind: 'burst', what: 'hearts', x: mx, y: a.y - 16, count: 8 });
+            if (vis.publicSex) {
+              if (Math.floor(d.timer / 0.9) % 2 === 1) sim.fx({ kind: 'burst', what: 'clothes', x: mx, y: my - 14, count: 5 });
+              const cues = ['*censored moans*', '*desk shaking!*', '*zero shame!*'];
+              sim.fx({ kind: 'floatText', x: mx, y: my - 28, text: cues[Math.floor(d.timer / 0.9) % cues.length], color: 0xff5a8a });
+            }
+          }
         }
-        const dur = d.romanceTier === 'flirt' ? 1.15 : 1.5;
-        if (d.timer >= dur) this.finishRomance(d, a, t);
+        if (d.timer >= vis.dur) this.finishRomance(d, a, t);
         continue;
       }
 
@@ -1007,14 +1165,25 @@ export class Directives {
           d.phase = 'rendezvous_hold';
           d.timer = 0;
           d.burstAt = now + 2.4;
+          d.seizedTarget = true;
+          d.censorId = `censor-${d.id}`;
+          this.trackFx(d.censorId);
+          sim.seize(a.id, d.id, { anim: 'grinding', doing: `hooking up with ${t.name}` });
+          sim.seize(t.id, d.id, { anim: 'grinding', doing: `hooking up with ${a.name}` });
           sim.face(a.id, t.id);
           sim.face(t.id, a.id);
-          sim.addStatus(a.id, 'flustered', 45, t.id);
-          sim.addStatus(t.id, 'flustered', 45, a.id);
-          sim.addStatus(a.id, 'aroused', 50, t.id);
-          sim.addStatus(t.id, 'aroused', 50, a.id);
+          sim.addStatus(a.id, 'censored', 18, t.id);
+          sim.addStatus(t.id, 'censored', 18, a.id);
+          sim.addStatus(a.id, 'naked', 40, t.id);
+          sim.addStatus(t.id, 'naked', 40, a.id);
+          sim.addStatus(a.id, 'flustered', 100, t.id);
+          sim.addStatus(t.id, 'flustered', 100, a.id);
+          sim.addStatus(a.id, 'aroused', 120, t.id);
+          sim.addStatus(t.id, 'aroused', 120, a.id);
+          sim.addEffect({ id: d.censorId, kind: 'censorCloud', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2, intensity: 1.2, style: 'taboo' });
           sim.emote(a.id, 'heart');
           sim.emote(t.id, 'heart');
+          sim.fx({ kind: 'burst', what: 'clothes', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 14, count: 10 });
           sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 16, count: 10 });
           sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: '*muffled moans*', color: 0xff5a8a });
           sim.sfx('heart', a.x);
@@ -1051,11 +1220,11 @@ export class Directives {
         if (now >= d.burstAt) {
           d.burstAt = now + 2.4;
           sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 16, count: 8 });
-          const cues = ['*rustling clothes*', '*heavy breathing*', '*creaking desk*'];
+          const cues = ['*rustling clothes*', '*heavy breathing*', '*creaking desk*', '*censored moans*', '*do not disturb!*'];
           const cue = cues[Math.floor(d.timer / 2.4) % cues.length];
           sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: cue, color: 0xff7098 });
         }
-        if (d.timer >= 8) {
+        if (d.timer >= 13) {
           this.finishRendezvousClean(d, a, t);
         }
         continue;
@@ -1338,39 +1507,70 @@ export class Directives {
         }
       }
       const phrase = formatAction(d.summary, d.rawText, a.name);
+      const vis = romanceVisual(tier, d.rawText, d.summary);
       d.phase = 'romance_act';
       d.romanceTier = tier;
       d.timer = 0;
       d.burstAt = sim.time + 0.75;
       this.focusPeople(t.id !== a.id ? [a.id, t.id] : [a.id], 6500);
       if (d.kind === 'cue') sim.setThought(a.id, '');
-      const anim: AnimId = tier === 'flirt'
-        ? 'wave'
-        : /\b(dance|serenade)\b/i.test(d.rawText)
-          ? 'dance'
-          : 'cheer';
-      sim.seize(a.id, d.id, { anim, doing: phrase || (tier === 'flirt' ? 'flirting' : 'making a move') });
+      sim.seize(a.id, d.id, { anim: vis.actorAnim, doing: phrase || (tier === 'flirt' ? 'flirting' : 'making a move') });
+      if (vis.targetAnim && t.id !== a.id) {
+        d.seizedTarget = true;
+        sim.seize(t.id, d.id, { anim: vis.targetAnim, doing: vis.publicSex ? `hooking up with ${a.name}` : `caught up with ${a.name}` });
+      }
       sim.face(a.id, t.id);
       if (t.id !== a.id) {
         sim.face(t.id, a.id);
-        sim.react(t.id, tier === 'flirt' ? 'nod' : 'startle', 1.1);
+        if (!vis.targetAnim) sim.react(t.id, tier === 'flirt' ? 'nod' : 'startle', 1.1);
       }
-      sim.feel(a.id, tier === 'flirt' ? 'mischievous' : 'love', 0.9, 12);
-      sim.feel(t.id, tier === 'flirt' ? 'embarrassed' : 'surprised', 0.8, 8);
-      sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: a.y - 16, count: tier === 'flirt' ? 7 : 12 });
-      sim.emote(a.id, 'heart');
-      sim.sfx('heart', t.x);
-      sim.narrate(
-        tier === 'flirt'
-          ? `${a.name} ${phrase || `flirts shamelessly with ${t.name}`} right in ${roomName}!`
-          : `${a.name} ${phrase || `gets hands-on with ${t.name}`} right in ${roomName} with zero shame!`,
-        {
-          kind: 'event',
-          icon: 'love',
-          room: t.room,
-          beat: true
+      if (vis.censored) {
+        sim.addStatus(a.id, 'censored', 10, t.id);
+        if (vis.publicSex && t.id !== a.id) {
+          sim.addStatus(t.id, 'censored', 10, a.id);
+          sim.addStatus(a.id, 'naked', 20, t.id);
+          sim.addStatus(t.id, 'naked', 20, a.id);
         }
-      );
+      }
+      if (vis.cloud) {
+        d.censorId = `censor-${d.id}`;
+        this.trackFx(d.censorId);
+        sim.addEffect({
+          id: d.censorId,
+          kind: 'censorCloud',
+          x: (a.x + t.x) / 2,
+          y: (a.y + t.y) / 2,
+          intensity: vis.publicSex ? 1.25 : 1.0,
+          style: vis.censorStyle ?? 'hot'
+        });
+        if (vis.publicSex) {
+          sim.fx({ kind: 'burst', what: 'clothes', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 14, count: 10 });
+          sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: '*censored moans*', color: 0xff5a8a });
+        }
+      }
+      if (tier === 'blackmail') sim.setProp(a.id, 'papers');
+      sim.feel(a.id, tier === 'blackmail' ? 'smug' : tier === 'flirt' || tier === 'voyeur' ? 'mischievous' : 'love', 0.9, 12);
+      sim.feel(t.id, tier === 'blackmail' ? 'nervous' : tier === 'flirt' ? 'embarrassed' : 'surprised', 0.85, 10);
+      sim.fx({ kind: 'burst', what: tier === 'blackmail' ? 'sweat' : 'hearts', x: (a.x + t.x) / 2, y: a.y - 16, count: tier === 'flirt' ? 7 : 12 });
+      sim.emote(a.id, tier === 'blackmail' ? 'idea' : 'heart');
+      sim.sfx(vis.actorAnim === 'spank' || vis.actorAnim === 'whip' ? 'thud' : 'heart', t.x);
+      const nar = tier === 'blackmail'
+        ? `${a.name} corners ${t.name} in ${roomName} with blackmail dirt...`
+        : tier === 'voyeur'
+          ? `${a.name} sneaks a brazen voyeur peek at ${t.name} in ${roomName}!`
+          : tier === 'kink_bind'
+            ? `${a.name} pulls out pink fuzzy cuffs on ${t.name} in ${roomName} for a kinky office dare!`
+            : tier === 'kink_dom'
+              ? `${a.name} and ${t.name} launch into a shameless dom-and-sub power play right in ${roomName}!`
+              : tier === 'flirt'
+                ? `${a.name} ${phrase || `flirts shamelessly with ${t.name}`} right in ${roomName}!`
+                : `${a.name} ${phrase || `gets hands-on with ${t.name}`} right in ${roomName} with zero shame!`;
+      sim.narrate(nar, {
+        kind: 'event',
+        icon: tier === 'blackmail' ? 'secretLeak' : 'love',
+        room: t.room,
+        beat: true
+      });
       const witnesses = sim
         .peopleNear(t.x, t.y, 180)
         .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
@@ -1395,16 +1595,25 @@ export class Directives {
     if (t && t.id !== a.id) sim.face(a.id, t.id);
 
     if (d.verb === 'expose') {
-      sim.seize(a.id, d.id, { anim: 'dance', doing: phrase || 'stripping naked' });
-      sim.addStatus(a.id, 'naked', 90);
+      const tableStrip = isTableStripText(`${d.rawText} ${d.summary}`);
+      sim.seize(a.id, d.id, { anim: tableStrip ? 'tableDance' : 'strip', doing: phrase || (tableStrip ? 'putting on a tabletop strip show' : 'stripping naked') });
+      sim.addStatus(a.id, 'naked', tableStrip ? 180 : 90);
+      sim.addStatus(a.id, 'exhibitionist', 180);
+      if (tableStrip) {
+        sim.addStatus(a.id, 'censored', 10);
+        d.censorId = `censor-${d.id}`;
+        this.trackFx(d.censorId);
+        sim.addEffect({ id: d.censorId, kind: 'censorCloud', x: a.x, y: a.y, intensity: 1.15, style: 'taboo' });
+      }
       sim.setFact(`dressed:${a.id}`, null);
       sim.setFact(`naked:${a.id}`, `${a.name} is completely naked in ${roomName}.`);
       sim.feel(a.id, 'excited', 0.95, 14);
       sim.emote(a.id, 'heart');
+      sim.fx({ kind: 'burst', what: 'clothes', x: a.x, y: a.y - 14, count: 10 });
       sim.fx({ kind: 'burst', what: 'sparkles', x: a.x, y: a.y - 14, count: 14 });
       sim.fx({ kind: 'burst', what: 'confetti', x: a.x, y: a.y - 10, count: 10 });
       sim.sfx('boing', a.x);
-      sim.bumpChaos(14);
+      sim.bumpChaos(tableStrip ? 18 : 14);
       sim.narrate(
         t && t.id !== a.id
           ? `${a.name} steps right up to ${t.name} in ${roomName} and shamelessly ${phrase}, leaving nothing to the imagination!`
@@ -1413,17 +1622,29 @@ export class Directives {
       );
     } else {
       const style = performStyle(d.rawText);
+      const selfPleasure = isSelfPleasureText(d.rawText);
+      const voyeur = isVoyeurText(d.rawText);
       sim.seize(a.id, d.id, { anim: style.anim, doing: phrase || style.doing });
-      sim.feel(a.id, style.anim === 'cry' ? 'sad' : style.anim === 'stomp' ? 'angry' : 'excited', 0.9, 12);
-      sim.emote(a.id, 'alert');
+      if (selfPleasure) {
+        sim.addStatus(a.id, 'censored', 10);
+        sim.addStatus(a.id, 'aroused', 150);
+        sim.fx({ kind: 'burst', what: 'sweat', x: a.x, y: a.y - 14, count: 8 });
+        sim.fx({ kind: 'floatText', x: a.x, y: a.y - 28, text: '*nsfw noises*', color: 0xff5a8a });
+      } else if (voyeur) {
+        sim.addStatus(a.id, 'voyeur', 180);
+        sim.addStatus(a.id, 'aroused', 140);
+        sim.fx({ kind: 'floatText', x: a.x, y: a.y - 28, text: '*sneaky peek*', color: 0xe880c8 });
+      }
+      sim.feel(a.id, selfPleasure ? 'embarrassed' : voyeur ? 'mischievous' : style.anim === 'cry' ? 'sad' : style.anim === 'stomp' ? 'angry' : 'excited', 0.9, 12);
+      sim.emote(a.id, selfPleasure ? 'heart' : voyeur ? 'eye' : 'alert');
       sim.fx({ kind: 'burst', what: style.burst, x: a.x, y: a.y - 14, count: 12 });
       sim.sfx(style.sfx, a.x);
-      sim.bumpChaos(8);
+      sim.bumpChaos(selfPleasure ? 12 : 8);
       sim.narrate(
         t && t.id !== a.id
           ? `${a.name} walks up to ${t.name} in ${roomName} and ${phrase}!`
           : `${a.name} ${phrase} right in ${roomName}!`,
-        { kind: 'event', icon: 'tell', room: a.room, beat: true }
+        { kind: 'event', icon: selfPleasure ? 'warn' : 'tell', room: a.room, beat: true }
       );
     }
 
@@ -1441,6 +1662,8 @@ export class Directives {
   private finishPerform(d: ActiveDirective, a: SimPerson, t?: SimPerson): void {
     const sim = this.ctx.sim;
     sim.release(a.id, d.id);
+    if (d.censorId) sim.removeEffect(d.censorId);
+    sim.removeStatus(a.id, 'censored');
     this.active.delete(a.id);
 
     const roomName = roomDef(a.room).name;
@@ -1458,10 +1681,10 @@ export class Directives {
     const uniqueParticipants = [...new Set(participants)];
 
     if (d.verb === 'expose') {
-      sim.addStatus(a.id, 'scandal', 75, t?.id);
+      sim.addStatus(a.id, 'scandal', 180, t?.id);
       for (const w of sceneWitnesses) {
         if (w.id === 'meredith' || w.id === 'creed' || w.id === 'kelly' || sim.chemistry(w.id, a.id) >= 35) {
-          sim.addStatus(w.id, 'aroused', 45, a.id);
+          sim.addStatus(w.id, 'aroused', 120, a.id);
         }
       }
       sim.remember(
@@ -1495,6 +1718,16 @@ export class Directives {
       return;
     }
 
+    const selfPleasure = isSelfPleasureText(d.rawText);
+    const voyeur = isVoyeurText(d.rawText);
+    if (selfPleasure) {
+      sim.addStatus(a.id, 'flustered', 120);
+      sim.addStatus(a.id, 'scandal', 180);
+      this.scandalHeat += 2;
+      this.checkHrFallout(a, t);
+    } else if (voyeur && sceneWitnesses.length > 0) {
+      sim.addStatus(a.id, 'scandal', 140);
+    }
     sim.setFact(`act:${a.id}`, `${a.name} just ${phrase} in ${roomName}.`);
     this.schedule(45, () => sim.setFact(`act:${a.id}`, null));
     sim.remember(
@@ -1526,6 +1759,41 @@ export class Directives {
     const roomName = roomDef(subj.room).name;
     this.focusPeople(t && t.id !== a.id ? [a.id, t.id] : [a.id], 5500);
     if (t && t.id !== a.id) sim.face(a.id, t.id);
+
+    if (d.item === 'unbind') {
+      sim.removeStatus(subj.id, 'bound');
+      sim.removeStatus(subj.id, 'dominated');
+      sim.setFact(`bound:${subj.id}`, null);
+      sim.react(subj.id, 'cheer', 1.2);
+      sim.feel(subj.id, 'happy', 0.75, 8);
+      sim.fx({ kind: 'burst', what: 'sparkles', x: subj.x, y: subj.y - 14, count: 10 });
+      sim.sfx('pop', subj.x);
+      const line = t && t.id !== a.id
+        ? `${a.name} uncuffed and untied ${t.name} in ${roomName}.`
+        : `${a.name} slipped out of the cuffs and untied themselves in ${roomName}.`;
+      sim.narrate(line, { kind: 'event', icon: 'tell', room: subj.room, beat: true });
+      sim.remember('all', line, 3);
+      const witnesses = sim
+        .peopleNear(subj.x, subj.y, 180)
+        .filter((p) => p.isCast && p.present && p.available && p.id !== subj.id && p.id !== a.id)
+        .slice(0, 1)
+        .map((p) => p.id);
+      const people = [...new Set([subj.id, ...(t && t.id !== a.id ? [a.id] : []), ...witnesses])].slice(0, 3);
+      if (people.length) {
+        this.ctx.scene({
+          people,
+          room: subj.room,
+          trigger: 'aftermath',
+          why: line,
+          priority: 9,
+          minLines: people.length > 1 ? 2 : 1,
+          maxLines: people.length > 1 ? 3 : 2,
+          staleAfter: 35
+        }, true);
+      }
+      this.advanceChain(a.id);
+      return;
+    }
 
     if (d.item === 'dress') {
       sim.removeStatus(subj.id, 'naked');
@@ -1597,54 +1865,141 @@ export class Directives {
 
   private finishRomance(d: ActiveDirective, a: SimPerson, t: SimPerson): void {
     const sim = this.ctx.sim;
+    const tier = d.romanceTier ?? classifyRomanceTier(d.rawText, d.summary);
+    const vis = romanceVisual(tier, d.rawText, d.summary);
     sim.release(a.id, d.id);
+    if (d.seizedTarget) sim.release(t.id, d.id);
+    if (d.censorId) sim.removeEffect(d.censorId);
+    if (tier === 'blackmail') sim.setProp(a.id, null);
+    sim.removeStatus(a.id, 'censored');
+    sim.removeStatus(t.id, 'censored');
     this.active.delete(a.id);
 
-    const tier = d.romanceTier ?? classifyRomanceTier(d.rawText, d.summary);
     const roomName = roomDef(t.room).name;
     const raw = d.rawText.trim().replace(/\s+/g, ' ').slice(0, 120);
     const phrase = formatAction(d.summary, d.rawText, a.name);
     const witnesses = sim
       .peopleNear(t.x, t.y, 180)
       .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
-    sim.bumpChaos(tier === 'flirt' ? 3 : 6);
+    sim.bumpChaos(tier === 'flirt' ? 3 : tier === 'blackmail' ? 10 : 6);
     if (t.id !== a.id) {
+      let why = `${a.name} just walked up to ${t.name} in ${roomName} and shamelessly, physically ${phrase} right in front of everyone (action: "${raw}"). (${a.name} actually did this to ${t.name} - react directly to what ${a.name} just did.)`;
       if (tier === 'flirt') {
         sim.shiftBond(a.id, t.id, 8);
         sim.shiftBond(t.id, a.id, 5);
         sim.shiftChemistry(a.id, t.id, 10);
         sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -10 ? 8 : 3);
-        sim.addStatus(t.id, 'flustered', 30, a.id);
-        if (sim.chemistry(t.id, a.id) >= 30) sim.addStatus(t.id, 'aroused', 50, a.id);
+        sim.addStatus(t.id, 'flustered', 110, a.id);
+        if (sim.chemistry(t.id, a.id) >= 30) sim.addStatus(t.id, 'aroused', 160, a.id);
+        why = `${a.name} just got shamelessly flirty with ${t.name} in ${roomName} and ${phrase} (action: "${raw}"). React directly in character.`;
+      } else if (tier === 'blackmail') {
+        sim.addStatus(t.id, 'blackmailed', 220, a.id);
+        sim.shiftBond(t.id, a.id, -18, 'blackmail');
+        sim.setFact(`blackmail:${t.id}`, `${a.name} is blackmailing ${t.name} over compromising office dirt.`, 220);
+        this.scandalHeat += 1;
+        this.checkHrFallout(a, t);
+        why = `${a.name} just cornered ${t.name} in ${roomName} with compromising blackmail leverage (${raw}). ${t.name} is sweating over what ${a.name} knows; react sharply in character.`;
+      } else if (tier === 'voyeur') {
+        sim.addStatus(a.id, 'voyeur', 180, t.id);
+        sim.addStatus(a.id, 'aroused', 150, t.id);
+        if (witnesses.length >= 1) {
+          sim.addStatus(a.id, 'scandal', 140, t.id);
+          this.scandalHeat += 1;
+          this.checkHrFallout(a, t);
+        }
+        why = `${a.name} just got caught sneaking a voyeur peek at ${t.name} in ${roomName} (${raw}). React with outrage, teasing, or shameless bravado.`;
+      } else if (tier === 'kink_bind') {
+        sim.shiftBond(a.id, t.id, 18);
+        sim.shiftBond(t.id, a.id, 12);
+        sim.shiftChemistry(a.id, t.id, 18);
+        sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -20 ? 14 : 5);
+        sim.addStatus(t.id, 'bound', 180, a.id);
+        sim.addStatus(t.id, 'dominated', 200, a.id);
+        sim.addStatus(t.id, 'aroused', 160, a.id);
+        sim.addStatus(t.id, 'flustered', 120, a.id);
+        sim.addStatus(a.id, 'aroused', 160, t.id);
+        sim.setFact(`bound:${t.id}`, `${t.name} is playfully handcuffed by ${a.name} in ${roomName}.`, 180);
+        if (witnesses.length >= 1) {
+          sim.addStatus(a.id, 'scandal', 180, t.id);
+          sim.addStatus(t.id, 'scandal', 180, a.id);
+          this.scandalHeat += 1;
+          this.checkHrFallout(a, t);
+        }
+        why = `${a.name} playfully cuffed ${t.name} in a kinky power-play dare in ${roomName} (${raw}). ${t.name} is cuffed and blushing; tease about humiliation and office stares.`;
+      } else if (tier === 'kink_dom') {
+        const subIsActor = isSubmissiveActText(`${d.rawText} ${d.summary}`);
+        const dom = subIsActor ? t : a;
+        const sub = subIsActor ? a : t;
+        sim.shiftBond(a.id, t.id, 20);
+        sim.shiftBond(t.id, a.id, 14);
+        sim.shiftChemistry(a.id, t.id, 22);
+        sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -20 ? 18 : 6);
+        sim.addStatus(sub.id, 'dominated', 200, dom.id);
+        sim.addStatus(a.id, 'aroused', 160, t.id);
+        sim.addStatus(t.id, 'aroused', 160, a.id);
+        sim.addStatus(a.id, 'flustered', 120, t.id);
+        sim.addStatus(t.id, 'flustered', 120, a.id);
+        if (witnesses.length >= 1) {
+          sim.addStatus(a.id, 'scandal', 180, t.id);
+          sim.addStatus(t.id, 'scandal', 180, a.id);
+          this.scandalHeat += 1;
+          this.checkHrFallout(a, t);
+        }
+        why = `${a.name} and ${t.name} just played out a brazen dom/sub dare in ${roomName} (${raw}). React candidly to ${dom.name} taking charge over ${sub.name}.`;
+      } else if (tier === 'kink_lick') {
+        sim.shiftBond(a.id, t.id, 22);
+        sim.shiftBond(t.id, a.id, 15);
+        sim.shiftChemistry(a.id, t.id, 20);
+        sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -20 ? 16 : 5);
+        sim.addStatus(a.id, 'aroused', 160, t.id);
+        sim.addStatus(t.id, 'aroused', 160, a.id);
+        sim.addStatus(a.id, 'flustered', 120, t.id);
+        sim.addStatus(t.id, 'flustered', 120, a.id);
+        if (witnesses.length >= 1) {
+          sim.addStatus(a.id, 'scandal', 180, t.id);
+          sim.addStatus(t.id, 'scandal', 180, a.id);
+          this.scandalHeat += 1;
+          this.checkHrFallout(a, t);
+        }
       } else {
         sim.shiftBond(a.id, t.id, 25);
         sim.shiftBond(t.id, a.id, 15);
         sim.shiftChemistry(a.id, t.id, 20);
         sim.shiftChemistry(t.id, a.id, sim.bond(t.id, a.id) >= -20 ? 15 : 5);
-        sim.addStatus(a.id, 'flustered', 40, t.id);
-        sim.addStatus(t.id, 'flustered', 40, a.id);
-        sim.addStatus(a.id, 'aroused', 55, t.id);
-        sim.addStatus(t.id, 'aroused', 55, a.id);
+        sim.addStatus(a.id, 'flustered', 110, t.id);
+        sim.addStatus(t.id, 'flustered', 110, a.id);
+        sim.addStatus(a.id, 'aroused', 160, t.id);
+        sim.addStatus(t.id, 'aroused', 160, a.id);
+        if (vis.publicSex) {
+          sim.addStatus(a.id, 'naked', 120, t.id);
+          sim.addStatus(t.id, 'naked', 120, a.id);
+          sim.addStatus(a.id, 'afterglow', 150, t.id);
+          sim.addStatus(t.id, 'afterglow', 150, a.id);
+          sim.addStatus(a.id, 'scandal', 180, t.id);
+          sim.addStatus(t.id, 'scandal', 180, a.id);
+          this.scandalHeat += 2;
+          this.checkHrFallout(a, t);
+        }
         if (sim.chemistry(a.id, t.id) >= 65 && sim.chemistry(t.id, a.id) >= 55) {
           sim.markFling(a.id, t.id);
         }
-        if (witnesses.length >= 2) {
-          sim.addStatus(a.id, 'scandal', 55, t.id);
-          sim.addStatus(t.id, 'scandal', 55, a.id);
+        if (!vis.publicSex && witnesses.length >= 2) {
+          sim.addStatus(a.id, 'scandal', 180, t.id);
+          sim.addStatus(t.id, 'scandal', 180, a.id);
           this.scandalHeat += 1;
           this.checkHrFallout(a, t);
         }
       }
-      this.checkJealousy(a, t, witnesses, tier !== 'flirt' && witnesses.length >= 2);
+      if (tier !== 'blackmail' && tier !== 'voyeur') {
+        this.checkJealousy(a, t, witnesses, tier !== 'flirt' && witnesses.length >= 2);
+      }
       sim.remember([a.id, t.id, ...witnesses.map((w) => w.id)], `${a.name} ${tier === 'flirt' ? 'shamelessly' : 'physically'} ${phrase} in ${roomName}.`, 2.5);
       const people = [a.id, t.id, ...witnesses.slice(0, 1).map((w) => w.id)];
       this.ctx.scene({
         people,
         room: t.room,
         trigger: 'aftermath',
-        why: tier === 'flirt'
-          ? `${a.name} just got shamelessly flirty with ${t.name} in ${roomName} and ${phrase} (action: "${raw}"). React directly in character.`
-          : `${a.name} just walked up to ${t.name} in ${roomName} and shamelessly, physically ${phrase} right in front of everyone (action: "${raw}"). (${a.name} actually did this to ${t.name} - react directly to what ${a.name} just did.)`,
+        why,
         priority: 9,
         minLines: 2,
         maxLines: Math.min(4, people.length + 1),
@@ -1676,6 +2031,13 @@ export class Directives {
     const sim = this.ctx.sim;
     const room = d.rendezvousRoom ?? a.room;
     const roomName = roomDef(room).name;
+    sim.release(a.id, d.id);
+    sim.release(t.id, d.id);
+    if (d.censorId) sim.removeEffect(d.censorId);
+    sim.removeStatus(a.id, 'censored');
+    sim.removeStatus(t.id, 'censored');
+    sim.removeStatus(a.id, 'naked');
+    sim.removeStatus(t.id, 'naked');
     this.active.delete(a.id);
     sim.markFling(a.id, t.id);
     sim.shiftChemistry(a.id, t.id, 28);
@@ -1686,10 +2048,10 @@ export class Directives {
     sim.bumpMood(t.id, 0.2);
     sim.removeStatus(a.id, 'aroused');
     sim.removeStatus(t.id, 'aroused');
-    sim.addStatus(a.id, 'flustered', 45, t.id);
-    sim.addStatus(t.id, 'flustered', 45, a.id);
-    sim.addStatus(a.id, 'afterglow', 70, t.id);
-    sim.addStatus(t.id, 'afterglow', 70, a.id);
+    sim.addStatus(a.id, 'flustered', 120, t.id);
+    sim.addStatus(t.id, 'flustered', 120, a.id);
+    sim.addStatus(a.id, 'afterglow', 160, t.id);
+    sim.addStatus(t.id, 'afterglow', 160, a.id);
     sim.feel(a.id, 'love', 0.95, 14);
     sim.feel(t.id, 'love', 0.95, 14);
     sim.fx({ kind: 'burst', what: 'hearts', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 16, count: 14 });
@@ -1718,18 +2080,25 @@ export class Directives {
     const sim = this.ctx.sim;
     const room = d.rendezvousRoom ?? walker.room;
     const roomName = roomDef(room).name;
+    sim.release(a.id, d.id);
+    sim.release(t.id, d.id);
+    if (d.censorId) sim.removeEffect(d.censorId);
+    sim.removeStatus(a.id, 'censored');
+    sim.removeStatus(t.id, 'censored');
+    sim.addStatus(a.id, 'naked', 120, t.id);
+    sim.addStatus(t.id, 'naked', 120, a.id);
     this.active.delete(a.id);
     sim.markFling(a.id, t.id);
     sim.shiftChemistry(a.id, t.id, 22);
     sim.shiftChemistry(t.id, a.id, 20);
     sim.removeStatus(a.id, 'aroused');
     sim.removeStatus(t.id, 'aroused');
-    sim.addStatus(a.id, 'flustered', 50, t.id);
-    sim.addStatus(t.id, 'flustered', 50, a.id);
-    sim.addStatus(a.id, 'afterglow', 45, t.id);
-    sim.addStatus(t.id, 'afterglow', 45, a.id);
-    sim.addStatus(a.id, 'scandal', 85, t.id);
-    sim.addStatus(t.id, 'scandal', 85, a.id);
+    sim.addStatus(a.id, 'flustered', 120, t.id);
+    sim.addStatus(t.id, 'flustered', 120, a.id);
+    sim.addStatus(a.id, 'afterglow', 120, t.id);
+    sim.addStatus(t.id, 'afterglow', 120, a.id);
+    sim.addStatus(a.id, 'scandal', 200, t.id);
+    sim.addStatus(t.id, 'scandal', 200, a.id);
     sim.react(a.id, 'startle', 1.2);
     sim.react(t.id, 'startle', 1.2);
     sim.react(walker.id, 'startle', 1.2);

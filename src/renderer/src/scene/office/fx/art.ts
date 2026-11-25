@@ -316,7 +316,10 @@ const SHAPES: Record<string, string[]> = {
   eye2: ['.www.', 'wwwkw', '.www.'],
   speed: ['wwww'],
   speedS: ['www'],
-  zig: ['y.', '.y', 'y.']
+  zig: ['y.', '.y', 'y.'],
+  shirt: ['ww.ww', 'wwwww', '.www.', '.www.'],
+  pants: ['bbbbb', 'bb.bb', 'bb.bb', 'bb.bb'],
+  undies: ['ppppp', '.ppp.', '..p..']
 };
 
 export function shapePix(name: string, outline = false): Pix {
@@ -412,7 +415,8 @@ export const BURSTS: Record<BurstKind, BurstStyle> = {
   dust: { frames: 'square', tints: [0xd8ccb4, 0xbfb29a, 0xe8e0cc], motion: 'ring', count: 14, speed: 40, life: 0.7 },
   crumbs: { frames: ['crumb', 'crumbB'], motion: 'pop', count: 12, speed: 45, life: 1.6, still: true },
   water: { frames: ['drop'], motion: 'pop', count: 14, speed: 55, life: 1.0 },
-  snacks: { frames: ['chips', 'chipsB', 'candy', 'donut', 'soda'], motion: 'pop', count: 10, speed: 70, life: 3.0, outline: true, still: true }
+  snacks: { frames: ['chips', 'chipsB', 'candy', 'donut', 'soda'], motion: 'pop', count: 10, speed: 70, life: 3.0, outline: true, still: true },
+  clothes: { frames: ['shirt', 'pants', 'undies'], motion: 'flutter', count: 10, speed: 58, life: 2.3, outline: true, still: true }
 };
 
 // ── a 3 x 5 pixel font for floating text ────────────────────────────────────

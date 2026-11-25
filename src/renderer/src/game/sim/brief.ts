@@ -38,10 +38,16 @@ export function statusWords(core: SimCore, s: StatusEffect): string | null {
     case 'guilty': return `just took out ${t} and everyone saw`;
     case 'quit': return 'stormed out and quit for the day';
     case 'naked': return 'completely naked in the office, shamelessly flashing everyone with zero clothes on';
+    case 'censored': return 'in the middle of an explicitly censored R-rated act on the office floor';
     case 'flustered': return 'blushing, breathless, and visibly worked up after a shamelessly steamy moment';
     case 'aroused': return 'visibly hot and bothered, eyeing coworkers with shameless sexual tension and lowered inhibitions';
     case 'afterglow': return 'messy-haired, shirt rumpled, and glowing straight out of a steamy office hookup';
     case 'scandal': return 'at the center of explicit office sex-and-exposure gossip (any earlier stripping or hookup already ended - react to the juicy scandal in past tense)';
+    case 'bound': return `willingly cuffed and playing along in a kinky office power-play dare with ${t} (teasing, squirming, or joking about safe words)`;
+    case 'dominated': return `deeply into a consensual dom/sub power-play dare with ${t}, blushing hard, hanging on every order, and eager to obey`;
+    case 'blackmailed': return `being shamelessly blackmailed by ${t} over compromising office dirt/photos, sweating and desperate to cut a deal for silence`;
+    case 'voyeur': return 'caught getting a sneaky voyeur thrill peeping on coworkers\' scandalous office antics';
+    case 'exhibitionist': return 'riding a shameless exhibitionist adrenaline rush, daring everyone to stare and eager to peel clothes off or put on a show';
     default: return null;
   }
 }

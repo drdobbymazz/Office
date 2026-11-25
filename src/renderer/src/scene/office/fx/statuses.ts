@@ -7,29 +7,32 @@ import type { StatusKind } from '@/game/core/types';
 import type { FxPerson } from '@/game/view/api';
 import { pick, rr, type Env } from './core';
 import { C, CONFETTI_TINTS, framesOf, goldSparkleFrames, shapeTex, squareTex } from './art';
-import { confetti, emitBurst, emitDrift, emitPoof, sparkles } from './emit';
+import { confetti, emitBurst, emitDrift, emitDrop, emitPoof, sparkles } from './emit';
 import { Land, Layer } from './particles';
 import { INK, Pix } from './pix';
 
 const KINDS: readonly StatusKind[] = [
   'love', 'rage', 'truth', 'paranoid', 'caffeinated', 'sleepy', 'asleep', 'tiny', 'giant', 'swapped',
   'crowned', 'party', 'rich', 'spooked', 'abducted', 'stung', 'dizzy', 'wet', 'sooty', 'frizzy', 'frozen',
-  'knockedOut', 'eliminated', 'guilty', 'quit', 'naked', 'flustered', 'aroused', 'afterglow', 'scandal'
+  'knockedOut', 'eliminated', 'guilty', 'quit', 'naked', 'censored', 'flustered', 'aroused', 'afterglow', 'scandal',
+  'bound', 'dominated', 'blackmailed', 'voyeur', 'exhibitionist'
 ];
-const IDX = new Map<StatusKind, number>(KINDS.map((k, i) => [k, i]));
+const BIT = new Map<StatusKind, bigint>(KINDS.map((k, i) => [k, 1n << BigInt(i)]));
+const bitOf = (k: StatusKind): bigint => BIT.get(k) ?? 0n;
 
 /** Seconds between emissions for each status (0 = handled another way). */
 const EVERY: Record<StatusKind, number> = {
   love: 0.55, rage: 0.32, truth: 0.22, paranoid: 0, caffeinated: 0.1, sleepy: 1.3, asleep: 0.75,
   tiny: 0, giant: 0, swapped: 0, crowned: 0.32, party: 0.09, rich: 0.45, spooked: 0.45,
   abducted: 0.14, stung: 0.55, dizzy: 0, wet: 0.8, sooty: 0.4, frizzy: 0.22, frozen: 0.38,
-  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0, naked: 0.55, flustered: 1.1, aroused: 0.7, afterglow: 1.2, scandal: 0
+  knockedOut: 0, eliminated: 0, guilty: 0.7, quit: 0, naked: 0.55, censored: 0.42, flustered: 1.1, aroused: 0.7, afterglow: 1.2, scandal: 0,
+  bound: 0.7, dominated: 0.75, blackmailed: 0.85, voyeur: 0, exhibitionist: 0.45
 };
 
 interface PFx {
   id: string;
   seen: boolean;
-  mask: number;
+  mask: bigint;
   timers: Float32Array;
   box: Container | null;
   stars: Sprite[];
@@ -42,20 +45,42 @@ interface PFx {
 
 function buildCensorFrames(): Texture[] {
   const palette = [0xf5d6ba, 0xf2b59c, 0xfff0e4, 0xd49678, 0xe8a4b0];
-  return [0, 1].map((shift) => {
-    const px = new Pix(12, 12);
-    for (let gy = 0; gy < 4; gy++) {
+  return [0, 1, 2, 3].map((shift) => {
+    const px = new Pix(12, 14);
+    for (let gy = 0; gy < 5; gy++) {
       for (let gx = 0; gx < 4; gx++) {
         const idx = (gx * 3 + gy * 5 + shift * 2) % palette.length;
-        px.rect(gx * 3, gy * 3, 3, 3, palette[idx]);
+        px.rect(gx * 3, Math.min(11, gy * 3), 3, 3, palette[idx]);
       }
     }
     px.rect(0, 0, 12, 1, INK);
-    px.rect(0, 11, 12, 1, INK);
-    px.rect(0, 0, 1, 12, INK);
-    px.rect(11, 0, 1, 12, INK);
-    // Thin dark censor strip across the middle that shifts on alternate frames.
-    px.rect(1, 5 + (shift % 2), 10, 2, INK);
+    px.rect(0, 13, 12, 1, INK);
+    px.rect(0, 0, 1, 14, INK);
+    px.rect(11, 0, 1, 14, INK);
+    // Double dark censor bars across chest & hips shifting each frame.
+    px.rect(1, 3 + (shift % 2), 10, 2, INK);
+    px.rect(1, 9 + ((shift + 1) % 2), 10, 2, INK);
+    return px.toTexture();
+  });
+}
+
+function buildActiveCensorFrames(): Texture[] {
+  const palette = [0xff86a8, 0x241822, 0xf5d6ba, 0xd0507a, 0x1a1420];
+  return [0, 1, 2, 3].map((shift) => {
+    const px = new Pix(18, 13);
+    for (let gy = 0; gy < 4; gy++) {
+      for (let gx = 0; gx < 6; gx++) {
+        const idx = (gx * 2 + gy * 3 + shift) % palette.length;
+        px.rect(gx * 3, gy * 3, 3, 3, palette[idx]);
+      }
+    }
+    px.rect(0, 0, 18, 1, INK);
+    px.rect(0, 12, 18, 1, INK);
+    px.rect(0, 0, 1, 13, INK);
+    px.rect(17, 0, 1, 13, INK);
+    px.rect(1, 4 + (shift % 2), 16, 4, INK);
+    // Hot-pink NSFW caution pixels inside the censor bar.
+    for (let x = 2 + (shift % 2); x < 16; x += 3) px.rect(x, 5 + (shift % 2), 2, 2, C.pink);
     return px.toTexture();
   });
 }
@@ -70,6 +95,7 @@ export class Statuses {
   private eyeFrames: Texture[];
   private zs: Texture[];
   private censorFrames: Texture[];
+  private activeCensorFrames: Texture[];
 
   constructor(private env: Env) {
     this.heart = shapeTex('heart');
@@ -80,12 +106,13 @@ export class Statuses {
     this.eyeFrames = framesOf(['eye0', 'eye1', 'eye2', 'eye1'], true);
     this.zs = [shapeTex('z', true), shapeTex('zBig', true)];
     this.censorFrames = buildCensorFrames();
+    this.activeCensorFrames = buildActiveCensorFrames();
   }
 
   private get(p: FxPerson): PFx {
     let s = this.map.get(p.id);
     if (!s) {
-      s = { id: p.id, seen: true, mask: 0, timers: new Float32Array(KINDS.length), box: null, stars: [], eyes: [], swirl: [], anger: null, censor: null, t: Math.random() * 10 };
+      s = { id: p.id, seen: true, mask: 0n, timers: new Float32Array(KINDS.length), box: null, stars: [], eyes: [], swirl: [], anger: null, censor: null, t: Math.random() * 10 };
       for (let i = 0; i < KINDS.length; i++) s.timers[i] = Math.random() * 0.5;
       this.map.set(p.id, s);
     }
@@ -121,22 +148,25 @@ export class Statuses {
       const s = this.get(p);
       s.seen = true;
       s.t += dt;
-      let mask = 0;
-      if (p.visible) for (let i = 0; i < p.statuses.length; i++) { const k = IDX.get(p.statuses[i]); if (k !== undefined) mask |= 1 << k; }
+      let mask = 0n;
+      if (p.visible) for (let i = 0; i < p.statuses.length; i++) { mask |= bitOf(p.statuses[i]); }
       const started = mask & ~s.mask;
       s.mask = mask;
       const onScreen = p.x > v.x0 - 24 && p.x < v.x1 + 24 && p.y > v.y0 - 8 && p.y < v.y1 + 48;
       const head = Math.max(10, p.y - p.headY);
-      if (started & ((1 << IDX.get('tiny')!) | (1 << IDX.get('giant')!))) {
+      if ((started & (bitOf('tiny') | bitOf('giant'))) !== 0n) {
         emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 8);
         emitPoof(env.parts, p.x, p.y - 2, 0, 5, 0xffffff, 0, 0, 0, 0.4, Layer.Air, 0.6);
       }
-      if (started & (1 << IDX.get('frozen')!)) emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 10);
-      const needBox = mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('knockedOut')!) | (1 << IDX.get('paranoid')!) | (1 << IDX.get('swapped')!) | (1 << IDX.get('rage')!) | (1 << IDX.get('naked')!));
-      if (needBox || s.box) this.attached(s, p, mask, head);
-      if (!mask || !onScreen) continue;
+      if ((started & bitOf('frozen')) !== 0n) emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 10);
+      const needBox = mask & (
+        bitOf('dizzy') | bitOf('knockedOut') | bitOf('paranoid') | bitOf('voyeur') |
+        bitOf('swapped') | bitOf('rage') | bitOf('naked') | bitOf('censored')
+      );
+      if (needBox !== 0n || s.box) this.attached(s, p, mask, head);
+      if (mask === 0n || !onScreen) continue;
       for (let i = 0; i < KINDS.length; i++) {
-        if (!(mask & (1 << i))) continue;
+        if ((mask & (1n << BigInt(i))) === 0n) continue;
         const every = EVERY[KINDS[i]];
         if (!every) continue;
         s.timers[i] -= dt;
@@ -155,11 +185,11 @@ export class Statuses {
   }
 
   /** Sprites that stay on a person: circling stars, watching eyes, swap swirl, anger mark. */
-  private attached(s: PFx, p: FxPerson, mask: number, head: number): void {
+  private attached(s: PFx, p: FxPerson, mask: bigint, head: number): void {
     const box = this.ensureBox(s);
     box.position.set(Math.round(p.x), Math.round(p.headY));
     const t = s.t;
-    const dizzy = !!(mask & ((1 << IDX.get('dizzy')!) | (1 << IDX.get('knockedOut')!)));
+    const dizzy = (mask & (bitOf('dizzy') | bitOf('knockedOut'))) !== 0n;
     for (let i = 0; i < 3; i++) {
       const st = s.stars[i];
       st.visible = dizzy;
@@ -170,20 +200,23 @@ export class Statuses {
       // Behind the head on the far side of the orbit.
       st.alpha = Math.sin(a) < -0.2 ? 0.5 : 1;
     }
-    const para = !!(mask & (1 << IDX.get('paranoid')!));
+    const para = (mask & bitOf('paranoid')) !== 0n;
+    const voy = (mask & bitOf('voyeur')) !== 0n;
+    const showEyes = para || voy;
     for (let i = 0; i < 2; i++) {
       const e = s.eyes[i];
-      e.visible = para;
-      if (!para) continue;
+      e.visible = showEyes;
+      if (!showEyes) continue;
       const side = i === 0 ? -1 : 1;
       e.x = Math.round(side * (13 + Math.sin(t * 1.3 + i) * 2));
       e.y = Math.round(-4 + Math.sin(t * 1.9 + i * 2) * 2);
       // Eyes glance about, now and then blinking shut.
       const blink = Math.floor(t * 3 + i) % 9 === 0;
       e.texture = this.eyeFrames[Math.floor(t * 1.2 + i * 2) % 4];
+      e.tint = voy && !para ? 0xe880c8 : 0xffffff;
       e.alpha = blink ? 0 : 0.95;
     }
-    const sw = !!(mask & (1 << IDX.get('swapped')!));
+    const sw = (mask & bitOf('swapped')) !== 0n;
     for (let i = 0; i < 6; i++) {
       const d = s.swirl[i];
       d.visible = sw;
@@ -193,16 +226,21 @@ export class Statuses {
       d.x = Math.round(Math.cos(a) * r);
       d.y = Math.round(-6 + Math.sin(a) * r * 0.35 - (i % 3));
     }
-    const rage = !!(mask & (1 << IDX.get('rage')!));
+    const rage = (mask & bitOf('rage')) !== 0n;
     if (s.anger) {
       s.anger.visible = rage && Math.floor(t * 3) % 2 === 0;
       s.anger.position.set(7, 2);
     }
-    const naked = !!(mask & (1 << IDX.get('naked')!));
+    const activeCensor = (mask & bitOf('censored')) !== 0n;
+    const naked = (mask & bitOf('naked')) !== 0n;
     if (s.censor) {
-      s.censor.visible = naked;
-      if (naked) {
-        s.censor.texture = this.censorFrames[Math.floor(t * 4) % 2];
+      s.censor.visible = naked || activeCensor;
+      if (activeCensor) {
+        s.censor.texture = this.activeCensorFrames[Math.floor(t * 8) % 4];
+        s.censor.position.set(Math.round(Math.sin(t * 14) * 1.5), Math.round(head * 0.56 + Math.abs(Math.sin(t * 10)) * -1.5));
+        s.censor.scale.set(p.scale * (1 + Math.sin(t * 12) * 0.06));
+      } else if (naked) {
+        s.censor.texture = this.censorFrames[Math.floor(t * 5) % 4];
         s.censor.position.set(0, Math.round(head * 0.56));
         s.censor.scale.set(p.scale);
       }
@@ -298,6 +336,31 @@ export class Statuses {
         break;
       case 'naked':
         q.x += rr(-7, 7); q.z = rr(head * 0.35, head * 0.75); q.vz = rr(6, 12); q.frames = sparkles(); q.once = true; q.fps = 7; q.life = 0.5; tint = pick([0xff90b0, 0xffd23d, 0xffffff]);
+        break;
+      case 'censored':
+        q.x += rr(-8, 8); q.z = head - 2 + rr(0, 4); q.vz = rr(16, 24); q.sway = rr(1.5, 3); q.swayF = rr(6, 8); q.swayPh = rr(0, 6);
+        q.life = rr(0.9, 1.3); q.fadeOut = 0.35; q.popIn = 0.1; tex = this.heart; tint = pick([0xff5a8a, 0xff90b0, 0xffd23d]);
+        if (Math.random() < 0.45) {
+          emitPoof(parts, p.x + rr(-6, 6), p.y, head * 0.6, rr(2, 3.2), 0xffc8dc, rr(-12, 12), 0, rr(10, 18), 0.45, Layer.High, 0.75);
+        }
+        break;
+      case 'bound':
+        q.x += rr(-6, 6); q.z = rr(head * 0.3, head * 0.65); q.vz = rr(6, 12); q.frames = sparkles(); q.once = true; q.fps = 8; q.life = 0.55;
+        tint = pick([0xff86a8, 0xd03060, 0xffb8d0]);
+        if (Math.random() < 0.35) emitDrop(parts, p.x + rr(-4, 4), p.y, head - 2, -25, Layer.High);
+        break;
+      case 'dominated':
+        q.x += rr(-5, 5); q.z = head - 3 + rr(0, 3); q.vz = rr(13, 20); q.sway = rr(1, 2.2); q.swayF = rr(4, 6); q.swayPh = rr(0, 6);
+        q.life = rr(1.0, 1.4); q.fadeOut = 0.35; q.popIn = 0.12; tex = this.heart; tint = pick([0xd03060, 0xff5a8a]);
+        break;
+      case 'blackmailed':
+        parts.commit(q, shapeTex('drop'), 0xb6e0ff);
+        q.x += pick([-6, 6]); q.z = head - 2; q.vz = -16; q.g = 80; q.life = 0.45; q.fadeOut = 0.35;
+        emitDrift(parts, p.x + rr(-5, 5), p.y, head + 1, rr(2, 3), 0x5a3a7a, rr(-4, 4), 0, rr(8, 13), 0.65, 0.65, Layer.High);
+        return;
+      case 'exhibitionist':
+        q.x += rr(-8, 8); q.z = rr(head * 0.3, head + 2); q.vz = rr(8, 16); q.frames = sparkles(); q.once = true; q.fps = 9; q.life = 0.55;
+        tint = pick([0xffd93d, 0xff86a8, 0xffffff]);
         break;
       default:
         q.life = 0.01;

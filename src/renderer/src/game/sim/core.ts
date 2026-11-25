@@ -60,7 +60,8 @@ const DAYLOG_CAP = 240;
 const GESTURES: Partial<Record<LineAct, [AnimId, number]>> = {
   laugh: ['laugh', 1.4], cry: ['cry', 2.2], point: ['point', 1.1], shrug: ['shrug', 1.0], facepalm: ['facepalm', 1.3],
   cheer: ['cheer', 1.4], wave: ['wave', 1.1], nod: ['nod', 0.9], shake_head: ['shake', 1.0], stomp: ['stomp', 1.1],
-  cower: ['cower', 1.6], gasp: ['startle', 0.7]
+  cower: ['cower', 1.6], gasp: ['startle', 0.7], flirt: ['seduce', 1.3], flex: ['flex', 1.2], kneel: ['kneel', 1.4],
+  dance: ['dance', 1.5], dominate: ['dominate', 1.5], blush: ['seduce', 1.3], peep: ['peep', 1.4], tease: ['lick', 1.3]
 };
 
 
@@ -169,6 +170,7 @@ export class SimCore implements DirectorSimApi {
     if (p.has('giant')) m *= 0.85;
     if (p.has('dizzy')) m *= 0.8;
     if (p.has('sleepy')) m *= 0.75;
+    if (p.has('bound')) m *= 0.55;
     return m;
   }
 

@@ -8,7 +8,7 @@
 import type { AnimId, EmotionId } from '@/game/core/types';
 import type { PersonState } from '@/game/view/api';
 import { ARM, LEGS, VIEW, PROPS, type FrameSpec } from './art';
-import { EYES, MOUTH, BROW } from './faces';
+import { EYES, FX, MOUTH, BROW } from './faces';
 
 export interface Motion { x: number; y: number; rot: number; sx: number; sy: number; /** rotation pivot, px above the feet (negative) */ py: number }
 
@@ -46,7 +46,9 @@ export function resetFaceOv(o: FaceOv): void {
 
 /** Anims that make a seated person stand up. */
 export const STANDING_ONLY: ReadonlySet<AnimId> = new Set<AnimId>([
-  'walk', 'run', 'panic', 'held', 'lie', 'float', 'fall', 'land', 'beamUp', 'dance', 'stomp', 'mop', 'extinguish', 'carry'
+  'walk', 'run', 'panic', 'held', 'lie', 'float', 'fall', 'land', 'beamUp', 'dance', 'stomp', 'mop', 'extinguish', 'carry',
+  'strip', 'kiss', 'makeOut', 'lapDance', 'grinding', 'spank', 'selfTouch', 'seduce', 'twerk', 'backflip', 'kneel', 'flex',
+  'whip', 'tieUp', 'worship', 'dominate', 'lick', 'peep', 'tableDance'
 ]);
 
 const TAU = Math.PI * 2;
@@ -452,6 +454,320 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
       break;
     }
     case 'frozen': break; // the view holds the previous frame
+    case 'strip': {
+      // Three beats: tug shirt overhead -> hip shimmy -> shameless ta-da reveal.
+      if (t < 0.75) {
+        const f = frame(t, 8, 2);
+        both(spec, f ? ARM.up : ARM.v);
+        spec.headDy = f ? 1 : 0;
+        m.x = Math.sin(t * 28) * 0.9;
+        o.mouth = MOUTH.o; o.fxAdd = FX.blush2;
+      } else if (t < 1.55) {
+        const f = frame(t, 6, 2);
+        both(spec, f ? ARM.hips : ARM.out);
+        spec.legs = sv ? (f ? LEGS.sideA : LEGS.sideB) : (f ? LEGS.danceL : LEGS.danceR);
+        m.x = Math.sin(t * 14) * 1.4;
+        m.y = -Math.abs(Math.sin(t * 7)) * 1.8;
+        o.eyes = EYES.wink; o.mouth = MOUTH.cheshire; o.fxAdd = FX.blush2;
+      } else {
+        both(spec, ARM.v);
+        spec.legs = sv ? LEGS.sideA : LEGS.spread;
+        m.y = -Math.abs(Math.sin(t * 6)) * 2.2;
+        m.rot = Math.sin(t * 5) * 0.08;
+        o.eyes = EYES.wink; o.mouth = MOUTH.cheshire; o.fxAdd = FX.blush2;
+      }
+      m.py = 0;
+      o.emo = 'excited'; o.emoMin = 0.7;
+      break;
+    }
+    case 'kiss': {
+      const lean = fd || (view === VIEW.front ? 1 : -1);
+      arms(spec, view, ARM.hugHi, ARM.hugLo);
+      spec.legs = sv ? LEGS.sideStand : LEGS.together;
+      m.x = lean * 2.2;
+      m.rot = lean * 0.13;
+      m.py = -4;
+      m.sy = 1 + Math.sin(t * 4) * 0.02;
+      o.eyes = EYES.shut; o.noBlink = true;
+      o.mouth = MOUTH.pout;
+      o.fxAdd = FX.blush2;
+      o.emo = 'love'; o.emoMin = 0.85;
+      break;
+    }
+    case 'makeOut': {
+      const lean = fd || (view === VIEW.front ? 1 : -1);
+      const sw = Math.sin(t * 7);
+      arms(spec, view, Math.floor(t * 3) % 2 ? ARM.hugHi : ARM.cheek, ARM.hugLo);
+      spec.legs = sv ? LEGS.sideA : LEGS.spread;
+      m.x = lean * 2.8 + sw * 0.6;
+      m.rot = lean * 0.17 + sw * 0.05;
+      m.y = -Math.abs(sw) * 0.9;
+      m.sy = 0.98 + Math.abs(sw) * 0.04;
+      m.py = -6;
+      o.eyes = Math.floor(t * 2) % 2 ? EYES.shut : EYES.heart;
+      o.noBlink = true;
+      o.mouth = Math.floor(t * 4) % 2 ? MOUTH.o : MOUTH.open;
+      o.fxAdd = FX.blush2;
+      o.emo = 'love'; o.emoMin = 0.95;
+      break;
+    }
+    case 'lapDance': {
+      const ph = Math.sin(t * 5.2);
+      const f = frame(t, 4, 4);
+      arms(spec, view, f === 0 ? ARM.head : f === 2 ? ARM.waveA : ARM.hips, ARM.hips);
+      spec.legs = sv ? (f % 2 ? LEGS.sideA : LEGS.sideB) : (f === 0 ? LEGS.crouch : f === 2 ? LEGS.spread : LEGS.danceL);
+      spec.bodyDy = f % 2 ? 1 : 0;
+      m.x = ph * 2.0;
+      m.y = -Math.abs(ph) * 2.2 + 0.8;
+      m.rot = ph * 0.16;
+      m.py = 0;
+      o.eyes = f % 2 ? EYES.wink : EYES.half;
+      o.mouth = f % 2 ? MOUTH.cheshire : MOUTH.tongue;
+      o.fxAdd = FX.blush2;
+      o.emo = 'mischievous'; o.emoMin = 0.85;
+      break;
+    }
+    case 'grinding': {
+      const drive = Math.sin(t * 11);
+      const dir = fd || (view === VIEW.front ? 1 : -1);
+      const f = frame(t, 6, 2);
+      arms(spec, view, f ? ARM.hugHi : ARM.forwardUp, f ? ARM.hugLo : ARM.head);
+      spec.legs = sv ? (f ? LEGS.sideA : LEGS.sideB) : (f ? LEGS.spread : LEGS.crouch);
+      spec.bodyDy = f ? 1 : 0;
+      spec.headDy = f ? 1 : 0;
+      m.x = dir * (1.6 + drive * 1.4);
+      m.y = -Math.abs(drive) * 2.0;
+      m.rot = dir * (0.08 + drive * 0.08);
+      m.sy = 1 - Math.abs(drive) * 0.07;
+      m.sx = 2 - m.sy;
+      m.py = -6;
+      o.eyes = f ? EYES.squeeze : EYES.heart;
+      o.noBlink = true;
+      o.mouth = f ? MOUTH.o : MOUTH.open;
+      o.fxAdd = FX.blush2 | FX.sweat;
+      o.emo = 'love'; o.emoMin = 0.95;
+      break;
+    }
+    case 'spank': {
+      const cyc = (t * 1.7) % 1;
+      const wind = cyc < 0.4;
+      const dir = fd || (view === VIEW.front ? 1 : -1);
+      arms(spec, view, wind ? (sv ? ARM.sideB : ARM.waveB) : (sv ? ARM.sidePoint : ARM.across), ARM.hips);
+      spec.legs = sv ? LEGS.sideA : LEGS.spread;
+      m.x = wind ? -dir * 1.0 : dir * 2.4;
+      m.rot = wind ? -dir * 0.1 : dir * 0.15;
+      m.py = 0;
+      o.eyes = EYES.wink; o.mouth = MOUTH.cheshire; o.fxAdd = FX.blush;
+      o.emo = 'mischievous'; o.emoMin = 0.8;
+      break;
+    }
+    case 'selfTouch': {
+      const rock = Math.sin(t * 12);
+      const f = frame(t, 8, 2);
+      arms(spec, view, ARM.belly, ARM.across);
+      spec.legs = sv ? LEGS.sitSide : (f ? LEGS.crouch : LEGS.spread);
+      spec.bodyDy = 2;
+      spec.headDy = f ? 1 : 0;
+      m.x = rock * 0.9;
+      m.y = -Math.abs(rock) * 1.2;
+      m.sy = 0.95 + Math.abs(rock) * 0.05;
+      m.py = 0;
+      o.eyes = f ? EYES.squeeze : EYES.shut;
+      o.noBlink = true;
+      o.mouth = f ? MOUTH.o : MOUTH.wavy;
+      o.fxAdd = FX.blush2 | FX.sweat;
+      o.emo = 'embarrassed'; o.emoMin = 0.9;
+      break;
+    }
+    case 'seduce': {
+      const sway = Math.sin(t * 3.2);
+      arms(spec, view, Math.floor(t * 1.2) % 2 ? ARM.cheek : ARM.waveA, ARM.hips);
+      spec.legs = sv ? LEGS.sideStand : LEGS.danceL;
+      spec.headDx = sway > 0.5 ? 1 : sway < -0.5 ? -1 : 0;
+      m.x = sway * 1.3;
+      m.rot = sway * 0.09;
+      m.py = 0;
+      o.eyes = Math.floor(t * 2) % 2 ? EYES.wink : EYES.half;
+      o.mouth = MOUTH.smirkBig;
+      o.fxAdd = FX.blush;
+      o.emo = 'mischievous'; o.emoMin = 0.7;
+      break;
+    }
+    case 'twerk': {
+      const bounce = Math.sin(t * 14);
+      const f = frame(t, 7, 2);
+      both(spec, ARM.hips);
+      spec.legs = sv ? LEGS.sideA : (f ? LEGS.crouch : LEGS.spread);
+      spec.bodyDy = 2;
+      m.y = -Math.abs(bounce) * 2.6;
+      m.sy = 0.88 + Math.abs(bounce) * 0.14;
+      m.sx = 2 - m.sy;
+      m.rot = (fd || 1) * bounce * 0.14;
+      m.py = 0;
+      o.eyes = EYES.wink; o.mouth = MOUTH.laugh; o.fxAdd = FX.blush2;
+      o.emo = 'excited'; o.emoMin = 0.8;
+      break;
+    }
+    case 'backflip': {
+      const cyc = (t % 1.4) / 1.4;
+      if (cyc < 0.18) {
+        both(spec, ARM.down);
+        spec.legs = LEGS.crouch;
+        spec.bodyDy = 2;
+        m.sy = 0.84; m.sx = 1.14;
+      } else if (cyc < 0.72) {
+        const k = (cyc - 0.18) / 0.54;
+        both(spec, ARM.out);
+        spec.legs = LEGS.together;
+        m.y = -Math.sin(k * Math.PI) * 16;
+        m.rot = -k * TAU;
+        m.py = -14;
+      } else {
+        both(spec, ARM.v);
+        spec.legs = LEGS.spread;
+        const k = (cyc - 0.72) / 0.28;
+        m.sy = 1 - 0.16 * Math.sin(k * Math.PI);
+        m.sx = 2 - m.sy;
+      }
+      o.emo = 'excited'; o.emoMin = 0.85;
+      break;
+    }
+    case 'kneel': {
+      both(spec, frame(t, 2, 2) ? ARM.forwardUp : ARM.forward);
+      spec.legs = sv ? LEGS.sitSide : LEGS.kneel;
+      spec.bodyDy = 2;
+      spec.headDy = 1;
+      m.y = Math.sin(t * 3) * 0.4;
+      o.emo = 'love'; o.emoMin = 0.4;
+      break;
+    }
+    case 'flex': {
+      const f = frame(t, 1.5, 2);
+      if (f === 0) {
+        both(spec, ARM.up);
+      } else {
+        arms(spec, view, ARM.robotUp, ARM.hips);
+      }
+      spec.legs = sv ? LEGS.sideStand : LEGS.spread;
+      m.sx = 1.09; m.sy = 0.96;
+      m.y = -Math.abs(Math.sin(t * 4)) * 0.8;
+      o.eyes = EYES.sparkle; o.mouth = MOUTH.grin;
+      o.emo = 'proud'; o.emoMin = 0.85;
+      break;
+    }
+    case 'whip': {
+      const cyc = (t * 1.9) % 1;
+      const wind = cyc < 0.35;
+      const dir = fd || (view === VIEW.front ? 1 : -1);
+      arms(spec, view, wind ? (sv ? ARM.sideB : ARM.waveB) : (sv ? ARM.sidePoint : ARM.across), ARM.hips);
+      spec.legs = sv ? LEGS.sideA : LEGS.spread;
+      m.x = wind ? -dir * 1.2 : dir * 2.6;
+      m.rot = wind ? -dir * 0.14 : dir * 0.18;
+      m.y = wind ? 0 : -Math.sin(((cyc - 0.35) / 0.65) * Math.PI) * 1.2;
+      m.py = 0;
+      o.eyes = EYES.wink; o.mouth = MOUTH.cheshire; o.fxAdd = FX.blush;
+      o.emo = 'mischievous'; o.emoMin = 0.85;
+      break;
+    }
+    case 'tieUp': {
+      const f = frame(t, 6, 2);
+      const wiggle = Math.sin(t * 9);
+      arms(spec, view, ARM.belly, ARM.hugLo);
+      spec.legs = sv ? (f ? LEGS.sideA : LEGS.sideStand) : (f ? LEGS.danceL : LEGS.spread);
+      spec.headDy = f ? 1 : 0;
+      m.x = wiggle * 1.3;
+      m.rot = wiggle * 0.08;
+      m.sy = 0.96 + Math.abs(wiggle) * 0.04;
+      m.py = 0;
+      o.eyes = f ? EYES.shut : EYES.squeeze;
+      o.noBlink = true;
+      o.mouth = f ? MOUTH.pout : MOUTH.wavy;
+      o.fxAdd = FX.blush2 | FX.sweat;
+      o.emo = 'embarrassed'; o.emoMin = 0.9;
+      break;
+    }
+    case 'worship': {
+      const sway = Math.sin(t * 4.5);
+      const dir = fd || (view === VIEW.front ? 1 : -1);
+      both(spec, frame(t, 3, 2) ? ARM.forwardUp : ARM.v);
+      spec.legs = sv ? LEGS.sitSide : LEGS.kneel;
+      spec.bodyDy = 2;
+      spec.headDy = 1;
+      m.x = dir * 1.2 + sway * 0.5;
+      m.y = Math.sin(t * 5) * 0.6;
+      m.rot = dir * 0.09 + sway * 0.04;
+      m.py = 0;
+      o.eyes = EYES.heart;
+      o.noBlink = true;
+      o.mouth = MOUTH.o;
+      o.fxAdd = FX.blush2;
+      o.emo = 'love'; o.emoMin = 0.85;
+      break;
+    }
+    case 'dominate': {
+      const dir = fd || (view === VIEW.front ? 1 : -1);
+      const beat = Math.sin(t * 3.5);
+      arms(spec, view, sv ? ARM.sidePoint : ARM.point, ARM.hips);
+      spec.legs = sv ? LEGS.sideA : LEGS.spread;
+      m.x = dir * (1.2 + beat * 0.4);
+      m.rot = dir * 0.1;
+      m.sy = 1.03;
+      m.py = 0;
+      o.eyes = EYES.half;
+      o.mouth = MOUTH.smirkBig;
+      o.emo = 'smug'; o.emoMin = 0.85;
+      break;
+    }
+    case 'lick': {
+      const dip = Math.abs(Math.sin(t * 7));
+      const dir = fd || (view === VIEW.front ? 1 : -1);
+      arms(spec, view, Math.floor(t * 3) % 2 ? ARM.cheek : ARM.chin, ARM.hips);
+      spec.legs = sv ? LEGS.sideStand : LEGS.spread;
+      spec.headDy = dip > 0.5 ? 1 : 0;
+      m.x = dir * (2.0 + dip * 0.8);
+      m.rot = dir * (0.12 + dip * 0.05);
+      m.y = -dip * 0.8;
+      m.py = -4;
+      o.eyes = EYES.wink;
+      o.noBlink = true;
+      o.mouth = MOUTH.tongue;
+      o.fxAdd = FX.blush2 | FX.sweat;
+      o.emo = 'mischievous'; o.emoMin = 0.9;
+      break;
+    }
+    case 'peep': {
+      const glance = frame(t, 1.8, 2);
+      arms(spec, view, glance ? ARM.chin : ARM.eyes, ARM.down);
+      spec.legs = sv ? LEGS.sitSide : LEGS.crouch;
+      spec.bodyDy = 2;
+      spec.headDx = glance ? 1 : -1;
+      m.x = Math.sin(t * 3.2) * 0.9;
+      m.y = 1;
+      m.py = 0;
+      o.eyes = glance ? EYES.glanceR : EYES.glanceL;
+      o.mouth = MOUTH.smirkBig;
+      o.fxAdd = FX.sweat;
+      o.emo = 'mischievous'; o.emoMin = 0.75;
+      break;
+    }
+    case 'tableDance': {
+      const f = frame(t, 4, 4);
+      const bounce = Math.abs(Math.sin(t * 9));
+      const tilt = Math.sin(t * 4.5);
+      arms(spec, view, f === 0 ? ARM.v : f === 2 ? ARM.head : ARM.hips, ARM.hips);
+      spec.legs = sv ? (f % 2 ? LEGS.sideA : LEGS.sideB) : (f % 2 ? LEGS.danceL : LEGS.spread);
+      m.x = tilt * 2.2;
+      m.y = -5 - bounce * 3.5;
+      m.rot = tilt * 0.14;
+      m.sy = 0.94 + bounce * 0.08;
+      m.sx = 2 - m.sy;
+      m.py = 0;
+      o.eyes = EYES.wink;
+      o.mouth = f % 2 ? MOUTH.tongue : MOUTH.laugh;
+      o.fxAdd = FX.blush2;
+      o.emo = 'excited'; o.emoMin = 0.9;
+      break;
+    }
   }
 }
 

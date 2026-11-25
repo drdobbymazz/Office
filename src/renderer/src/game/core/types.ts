@@ -61,7 +61,11 @@ export const ANIMS = [
   // reactions
   'cower', 'startle', 'shiver', 'stomp', 'dizzy',
   // states
-  'sleep', 'lie', 'float', 'held', 'fall', 'land', 'zapped', 'frozen', 'dance', 'beamUp'
+  'sleep', 'lie', 'float', 'held', 'fall', 'land', 'zapped', 'frozen', 'dance', 'beamUp',
+  // expressive, spicy & physical stunts
+  'strip', 'kiss', 'makeOut', 'lapDance', 'grinding', 'spank', 'selfTouch', 'seduce',
+  'twerk', 'backflip', 'kneel', 'flex',
+  'whip', 'tieUp', 'worship', 'dominate', 'lick', 'peep', 'tableDance'
 ] as const;
 export type AnimId = (typeof ANIMS)[number];
 
@@ -101,11 +105,17 @@ export type StatusKind =
   | 'eliminated'  // taken out for the day
   | 'guilty'      // took someone out and everyone saw
   | 'quit'        // walked out for the day
-  | 'naked'       // stripped down, covered by a pixel censor mosaic
-  | 'flustered'   // blushing and rattled after a bold romantic moment
-  | 'aroused'     // visibly turned on with lowered inhibitions
-  | 'afterglow'   // rumpled and glowing straight out of a hookup
-  | 'scandal';    // center of juicy workplace romance/exposure gossip (past-tense)
+  | 'naked'         // stripped down, covered by a pixel censor mosaic
+  | 'censored'      // active NSFW censor bar during explicit floor acts
+  | 'flustered'     // blushing and rattled after a bold romantic moment
+  | 'aroused'       // visibly turned on with lowered inhibitions
+  | 'afterglow'     // rumpled and glowing straight out of a hookup
+  | 'scandal'       // center of juicy workplace romance/exposure gossip (past-tense)
+  | 'bound'         // playfully cuffed/tied up in a power-play dare
+  | 'dominated'     // submissive / worship power-play dare with `target`
+  | 'blackmailed'   // squirming under compromising office dirt held by `target`
+  | 'voyeur'        // caught peeping on scandalous office antics
+  | 'exhibitionist'; // riding a shameless daredevil rush to show off / strip
 
 export interface StatusEffect {
   kind: StatusKind;
@@ -257,7 +267,8 @@ export interface RelationShift {
 export const LINE_ACTS = [
   'none', 'laugh', 'cry', 'point', 'shrug', 'facepalm', 'cheer', 'wave', 'nod',
   'shake_head', 'stomp', 'cower', 'gasp', 'whisper', 'shout', 'step_closer', 'back_away',
-  'storm_off', 'walk_off'
+  'storm_off', 'walk_off', 'flirt', 'flex', 'kneel', 'dance',
+  'dominate', 'blush', 'peep', 'tease'
 ] as const;
 export type LineAct = (typeof LINE_ACTS)[number];
 

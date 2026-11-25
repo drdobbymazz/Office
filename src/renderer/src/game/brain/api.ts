@@ -154,7 +154,8 @@ export interface SceneDelegation {
 }
 
 export const STAGE_ACTIONS = [
-  'none', 'kiss', 'make_out', 'flirt', 'sneak_away', 'strip', 'slap', 'shove', 'splash_drink', 'steal', 'hug', 'walk_out'
+  'none', 'kiss', 'make_out', 'flirt', 'sneak_away', 'strip', 'flash', 'lap_dance', 'grope', 'quickie', 'twerk', 'stunt', 'slap', 'shove', 'splash_drink', 'steal', 'hug', 'walk_out',
+  'whip', 'tie_up', 'worship', 'dominate', 'lick', 'table_dance', 'blackmail', 'peep', 'exhibit'
 ] as const;
 export type StageActionKind = (typeof STAGE_ACTIONS)[number];
 

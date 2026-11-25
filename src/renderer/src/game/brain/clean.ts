@@ -256,7 +256,10 @@ export function cleanShifts(raw: unknown, speakers: NameMap, people: NameMap): R
   return out.slice(0, 3);
 }
 
-const INTERPERSONAL_STAGE = new Set(['kiss', 'make_out', 'flirt', 'sneak_away', 'slap', 'shove', 'splash_drink', 'steal', 'hug']);
+const INTERPERSONAL_STAGE = new Set([
+  'kiss', 'make_out', 'flirt', 'sneak_away', 'lap_dance', 'grope', 'quickie', 'slap', 'shove', 'splash_drink', 'steal', 'hug',
+  'whip', 'tie_up', 'worship', 'dominate', 'lick', 'blackmail', 'peep'
+]);
 
 export function cleanStageAction(raw: unknown, speakers: NameMap, people: NameMap): StageAction | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -275,7 +278,7 @@ export function cleanStageAction(raw: unknown, speakers: NameMap, people: NameMa
     kind: kindRaw as StageAction['kind'],
     actor,
     target,
-    detail: cleanText(r.detail, 60)
+    detail: cleanText(r.detail, 90)
   };
 }
 

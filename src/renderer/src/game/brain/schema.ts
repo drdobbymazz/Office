@@ -89,7 +89,7 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
       kind: oneOf(STAGE_ACTIONS),
       actor: oneOf(speakers),
       target: oneOf([...people, 'none']),
-      detail: str(60)
+      detail: str(90)
     });
     props.rumor = str(SCENE_RUMOR_CHARS);
   }

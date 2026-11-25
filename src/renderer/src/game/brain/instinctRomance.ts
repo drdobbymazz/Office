@@ -11,6 +11,9 @@ export type SpicyTopic =
   | 'rendezvous'
   | 'expose'
   | 'jealousy'
+  | 'kink'
+  | 'blackmail'
+  | 'voyeur'
   | 'bold'
   | 'flirt'
   | 'ambient_spicy';
@@ -36,6 +39,15 @@ export function detectSpicyTopic(req: SceneRequest): SpicyTopic | null {
   const states = req.people.map((p) => p.state.join(' ').toLowerCase()).join(' ');
   const combined = `${why} ${facts} ${states}`;
 
+  if (why.includes('blackmail') || why.includes('extort') || states.includes('blackmailed')) {
+    return 'blackmail';
+  }
+  if (why.includes('peeping') || why.includes('voyeur') || states.includes('voyeur')) {
+    return 'voyeur';
+  }
+  if (states.includes('cuffed') || states.includes('dom/sub') || /\b(cuffed|handcuffed|tied\s+up|submissive|dominated|dom\/sub|whip|flog|riding\s+crop|worship|kink|kinky|body\s+shot)\b/i.test(combined)) {
+    return 'kink';
+  }
   if (why.includes('half-undressed') || why.includes('caught') || (why.includes('in the act') && req.trigger === 'aftermath')) {
     return 'caught';
   }
@@ -45,7 +57,7 @@ export function detectSpicyTopic(req: SceneRequest): SpicyTopic | null {
   if (why.includes('secret hookup') || why.includes('secret romantic rendezvous') || why.includes('stumble out') || why.includes('afterglow')) {
     return 'rendezvous';
   }
-  if (why.includes('did not ask anyone else to strip') || why.includes('exposed themselves') || why.includes('stripped completely naked') || why.includes('completely naked')) {
+  if (why.includes('did not ask anyone else to strip') || why.includes('exposed themselves') || why.includes('stripped completely naked') || why.includes('completely naked') || states.includes('exhibitionist')) {
     return 'expose';
   }
   if (why.includes('jealous') || why.includes('glares jealously')) {
@@ -119,7 +131,7 @@ const CAUGHT_BUSTED: Partial<Record<CharId, LineSpec[]>> = {
   ],
   dwight: [
     { say: 'Turn around! Do not look at my bare torso! This is private reproductive business!', feel: 'angry', act: 'point' },
-    { say: 'Leave! Now! What happens behind closed doors during break is between two consenting coworkers!', feel: 'determined', act: 'stomp' }
+    { say: 'Leave! Now! What happens behind closed doors during break is between two coworkers!', feel: 'determined', act: 'stomp' }
   ],
   meredith: [
     { say: 'Oh relax, you act like you have never seen two coworkers fooling around half-naked before.', feel: 'smug', act: 'laugh' }
@@ -322,6 +334,18 @@ const GENERIC_SPICY: Record<SpicyTopic, readonly LineSpec[]> = {
     { say: 'Smooth, {actor}. Subtle as a brick, and everybody here sees the chemistry.', feel: 'amused', act: 'laugh' },
     { say: 'Careful, keep talking like that and you two will end up sneaking into the annex.', feel: 'mischievous', act: 'step_closer' }
   ],
+  kink: [
+    { say: 'Relax, {partner} - if you behave, maybe I will remember the safe word.', feel: 'mischievous', act: 'dominate' },
+    { say: 'Wait, are those pink fuzzy cuffs hanging off {place} furniture right now?!', feel: 'surprised', act: 'gasp' }
+  ],
+  blackmail: [
+    { say: 'Say one word to anyone and these juicy photos hit the whole branch by lunch.', feel: 'smug', act: 'point' },
+    { say: 'Lower your voice! Tell me what you want before {place} hears every word!', feel: 'nervous', act: 'whisper' }
+  ],
+  voyeur: [
+    { say: 'Oh come on, you were totally sneaking a peek around the corner of {place}!', feel: 'amused', act: 'point' },
+    { say: 'What? Everybody stares when someone makes {place} look like an after-hours club.', feel: 'embarrassed', act: 'peep' }
+  ],
   ambient_spicy: [
     { say: 'The sexual tension in {place} today is thick enough to choke a horse.', feel: 'mischievous', act: 'laugh' },
     { say: 'Everybody knows who has been sneaking off for quickies in {place} this week.', feel: 'amused', act: 'step_closer' }
@@ -465,6 +489,18 @@ export function spicySummary(req: SceneRequest, topic: SpicyTopic, names: { name
       return b
         ? `Jealous tension boiled over between ${a} and ${b} in ${place}.`
         : `Jealous romance drama erupted in ${place}.`;
+    case 'kink':
+      return b
+        ? `${a} and ${b} turned ${place} into a brazen dom-and-sub kink spectacle.`
+        : `${a} sparked a kinky power-play scene in ${place}.`;
+    case 'blackmail':
+      return b
+        ? `${a} cornered ${b} in ${place} with compromising blackmail leverage.`
+        : `${a} pulled a dirty blackmail move in ${place}.`;
+    case 'voyeur':
+      return b
+        ? `${a} got caught red-handed peeping on ${b} in ${place}.`
+        : `${a} got caught sneaking a voyeur peek in ${place}.`;
     case 'bold':
       return b
         ? `${a} got shamelessly hands-on with ${b} right in front of ${place}.`
