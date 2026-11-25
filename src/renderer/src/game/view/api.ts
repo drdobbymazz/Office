@@ -173,8 +173,6 @@ export type EffectInstance =
   | { id: string; kind: 'barrier'; x: number; y: number; w: number; h: number }
   /** Marks over every desk monitor: 'off' dark screens, 'nosignal' a little crossed-out wifi sign. `at` = screen centres. */
   | { id: string; kind: 'screens'; state: 'off' | 'nosignal'; at: Vec[] }
-  /** Active animated NSFW pixel censor mosaic over an entangled couple or explicit stunt. */
-  | { id: string; kind: 'censorCloud'; x: number; y: number; intensity?: number; style?: 'hot' | 'kink' | 'taboo' }
   /** The light of the time of day over the whole map. hour 0..24. */
   | { id: string; kind: 'daylight'; hour: number };
 

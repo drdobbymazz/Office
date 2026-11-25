@@ -14,7 +14,7 @@ import { Particles } from './particles';
 import { emitDrift, emitSplash } from './emit';
 import { Cues } from './cues';
 import { Statuses } from './statuses';
-import { Balloons, Barrier, Bees, CensorCloud, Cloud, Emoji, Fire, Flood, Item, Quake, Rain, Screens, Smoke, Spray, Sprinklers } from './lasting';
+import { Balloons, Barrier, Bees, Cloud, Emoji, Fire, Flood, Item, Quake, Rain, Screens, Smoke, Spray, Sprinklers } from './lasting';
 import { Creature, Ghost, Ufo } from './beings';
 import { Alarm, Beam, Dark, Daylight, Disco, Light, TimeFreeze, ZeroG } from './overlays';
 
@@ -46,7 +46,6 @@ function make(inst: EffectInstance, env: Env): AnyLasting {
     case 'cloud': return new Cloud(inst, env) as unknown as AnyLasting;
     case 'barrier': return new Barrier(inst, env) as unknown as AnyLasting;
     case 'screens': return new Screens(inst, env) as unknown as AnyLasting;
-    case 'censorCloud': return new CensorCloud(inst, env) as unknown as AnyLasting;
     case 'daylight': return new Daylight(inst, env) as unknown as AnyLasting;
   }
 }

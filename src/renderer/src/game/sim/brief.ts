@@ -38,7 +38,7 @@ export function statusWords(core: SimCore, s: StatusEffect): string | null {
     case 'guilty': return `just took out ${t} and everyone saw`;
     case 'quit': return 'stormed out and quit for the day';
     case 'naked': return 'completely naked in the office, shamelessly flashing everyone with zero clothes on';
-    case 'censored': return 'in the middle of an explicitly censored R-rated act on the office floor';
+    case 'censored': return 'in the middle of a shameless explicit R-rated act on the office floor, uncensored';
     case 'flustered': return 'blushing, breathless, and visibly worked up after a shamelessly steamy moment';
     case 'aroused': return 'visibly hot and bothered, eyeing coworkers with shameless sexual tension and lowered inhibitions';
     case 'afterglow': return 'messy-haired, shirt rumpled, and glowing straight out of a steamy office hookup';

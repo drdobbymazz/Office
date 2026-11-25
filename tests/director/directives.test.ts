@@ -222,7 +222,7 @@ describe('physical directive execution', () => {
     expect(aftermath?.why).not.toContain('bold romantic move');
   });
 
-  it('stages self-exposure ("strip naked") on screen with censor status, beat, focus, and factual aftermath', () => {
+  it('stages self-exposure ("strip naked") on screen with the naked status, beat, focus, and factual aftermath', () => {
     const { sim, director, brain, beats, focuses, advance } = makeOffice(41);
     const scenes: SceneRequest[] = [];
     const originalScene = brain.scene.bind(brain);

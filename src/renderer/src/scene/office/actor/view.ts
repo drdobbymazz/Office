@@ -188,6 +188,7 @@ export class Actor implements ActorView {
         else if (s === 'sooty') status |= STATUS.sooty;
         else if (s === 'frizzy') status |= STATUS.frizzy;
         else if (s === 'stung') status |= STATUS.stung;
+        else if (s === 'naked') status |= STATUS.naked;
         else if (s === 'crowned' && !spec.headgear) spec.headgear = 1;
         else if (s === 'party' && !spec.headgear) spec.headgear = 2;
       }

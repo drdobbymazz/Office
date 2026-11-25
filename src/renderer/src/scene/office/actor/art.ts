@@ -128,7 +128,7 @@ export interface FrameSpec {
 /** Props carried at the side rather than held up in front. */
 const SIDE_HELD = new Set(['mop', 'extinguisher', 'balloon', 'net']);
 
-export const STATUS = { wet: 1, sooty: 2, frizzy: 4, stung: 8, dripPhase: 16 } as const;
+export const STATUS = { wet: 1, sooty: 2, frizzy: 4, stung: 8, dripPhase: 16, naked: 32 } as const;
 
 export const PROPS = [
   'coffee', 'phone', 'papers', 'clipboard', 'box', 'trophy', 'extinguisher', 'mop', 'wrench', 'flashlight', 'net',
@@ -153,9 +153,9 @@ export function specKey(s: FrameSpec, faceIndex: number): number {
   k = k * 4 + (s.headDx + 1);
   k = k * 32 + s.prop;
   k = k * 4 + s.headgear;
-  k = k * 32 + s.status;
+  k = k * 64 + s.status;
   k = k * 4 + s.xray;
-  return k * 2048 + faceIndex; // 2+6+6+5+3+3+2+5+2+5+2 = 41 bits, + 11 = 52
+  return k * 2048 + faceIndex; // 2+6+6+5+3+3+2+5+2+6+2 = 42 bits, + 11 = 53
 }
 
 // ─── drawing ─────────────────────────────────────────────────────────────────
@@ -164,13 +164,17 @@ interface Ctx {
   heavy: boolean;
   sl: number;
   sr: number;
+  /** Bare skin for arms + legs: clothing layers are skipped (stripped). */
+  naked: boolean;
   /** hand positions (body coords) of the last drawn arms */
   hand: [number, number, number, number];
   armPix: number[];
 }
 
-function drawLegs(buf: Buf, r: Recipe, legs: number, view: number, top: number): void {
-  const [, base, sh] = shades(defaultPants(r));
+function drawLegs(buf: Buf, r: Recipe, legs: number, view: number, top: number, naked = false): void {
+  const skin = SKIN[r.skin];
+  const [, base, sh] = naked ? [skin.hi, skin.base, skin.sh] : shades(defaultPants(r));
+  const foot = naked ? skin.sh : SHOE;
   const flip = view === VIEW.left;
   const X = (x: number) => (flip ? 17 - x : x);
   const R = (x0: number, y0: number, x1: number, y1: number, c: RGB) => {
@@ -186,7 +190,12 @@ function drawLegs(buf: Buf, r: Recipe, legs: number, view: number, top: number):
       for (let y = top; y < kneeTop; y++) set(buf, X(x0 + 2), y, sh);
       for (let y = kneeTop; y <= y1; y++) set(buf, X(x0 + 2 + shinDx), y, sh);
     }
-    R(shoeX, y1 + 1, shoeX + shoeW - 1, y1 + 1, SHOE);
+    if (naked) {
+      // bare thigh/shin catch the light on the outer edge
+      for (let y = top; y < kneeTop; y++) set(buf, X(x0), y, skin.hi);
+      for (let y = kneeTop; y <= y1; y++) set(buf, X(x0 + shinDx), y, skin.hi);
+    }
+    R(shoeX, y1 + 1, shoeX + shoeW - 1, y1 + 1, foot);
   };
   switch (legs) {
     case LEGS.stand: leg(5, 30); leg(10, 30); break;
@@ -196,7 +205,7 @@ function drawLegs(buf: Buf, r: Recipe, legs: number, view: number, top: number):
     case LEGS.runB: leg(5, 26, 0, 27, 5); leg(10, 30, 1, 28, 12); break;
     case LEGS.runFloat: leg(5, 29); leg(10, 29); break;
     case LEGS.crouch: R(5, top, 7, 26, base); R(10, top, 12, 26, base); leg(4, 30, 0, 27, 3); leg(11, 30, 0, 27, 12); break;
-    case LEGS.kneel: R(5, top, 12, 28, base); R(4, 29, 13, 30, base); R(3, 31, 6, 31, SHOE); R(11, 31, 14, 31, SHOE); break;
+    case LEGS.kneel: R(5, top, 12, 28, base); R(4, 29, 13, 30, base); R(3, 31, 6, 31, foot); R(11, 31, 14, 31, foot); break;
     case LEGS.spread: leg(5, 30, -1, 28, 3); leg(10, 30, 1, 28, 12); break;
     case LEGS.kickA: leg(5, 28, -2, 27, 2); leg(10, 30, 0, 28, 10, 2); break;
     case LEGS.kickB: leg(5, 30, 0, 28, 6, 2); leg(10, 28, 2, 27, 13); break;
@@ -209,23 +218,23 @@ function drawLegs(buf: Buf, r: Recipe, legs: number, view: number, top: number):
     case LEGS.sitSide:
       R(6, top, 13, 27, base); for (let x = 6; x <= 13; x++) set(buf, X(x), 27, sh);
       R(11, 28, 13, 30, base); set(buf, X(13), 28, sh); set(buf, X(13), 29, sh); set(buf, X(13), 30, sh);
-      R(11, 31, 15, 31, SHOE);
+      R(11, 31, 15, 31, foot);
       break;
     case LEGS.sideStand:
       R(6, top, 8, 30, sh); R(8, top, 11, 30, base);
-      R(6, 31, 12, 31, SHOE);
+      R(6, 31, 12, 31, foot);
       break;
     case LEGS.sideA: case LEGS.sideB: case LEGS.sideRunA: case LEGS.sideRunB: {
       const run = legs === LEGS.sideRunA || legs === LEGS.sideRunB;
       const nearFwd = legs === LEGS.sideA || legs === LEGS.sideRunA;
-      const fwd = (c: RGB) => { R(8, top, 10, 27, c); R(run ? 11 : 10, 28, run ? 13 : 12, run ? 29 : 30, c); R(run ? 12 : 11, run ? 30 : 31, run ? 15 : 14, run ? 30 : 31, SHOE); };
-      const back = (c: RGB) => { R(6, top, 8, 27, c); R(run ? 3 : 5, run ? 27 : 28, run ? 5 : 7, run ? 28 : 30, c); R(run ? 1 : 3, run ? 29 : 31, run ? 3 : 5, run ? 29 : 31, SHOE); };
+      const fwd = (c: RGB) => { R(8, top, 10, 27, c); R(run ? 11 : 10, 28, run ? 13 : 12, run ? 29 : 30, c); R(run ? 12 : 11, run ? 30 : 31, run ? 15 : 14, run ? 30 : 31, foot); };
+      const back = (c: RGB) => { R(6, top, 8, 27, c); R(run ? 3 : 5, run ? 27 : 28, run ? 5 : 7, run ? 28 : 30, c); R(run ? 1 : 3, run ? 29 : 31, run ? 3 : 5, run ? 29 : 31, foot); };
       if (nearFwd) { back(sh); fwd(base); } else { fwd(sh); back(base); }
       break;
     }
     case LEGS.sidePassA: case LEGS.sidePassB: {
-      const lifted = (c: RGB) => { R(7, top, 9, 27, c); R(6, 28, 8, 29, c); R(5, 30, 8, 30, SHOE); };
-      const planted = (c: RGB) => { R(8, top, 10, 30, c); R(8, 31, 12, 31, SHOE); };
+      const lifted = (c: RGB) => { R(7, top, 9, 27, c); R(6, 28, 8, 29, c); R(5, 30, 8, 30, foot); };
+      const planted = (c: RGB) => { R(8, top, 10, 30, c); R(8, 31, 12, 31, foot); };
       if (legs === LEGS.sidePassA) { lifted(sh); planted(base); } else { planted(sh); lifted(base); }
       break;
     }
@@ -246,12 +255,12 @@ function drawArm(buf: Buf, c: Ctx, pose: number, right: boolean, phase: number, 
   // Dark clothes: posed sleeves are lifted a little so they do not vanish into the outline.
   const lum = c.r.c1[0] * 0.3 + c.r.c1[1] * 0.59 + c.r.c1[2] * 0.11;
   const posed: RGB = lum < 90 ? [Math.min(255, cbase[0] + 26), Math.min(255, cbase[1] + 26), Math.min(255, cbase[2] + 30)] : cbase;
-  const sleeve = pose === ARM.down || pose === ARM.swingF || pose === ARM.swingB ? csh : posed;
+  const sleeve = c.naked ? skin.base : pose === ARM.down || pose === ARM.swingF || pose === ARM.swingB ? csh : posed;
   const sx = right ? c.sr : c.sl;
   const X = (dx: number) => (right ? sx - dx : sx + dx);
   const n = def.s.length;
   def.s.forEach(([dx, dy], i) => {
-    const bare = c.r.shortSleeves && i >= 2 && i >= n - 3;
+    const bare = !c.naked && c.r.shortSleeves && i >= 2 && i >= n - 3;
     set(buf, X(dx), 19 + dy, bare ? skin.base : sleeve);
     c.armPix.push(X(dx), 19 + dy);
   });
@@ -470,7 +479,8 @@ export function composeActor(sprite: string, s: FrameSpec): Buf {
   PX.w = ACTOR_W; PX.h = ACTOR_H;
   const buf = new Uint8ClampedArray(ACTOR_W * ACTOR_H * 4);
   const heavy = !!r.heavy;
-  const c: Ctx = { r, heavy, sl: heavy ? 2 : 3, sr: heavy ? 15 : 14, hand: [3, 25, 14, 25], armPix: [] };
+  const naked = !!(s.status & STATUS.naked);
+  const c: Ctx = { r, heavy, sl: heavy ? 2 : 3, sr: heavy ? 15 : 14, naked, hand: [3, 25, 14, 25], armPix: [] };
   const back = s.view === VIEW.back;
   const side = s.view === VIEW.right || s.view === VIEW.left;
   const legsOy = PAD_Y;
@@ -481,7 +491,7 @@ export function composeActor(sprite: string, s: FrameSpec): Buf {
 
   // legs: start high enough to meet a raised torso
   PX.ox = PAD_X; PX.oy = legsOy;
-  drawLegs(buf, r, s.legs, s.view, 25 + Math.min(0, s.bodyDy));
+  drawLegs(buf, r, s.legs, s.view, 25 + Math.min(0, s.bodyDy), naked);
 
   // torso (with the classic arm columns only when both arms hang down)
   PX.oy = bodyOy;
@@ -499,7 +509,7 @@ export function composeActor(sprite: string, s: FrameSpec): Buf {
     PX.ox = ox; PX.oy = oy;
   };
   arms(0);
-  drawSceneTorso(buf, r, back, classic);
+  drawSceneTorso(buf, r, back, classic, naked);
   arms(1);
   if (classic) {
     // classic arms: just add the hands under the sleeves

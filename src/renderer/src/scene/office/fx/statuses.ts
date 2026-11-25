@@ -9,7 +9,6 @@ import { pick, rr, type Env } from './core';
 import { C, CONFETTI_TINTS, framesOf, goldSparkleFrames, shapeTex, squareTex } from './art';
 import { confetti, emitBurst, emitDrift, emitDrop, emitPoof, sparkles } from './emit';
 import { Land, Layer } from './particles';
-import { INK, Pix } from './pix';
 
 const KINDS: readonly StatusKind[] = [
   'love', 'rage', 'truth', 'paranoid', 'caffeinated', 'sleepy', 'asleep', 'tiny', 'giant', 'swapped',
@@ -39,50 +38,7 @@ interface PFx {
   eyes: Sprite[];
   swirl: Sprite[];
   anger: Sprite | null;
-  censor: Sprite | null;
   t: number;
-}
-
-function buildCensorFrames(): Texture[] {
-  const palette = [0xf5d6ba, 0xf2b59c, 0xfff0e4, 0xd49678, 0xe8a4b0];
-  return [0, 1, 2, 3].map((shift) => {
-    const px = new Pix(12, 14);
-    for (let gy = 0; gy < 5; gy++) {
-      for (let gx = 0; gx < 4; gx++) {
-        const idx = (gx * 3 + gy * 5 + shift * 2) % palette.length;
-        px.rect(gx * 3, Math.min(11, gy * 3), 3, 3, palette[idx]);
-      }
-    }
-    px.rect(0, 0, 12, 1, INK);
-    px.rect(0, 13, 12, 1, INK);
-    px.rect(0, 0, 1, 14, INK);
-    px.rect(11, 0, 1, 14, INK);
-    // Double dark censor bars across chest & hips shifting each frame.
-    px.rect(1, 3 + (shift % 2), 10, 2, INK);
-    px.rect(1, 9 + ((shift + 1) % 2), 10, 2, INK);
-    return px.toTexture();
-  });
-}
-
-function buildActiveCensorFrames(): Texture[] {
-  const palette = [0xff86a8, 0x241822, 0xf5d6ba, 0xd0507a, 0x1a1420];
-  return [0, 1, 2, 3].map((shift) => {
-    const px = new Pix(18, 13);
-    for (let gy = 0; gy < 4; gy++) {
-      for (let gx = 0; gx < 6; gx++) {
-        const idx = (gx * 2 + gy * 3 + shift) % palette.length;
-        px.rect(gx * 3, gy * 3, 3, 3, palette[idx]);
-      }
-    }
-    px.rect(0, 0, 18, 1, INK);
-    px.rect(0, 12, 18, 1, INK);
-    px.rect(0, 0, 1, 13, INK);
-    px.rect(17, 0, 1, 13, INK);
-    px.rect(1, 4 + (shift % 2), 16, 4, INK);
-    // Hot-pink NSFW caution pixels inside the censor bar.
-    for (let x = 2 + (shift % 2); x < 16; x += 3) px.rect(x, 5 + (shift % 2), 2, 2, C.pink);
-    return px.toTexture();
-  });
 }
 
 export class Statuses {
@@ -94,8 +50,6 @@ export class Statuses {
   private gold: Texture[];
   private eyeFrames: Texture[];
   private zs: Texture[];
-  private censorFrames: Texture[];
-  private activeCensorFrames: Texture[];
 
   constructor(private env: Env) {
     this.heart = shapeTex('heart');
@@ -105,14 +59,12 @@ export class Statuses {
     this.gold = goldSparkleFrames();
     this.eyeFrames = framesOf(['eye0', 'eye1', 'eye2', 'eye1'], true);
     this.zs = [shapeTex('z', true), shapeTex('zBig', true)];
-    this.censorFrames = buildCensorFrames();
-    this.activeCensorFrames = buildActiveCensorFrames();
   }
 
   private get(p: FxPerson): PFx {
     let s = this.map.get(p.id);
     if (!s) {
-      s = { id: p.id, seen: true, mask: 0n, timers: new Float32Array(KINDS.length), box: null, stars: [], eyes: [], swirl: [], anger: null, censor: null, t: Math.random() * 10 };
+      s = { id: p.id, seen: true, mask: 0n, timers: new Float32Array(KINDS.length), box: null, stars: [], eyes: [], swirl: [], anger: null, t: Math.random() * 10 };
       for (let i = 0; i < KINDS.length; i++) s.timers[i] = Math.random() * 0.5;
       this.map.set(p.id, s);
     }
@@ -129,10 +81,6 @@ export class Statuses {
     s.anger.anchor.set(0.5);
     s.anger.visible = false;
     box.addChild(s.anger);
-    s.censor = new Sprite(this.censorFrames[0]);
-    s.censor.anchor.set(0.5, 0.5);
-    s.censor.visible = false;
-    box.addChild(s.censor);
     this.env.high.addChild(box);
     s.box = box;
     return box;
@@ -161,7 +109,7 @@ export class Statuses {
       if ((started & bitOf('frozen')) !== 0n) emitBurst(env.parts, 'sparkles', p.x, p.y, head * 0.5, 10);
       const needBox = mask & (
         bitOf('dizzy') | bitOf('knockedOut') | bitOf('paranoid') | bitOf('voyeur') |
-        bitOf('swapped') | bitOf('rage') | bitOf('naked') | bitOf('censored')
+        bitOf('swapped') | bitOf('rage')
       );
       if (needBox !== 0n || s.box) this.attached(s, p, mask, head);
       if (mask === 0n || !onScreen) continue;
@@ -230,20 +178,6 @@ export class Statuses {
     if (s.anger) {
       s.anger.visible = rage && Math.floor(t * 3) % 2 === 0;
       s.anger.position.set(7, 2);
-    }
-    const activeCensor = (mask & bitOf('censored')) !== 0n;
-    const naked = (mask & bitOf('naked')) !== 0n;
-    if (s.censor) {
-      s.censor.visible = naked || activeCensor;
-      if (activeCensor) {
-        s.censor.texture = this.activeCensorFrames[Math.floor(t * 8) % 4];
-        s.censor.position.set(Math.round(Math.sin(t * 14) * 1.5), Math.round(head * 0.56 + Math.abs(Math.sin(t * 10)) * -1.5));
-        s.censor.scale.set(p.scale * (1 + Math.sin(t * 12) * 0.06));
-      } else if (naked) {
-        s.censor.texture = this.censorFrames[Math.floor(t * 5) % 4];
-        s.censor.position.set(0, Math.round(head * 0.56));
-        s.censor.scale.set(p.scale);
-      }
     }
   }
 

@@ -105,8 +105,8 @@ export type StatusKind =
   | 'eliminated'  // taken out for the day
   | 'guilty'      // took someone out and everyone saw
   | 'quit'        // walked out for the day
-  | 'naked'         // stripped down, covered by a pixel censor mosaic
-  | 'censored'      // active NSFW censor bar during explicit floor acts
+  | 'naked'         // stripped down: the body renders uncensored in the skin palette
+  | 'censored'      // legacy status kind, kept for saves/UI badges: no overlay is drawn any more
   | 'flustered'     // blushing and rattled after a bold romantic moment
   | 'aroused'       // visibly turned on with lowered inhibitions
   | 'afterglow'     // rumpled and glowing straight out of a hookup

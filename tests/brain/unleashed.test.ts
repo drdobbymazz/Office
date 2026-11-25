@@ -208,7 +208,7 @@ describe('Unleashed Model Mode', () => {
     expect(thinksAfter).toBe(thinksBefore);
   });
 
-  it('poses all 19 new expressive/sexual animations cleanly and exposes STANDING_ONLY + censor/clothes staging', () => {
+  it('poses all 19 new expressive/sexual animations cleanly and exposes STANDING_ONLY + naked/clothes staging', () => {
     const newAnims = [
       'strip', 'kiss', 'makeOut', 'lapDance', 'grinding', 'spank', 'selfTouch', 'seduce',
       'twerk', 'backflip', 'kneel', 'flex',
@@ -253,7 +253,7 @@ describe('Unleashed Model Mode', () => {
     }
   });
 
-  it('stages censor bars, censorCloud, and strip animations cleanly and unlocks autonomous wild stripping only outside Story Mode', async () => {
+  it('stages uncensored strip animations cleanly and unlocks autonomous wild stripping only outside Story Mode', async () => {
     const { sim, bus } = makeSim({ dayMinutes: 10, seed: 88, sandbox: false });
     for (const s of CHAOS_SCRIPTS) sim.registerChaos(s);
     const instinct = new InstinctBrain(GAME_BANK as LooseBank, OFFICE_WORLD, createRng(88));
@@ -283,29 +283,27 @@ describe('Unleashed Model Mode', () => {
       director.update(0.1);
     }
 
-    // 2. Lap dance triggers 'lapDance', 'censored', and censorCloud, then cleans up censored/censorCloud on finish
+    // 2. Lap dance plays 'lapDance' with no censor overlay, then finishes cleanly
     sim.teleport('meredith', bullpen[2]);
     sim.teleport('creed', bullpen[3]);
     director.cue('meredith', 'give creed a lap dance');
     for (let i = 0; i < 120; i++) {
       sim.update(0.1);
       director.update(0.1);
-      if (sim.hasStatus('meredith', 'censored')) break;
+      if (animOf('meredith') === 'lapDance') break;
     }
     expect(animOf('meredith')).toBe('lapDance');
-    expect(sim.hasStatus('meredith', 'censored')).toBe(true);
-    expect(sim.frame().effects.some((e) => e.kind === 'censorCloud')).toBe(true);
+    expect(sim.hasStatus('meredith', 'censored')).toBe(false);
     for (let i = 0; i < 60; i++) {
       sim.update(0.1);
       director.update(0.1);
     }
     expect(sim.hasStatus('meredith', 'censored')).toBe(false);
-    expect(sim.frame().effects.some((e) => e.kind === 'censorCloud')).toBe(false);
 
-    // 3. Self-pleasure triggers 'selfTouch' + 'censored', cleans censored and marks scandal on finish
+    // 3. Self-pleasure triggers 'selfTouch' + arousal and marks scandal on finish, with no censor status
     director.cue('creed', 'masturbate right here');
     expect(animOf('creed')).toBe('selfTouch');
-    expect(sim.hasStatus('creed', 'censored')).toBe(true);
+    expect(sim.hasStatus('creed', 'censored')).toBe(false);
     for (let i = 0; i < 55; i++) {
       sim.update(0.1);
       director.update(0.1);
@@ -431,14 +429,12 @@ describe('Unleashed Model Mode', () => {
       }
     };
 
-    // 1. Handcuff -> kink CensorCloud + bound speed penalty + uncuff recovery
+    // 1. Handcuff -> bound + dominated statuses (no censor overlay) + speed penalty + uncuff recovery
     sim.teleport('meredith', bullpen[2]);
     sim.teleport('creed', bullpen[3]);
     const creedObj = sim.byId('creed')!;
     const normalSpeed = sim.speedMult(creedObj);
     director.cue('meredith', 'handcuff creed');
-    stepUntil(() => sim.frame().effects.some((e) => e.kind === 'censorCloud' && e.style === 'kink'));
-    expect(sim.frame().effects.some((e) => e.kind === 'censorCloud' && e.style === 'kink')).toBe(true);
     stepUntil(() => sim.hasStatus('creed', 'bound') && sim.hasStatus('creed', 'dominated'));
     expect(sim.hasStatus('creed', 'bound')).toBe(true);
     expect(sim.hasStatus('creed', 'dominated')).toBe(true);
@@ -457,10 +453,9 @@ describe('Unleashed Model Mode', () => {
     expect(sim.hasStatus('kelly', 'blackmailed')).toBe(true);
     expect(sim.facts().some((f) => f.includes('blackmailing Kelly'))).toBe(true);
 
-    // 3. Tabletop strip -> taboo CensorCloud + naked + exhibitionist
+    // 3. Tabletop strip -> naked + exhibitionist (uncensored)
     sim.teleport('kelly', bullpen[4]);
     director.cue('kelly', 'table dance and strip naked');
-    expect(sim.frame().effects.some((e) => e.kind === 'censorCloud' && e.style === 'taboo')).toBe(true);
     step(6.0);
     expect(sim.hasStatus('kelly', 'naked')).toBe(true);
     expect(sim.hasStatus('kelly', 'exhibitionist')).toBe(true);

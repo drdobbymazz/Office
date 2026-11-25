@@ -310,7 +310,24 @@ function bodyShape(buf: Buf, col: RGB, heavy = false): void {
   const [lo, hi] = heavy ? [1, 16] : [2, 15];
   for (let y = 22; y < 28; y++) { set(buf, lo, y, sh); set(buf, hi, y, sh); }
 }
-export function drawClothing(buf: Buf, kind: Cloth, c1: RGB, c2: RGB | undefined, tie: RGB | undefined, skin: string, heavy = false): void {
+/** Bare shoulders + chest in the character's own skin palette (naked). */
+function bareBust(buf: Buf, skin: string, heavy = false): void {
+  const s = SKIN[skin];
+  const rows: [number, number, number][] = heavy
+    ? [[19, 5, 12], [20, 3, 14], [21, 2, 15], [22, 1, 16], [23, 1, 16], [24, 0, 17], [25, 0, 17], [26, 0, 17], [27, 0, 17]]
+    : [[19, 6, 11], [20, 4, 13], [21, 3, 14], [22, 2, 15], [23, 2, 15], [24, 1, 16], [25, 1, 16], [26, 1, 16], [27, 1, 16]];
+  for (const [y, a, b] of rows) rect(buf, a, y, b, y, s.base);
+  const [lo, hi] = heavy ? [1, 16] : [2, 15];
+  for (let y = 22; y < 28; y++) { set(buf, lo, y, s.sh); set(buf, hi, y, s.sh); }
+  // collarbones, chest curve and navel
+  for (const x of heavy ? [5, 6, 11, 12] : [6, 7, 10, 11]) set(buf, x, 20, s.hi);
+  set(buf, 6, 22, s.hi); set(buf, 11, 22, s.hi);
+  set(buf, 6, 23, s.sh); set(buf, 11, 23, s.sh);
+  set(buf, 8, 25, s.sh); set(buf, 8, 26, s.sh); set(buf, 9, 26, s.hi);
+}
+
+export function drawClothing(buf: Buf, kind: Cloth, c1: RGB, c2: RGB | undefined, tie: RGB | undefined, skin: string, heavy = false, naked = false): void {
+  if (naked) { bareBust(buf, skin, heavy); return; }
   const [hi, base, sh] = shades(c1);
   bodyShape(buf, c1, heavy);
   if (kind === 'suit') {
@@ -363,10 +380,42 @@ function drawSceneLegs(buf: Buf, pants: RGB, phase: number): void {
 }
 
 /**
+ * Bare chest and shoulders in the character's skin palette. Same silhouette as
+ * the clothed torso, with collarbone, chest and navel shading instead of cloth.
+ */
+function drawBareSceneTorso(buf: Buf, r: Recipe, back: boolean, arms: boolean): void {
+  const s = SKIN[r.skin];
+  if (r.heavy) {
+    rect(buf, 3, 18, 14, 18, s.base);
+    rect(buf, 2, 19, 15, 19, s.base);
+    rect(buf, 3, 20, 14, 24, s.base);
+    for (const x of [4, 5, 12, 13]) set(buf, x, 18, s.hi);
+    for (let y = 20; y <= 24; y++) { set(buf, 14, y, s.sh); if (arms) { set(buf, 2, y, s.sh); set(buf, 15, y, s.sh); } }
+  } else {
+    rect(buf, 4, 18, 13, 18, s.base);
+    rect(buf, 3, 19, 14, 19, s.base);
+    rect(buf, 4, 20, 13, 24, s.base);
+    for (const x of [5, 6, 11, 12]) set(buf, x, 18, s.hi);
+    for (let y = 20; y <= 24; y++) { set(buf, 13, y, s.sh); if (arms) { set(buf, 3, y, s.sh); set(buf, 14, y, s.sh); } }
+  }
+  if (back) {
+    // spine plus a soft highlight down each shoulder blade
+    for (let y = 19; y <= 24; y++) set(buf, 8, y, s.sh);
+    for (const x of r.heavy ? [5, 12] : [6, 11]) { set(buf, x, 20, s.hi); set(buf, x, 21, s.hi); }
+    return;
+  }
+  // collarbones, chest curve, navel
+  for (const x of r.heavy ? [5, 6, 11, 12] : [6, 7, 10, 11]) set(buf, x, 19, s.hi);
+  for (const x of [6, 11]) { set(buf, x, 20, s.hi); set(buf, x, 21, s.sh); }
+  set(buf, 8, 24, s.sh);
+}
+
+/**
  * `arms=false` leaves out the two edge columns that read as arms hanging down,
  * so the actor can draw posed arms instead (see actor/body.ts).
  */
-export function drawSceneTorso(buf: Buf, r: Recipe, back: boolean, arms = true): void {
+export function drawSceneTorso(buf: Buf, r: Recipe, back: boolean, arms = true, naked = false): void {
+  if (naked) { drawBareSceneTorso(buf, r, back, arms); return; }
   const [hi, base, sh] = shades(r.c1);
   // shoulders → torso, narrower than the portrait bust (wider + rounder if heavy)
   if (r.heavy) {
