@@ -65,7 +65,10 @@ export const ANIMS = [
   // expressive, spicy & physical stunts
   'strip', 'kiss', 'makeOut', 'lapDance', 'grinding', 'spank', 'selfTouch', 'seduce',
   'twerk', 'backflip', 'kneel', 'flex',
-  'whip', 'tieUp', 'worship', 'dominate', 'lick', 'peep', 'tableDance'
+  'whip', 'tieUp', 'worship', 'dominate', 'lick', 'peep', 'tableDance',
+  // expanded sex-act catalogue (each works clothed or naked)
+  'cowgirl', 'reverseCowgirl', 'missionary', 'doggy', 'blowjob', 'handjob', 'fingering', 'sixtyNine', 'facesit',
+  'orgasm', 'flash'
 ] as const;
 export type AnimId = (typeof ANIMS)[number];
 

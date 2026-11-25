@@ -2025,6 +2025,48 @@ export class Director {
         res = { verb: 'expose', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || 'puts on a tabletop strip show', source: 'model' };
         raw = 'table dance and strip naked';
         break;
+      case 'cowgirl':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `rides ${tName} cowgirl-style`, source: 'model' };
+        raw = `cowgirl with ${tName}`;
+        break;
+      case 'reverse_cowgirl':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `rides ${tName} reverse cowgirl`, source: 'model' };
+        raw = `reverse cowgirl with ${tName}`;
+        break;
+      case 'missionary':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `pins ${tName} down missionary-style`, source: 'model' };
+        raw = `missionary with ${tName}`;
+        break;
+      case 'doggy':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `takes ${tName} from behind`, source: 'model' };
+        raw = `doggy-style with ${tName}`;
+        break;
+      case 'blowjob':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `goes down on ${tName}`, source: 'model' };
+        raw = `give ${tName} a blowjob`;
+        break;
+      case 'handjob':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `works ${tName} with a handjob`, source: 'model' };
+        raw = `give ${tName} a handjob`;
+        break;
+      case 'fingering':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `fingers ${tName} shamelessly`, source: 'model' };
+        raw = `finger ${tName}`;
+        break;
+      case 'sixty_nine':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `twists into a 69 with ${tName}`, source: 'model' };
+        raw = `sixty-nine with ${tName}`;
+        break;
+      case 'facesit':
+        res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `sits on ${tName}'s face`, source: 'model' };
+        raw = `sit on ${tName}'s face`;
+        break;
+      case 'orgasm':
+        res = act.target
+          ? { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `makes ${tName} climax`, source: 'model' }
+          : { verb: 'perform', targetPerson: null, targetRoom: null, power: 'none', item: '', summary: act.detail || 'climaxes shamelessly', source: 'model' };
+        raw = act.target ? `make ${tName} orgasm` : 'orgasm shamelessly';
+        break;
       case 'blackmail':
         res = { verb: 'romance', targetPerson: act.target, targetRoom: null, power: 'none', item: '', summary: act.detail || `blackmails ${tName} over dirty secrets`, source: 'model' };
         raw = `blackmail ${tName}`;

@@ -258,7 +258,8 @@ export function cleanShifts(raw: unknown, speakers: NameMap, people: NameMap): R
 
 const INTERPERSONAL_STAGE = new Set([
   'kiss', 'make_out', 'flirt', 'sneak_away', 'lap_dance', 'grope', 'quickie', 'slap', 'shove', 'splash_drink', 'steal', 'hug',
-  'whip', 'tie_up', 'worship', 'dominate', 'lick', 'blackmail', 'peep'
+  'whip', 'tie_up', 'worship', 'dominate', 'lick', 'blackmail', 'peep',
+  'cowgirl', 'reverse_cowgirl', 'missionary', 'doggy', 'blowjob', 'handjob', 'fingering', 'sixty_nine', 'facesit'
 ]);
 
 export function cleanStageAction(raw: unknown, speakers: NameMap, people: NameMap): StageAction | undefined {

@@ -243,6 +243,28 @@ describe('physical directive execution', () => {
     expect(sim.isSeized('meredith')).toBe(false);
   });
 
+  it('stages the expanded sex-act catalogue with matching poses and naked partners', () => {
+    const acts = [
+      ['ride creed cowgirl right here', 'cowgirl'],
+      ['fuck creed doggy style right here', 'doggy'],
+      ['give creed a blowjob right here', 'blowjob'],
+      ['sit on creed\'s face right here', 'facesit']
+    ] as const;
+
+    acts.forEach(([text, anim], i) => {
+      const { sim, director, advance } = makeOffice(67 + i);
+      const bullpen = walkableTilesIn('bullpen');
+      const animOf = (id: string) => sim.frame().people.find((p) => p.id === id)?.anim;
+      sim.teleport('meredith', bullpen[2]);
+      sim.teleport('creed', bullpen[3]);
+      director.cue('meredith', text);
+      advance(6, () => animOf('meredith') === anim);
+      expect(animOf('meredith')).toBe(anim);
+      expect(sim.hasStatus('meredith', 'naked')).toBe(true);
+      expect(sim.hasStatus('creed', 'naked')).toBe(true);
+    });
+  });
+
   it('stages solo physical perform directives ("bark like a dog") visibly on screen', () => {
     const { sim, director, brain, beats, focuses, advance } = makeOffice(43);
     const scenes: SceneRequest[] = [];

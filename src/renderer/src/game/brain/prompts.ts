@@ -429,7 +429,7 @@ export class PromptBook {
       out.push(
         'UNLEASHED SCENE CONTROLS: build a multi-beat escalating arc across all lines with sharp comebacks, surprises, and dark comedy. ' +
         'For any shift include a sharp 1-phrase custom "note" (e.g. "fuming she caught them in the annex"). ' +
-        'Set "stageAction.kind" to "none" for normal talk, or pick strip/flash/lap_dance/grope/quickie/kiss/make_out/flirt/sneak_away/whip/tie_up/worship/dominate/lick/table_dance/blackmail/peep/exhibit/twerk/stunt/slap/shove/splash_drink/steal/hug/walk_out when tension erupts into real physical action (short stunt text in "detail"). ' +
+        'Set "stageAction.kind" to "none" for normal talk, or pick strip/flash/lap_dance/grope/quickie/kiss/make_out/flirt/sneak_away/whip/tie_up/worship/dominate/lick/table_dance/blackmail/peep/exhibit/twerk/stunt/slap/shove/splash_drink/steal/hug/walk_out/cowgirl/reverse_cowgirl/missionary/doggy/blowjob/handjob/fingering/sixty_nine/facesit/orgasm when tension erupts into real physical action (short stunt text in "detail"). ' +
         'Optionally set "rumor" to one short spicy sentence other rooms will gossip about, else "".'
       );
     }

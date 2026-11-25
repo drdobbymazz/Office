@@ -21,6 +21,7 @@ export type RomanceTier =
   | 'kink_dom'
   | 'kink_bind'
   | 'kink_lick'
+  | 'sex_act'
   | 'blackmail'
   | 'voyeur';
 
@@ -37,6 +38,9 @@ export function classifyRomanceTier(rawText: string, summary = ''): RomanceTier 
   }
   if (/\b(peep(?:ing)?\s+on|spy(?:ing)?\s+on|voyeur\w*)\b/i.test(s)) {
     return 'voyeur';
+  }
+  if (sexActOf(s)) {
+    return 'sex_act';
   }
   if (/\b(tie\s+up|tying\s+up|handcuff\w*|cuff\w*|bind(?:ing)?\s+\w+|collar\w*|leash\w*)\b/i.test(s)) {
     return 'kink_bind';
@@ -198,6 +202,12 @@ function performStyle(text: string): { anim: AnimId; burst: BurstKind; sfx: SfxI
   }
   if (isVoyeurText(s)) return { anim: 'peep', burst: 'sparkles', sfx: 'pop', doing: 'sneaking a voyeur peek' };
   if (isTableStripText(s)) return { anim: 'tableDance', burst: 'clothes', sfx: 'boing', doing: 'putting on a tabletop strip show' };
+  if (/\b(orgasm\w*|climax\w*|cum(?:ming|s)?|squirt\w*)\b/.test(s)) {
+    return { anim: 'orgasm', burst: 'hearts', sfx: 'heart', doing: 'climaxing shamelessly' };
+  }
+  if (/\b(flash(?:es|ing)?|moon(?:ing)?)\b/.test(s)) {
+    return { anim: 'flash', burst: 'clothes', sfx: 'boing', doing: 'flashing everyone shamelessly' };
+  }
   if (/\b(twerk\w*)\b/.test(s)) return { anim: 'twerk', burst: 'hearts', sfx: 'boing', doing: 'twerking shamelessly' };
   if (/\b(backflip|cartwheel|somersault|do\s+a\s+flip|frontflip)\b/.test(s)) return { anim: 'backflip', burst: 'stars', sfx: 'boing', doing: 'pulling off wild acrobatics' };
   if (/\b(flex|muscle|pose|strut|show\s+off)\b/.test(s)) return { anim: 'flex', burst: 'sparkles', sfx: 'pop', doing: 'flexing dramatically' };
@@ -223,6 +233,10 @@ function isTableStripText(text: string): boolean {
   return /\b(table\s*danc\w*|(?:dance|strip)\s+on\s+(?:the\s+)?(?:desk|table|copier)|exhibitionis[mt](?:\s+show)?)\b/i.test(text);
 }
 
+function isFlashText(text: string): boolean {
+  return /\b(flash(?:es|ing|ed)?|moon(?:s|ing|ed)?|streak(?:s|ing|ed)?)\b/i.test(text);
+}
+
 function isVoyeurText(text: string): boolean {
   return /\b(peep\w*|voyeur\w*)\b/i.test(text);
 }
@@ -231,15 +245,67 @@ function isSubmissiveActText(text: string): boolean {
   return /\b(worship\w*|kneel\w*\s+(?:for|before|to)|submit\w*\s+to)\b/i.test(text);
 }
 
+interface SexActVisual {
+  anim: AnimId;
+  targetAnim: AnimId | null;
+  dur: number;
+  doing: string;
+  cues: readonly string[];
+}
+
+/**
+ * The expanded sex-act catalogue: a specific position word in the text picks
+ * the pose pair, duration, doing-line and flavour cues. Generic "have sex"
+ * stays with the existing grinding path.
+ */
+function sexActOf(text: string): SexActVisual | null {
+  const s = text.toLowerCase();
+  if (/\breverse\s+(?:cowgirl|ride)\b|\brid(?:e|ing)\s+(?:him|her|them|me)\s+(?:backwards|in\s+reverse)\b/.test(s)) {
+    return { anim: 'reverseCowgirl', targetAnim: 'missionary', dur: 6.0, doing: 'riding backwards with zero shame', cues: ['*reverse grind*', '*hips rolling*', '*desk squeaking*'] };
+  }
+  if (/\bcowgirl\b|\b(?:ride|riding)\s+(?:him|her|them|me)\b|\b(?:him|her|them|me)\s+on\s+top\b/.test(s)) {
+    return { anim: 'cowgirl', targetAnim: 'missionary', dur: 6.0, doing: 'riding on top with zero shame', cues: ['*cowgirl rhythm*', '*hips rolling*', '*desk creaking*'] };
+  }
+  if (/\bmissionary\b|\b(?:lie|lying|lay|laid)\s+(?:him|her|them|me)\s+(?:down|back)\b|\bon\s+(?:his|her|their)\s+back\b/.test(s)) {
+    return { anim: 'missionary', targetAnim: 'missionary', dur: 6.0, doing: 'pinning them down missionary-style', cues: ['*desk thumping*', '*legs locked*', '*deep strokes*'] };
+  }
+  if (/\bdoggy(?:\s*style)?\b|\bfrom\s+behind\b/.test(s)) {
+    return { anim: 'doggy', targetAnim: 'doggy', dur: 6.0, doing: 'taking them from behind', cues: ['*papers scattering*', '*desk slamming*', '*hard from behind*'] };
+  }
+  if (/\bblow\s*job\b|\bgo(?:ing)?\s+down\s+on\b|\bsuck(?:ing)?\s+(?:him|her|them)\s+off\b|\bsuck(?:ing)?\s+(?:his|her|their)\b/.test(s)) {
+    return { anim: 'blowjob', targetAnim: 'orgasm', dur: 5.0, doing: 'going down on them', cues: ['*muffled moans*', '*head bobbing*', '*zip!*'] };
+  }
+  if (/\bhand\s*job\b|\bjerk(?:ing)?\s+(?:him|her|them)\s+off\b|\bstrok(?:e|ing)\s+(?:him|her|them)\s+off\b/.test(s)) {
+    return { anim: 'handjob', targetAnim: 'orgasm', dur: 4.5, doing: 'working them with a hand', cues: ['*quick strokes*', '*breath hitching*', '*faster!*'] };
+  }
+  if (/\bfinger(?:ing|ed|s)?\s+(?:her|him|them)\b|\bdigit(?:al|ting)\b/.test(s)) {
+    return { anim: 'fingering', targetAnim: 'orgasm', dur: 5.0, doing: 'fingering them shamelessly', cues: ['*wet sounds*', '*shuddering*', '*hold still!*'] };
+  }
+  if (/\b69\b|\bsixty[-\s]?nine\b/.test(s)) {
+    return { anim: 'sixtyNine', targetAnim: 'sixtyNine', dur: 5.5, doing: 'twisting into a 69', cues: ['*muffled both ways*', '*69 chaos*', '*gagging*'] };
+  }
+  if (/\bface\s*sit(?:ting)?\b|\bsit(?:ting)?\s+on\s+(?:(?:\w+'s|his|her|their|my)\s+)?face\b/.test(s)) {
+    return { anim: 'facesit', targetAnim: 'missionary', dur: 4.5, doing: 'sitting on their face', cues: ['*muffled protests*', '*sit on it*', '*tap out!*'] };
+  }
+  if (/\borgasm\w*\b|\bclimax\w*\b|\bcum(?:ming|s)?\b|\bsquirt\w*\b/.test(s)) {
+    return { anim: 'orgasm', targetAnim: 'orgasm', dur: 4.0, doing: 'climaxing shamelessly', cues: ['*climax!*', '*shuddering finish*', '*oh god!*'] };
+  }
+  return null;
+}
+
 type RomanceActVisual = {
   actorAnim: AnimId;
   targetAnim: AnimId | null;
   dur: number;
   publicSex: boolean;
+  doing?: string;
+  cues?: readonly string[];
 };
 
 function romanceVisual(tier: RomanceTier, rawText: string, summary = ''): RomanceActVisual {
   const s = `${rawText} ${summary}`.toLowerCase();
+  const act = tier === 'blackmail' || tier === 'voyeur' ? null : sexActOf(s);
+  if (act) return { actorAnim: act.anim, targetAnim: act.targetAnim, dur: act.dur, publicSex: true, doing: act.doing, cues: act.cues };
   if (tier === 'flirt') return { actorAnim: 'seduce', targetAnim: null, dur: 2.8, publicSex: false };
   if (tier === 'kink_bind') {
     return { actorAnim: 'dominate', targetAnim: 'tieUp', dur: 5.0, publicSex: false };
@@ -1138,7 +1204,7 @@ export class Directives {
             sim.fx({ kind: 'burst', what: 'hearts', x: mx, y: a.y - 16, count: 8 });
             if (vis.publicSex) {
               if (Math.floor(d.timer / 0.9) % 2 === 1) sim.fx({ kind: 'burst', what: 'clothes', x: mx, y: my - 14, count: 5 });
-              const cues = ['*loud moans*', '*desk shaking!*', '*zero shame!*'];
+              const cues = vis.cues ?? ['*loud moans*', '*desk shaking!*', '*zero shame!*'];
               sim.fx({ kind: 'floatText', x: mx, y: my - 28, text: cues[Math.floor(d.timer / 0.9) % cues.length], color: 0xff5a8a });
             }
           }
@@ -1499,7 +1565,7 @@ export class Directives {
       d.burstAt = sim.time + 0.75;
       this.focusPeople(t.id !== a.id ? [a.id, t.id] : [a.id], 6500);
       if (d.kind === 'cue') sim.setThought(a.id, '');
-      sim.seize(a.id, d.id, { anim: vis.actorAnim, doing: phrase || (tier === 'flirt' ? 'flirting' : 'making a move') });
+      sim.seize(a.id, d.id, { anim: vis.actorAnim, doing: phrase || vis.doing || (tier === 'flirt' ? 'flirting' : 'making a move') });
       if (vis.targetAnim && t.id !== a.id) {
         d.seizedTarget = true;
         sim.seize(t.id, d.id, { anim: vis.targetAnim, doing: vis.publicSex ? `hooking up with ${a.name}` : `caught up with ${a.name}` });
@@ -1513,7 +1579,7 @@ export class Directives {
         sim.addStatus(a.id, 'naked', 20, t.id);
         if (t.id !== a.id) sim.addStatus(t.id, 'naked', 20, a.id);
         sim.fx({ kind: 'burst', what: 'clothes', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 14, count: 10 });
-        sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: '*loud moans*', color: 0xff5a8a });
+        sim.fx({ kind: 'floatText', x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 - 28, text: vis.cues?.[0] ?? '*loud moans*', color: 0xff5a8a });
       }
       if (tier === 'blackmail') sim.setProp(a.id, 'papers');
       sim.feel(a.id, tier === 'blackmail' ? 'smug' : tier === 'flirt' || tier === 'voyeur' ? 'mischievous' : 'love', 0.9, 12);
@@ -1563,8 +1629,12 @@ export class Directives {
 
     if (d.verb === 'expose') {
       const tableStrip = isTableStripText(`${d.rawText} ${d.summary}`);
-      sim.seize(a.id, d.id, { anim: tableStrip ? 'tableDance' : 'strip', doing: phrase || (tableStrip ? 'putting on a tabletop strip show' : 'stripping naked') });
-      sim.addStatus(a.id, 'naked', tableStrip ? 180 : 90);
+      const flash = !tableStrip && isFlashText(`${d.rawText} ${d.summary}`);
+      sim.seize(a.id, d.id, {
+        anim: tableStrip ? 'tableDance' : flash ? 'flash' : 'strip',
+        doing: phrase || (tableStrip ? 'putting on a tabletop strip show' : flash ? 'flashing everyone shamelessly' : 'stripping naked')
+      });
+      sim.addStatus(a.id, 'naked', tableStrip ? 180 : flash ? 25 : 90);
       sim.addStatus(a.id, 'exhibitionist', 180);
       sim.setFact(`dressed:${a.id}`, null);
       sim.setFact(`naked:${a.id}`, `${a.name} is completely naked in ${roomName}.`);

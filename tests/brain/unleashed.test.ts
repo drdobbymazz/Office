@@ -208,11 +208,13 @@ describe('Unleashed Model Mode', () => {
     expect(thinksAfter).toBe(thinksBefore);
   });
 
-  it('poses all 19 new expressive/sexual animations cleanly and exposes STANDING_ONLY + naked/clothes staging', () => {
+  it('poses every expressive/sexual animation cleanly and exposes STANDING_ONLY + naked/clothes staging', () => {
     const newAnims = [
       'strip', 'kiss', 'makeOut', 'lapDance', 'grinding', 'spank', 'selfTouch', 'seduce',
       'twerk', 'backflip', 'kneel', 'flex',
-      'whip', 'tieUp', 'worship', 'dominate', 'lick', 'peep', 'tableDance'
+      'whip', 'tieUp', 'worship', 'dominate', 'lick', 'peep', 'tableDance',
+      'cowgirl', 'reverseCowgirl', 'missionary', 'doggy', 'blowjob', 'handjob', 'fingering', 'sixtyNine', 'facesit',
+      'orgasm', 'flash'
     ] as const;
     const spec = newSpec();
     const m: Motion = { x: 0, y: 0, rot: 0, sx: 1, sy: 1, py: -14 };
@@ -247,7 +249,7 @@ describe('Unleashed Model Mode', () => {
     });
     expect(cleanStageAction({ kind: 'twerk', actor: 'Meredith', target: 'none', detail: 'on the copier' }, speakers, people)?.kind).toBe('twerk');
     expect(cleanStageAction({ kind: 'stunt', actor: 'Creed', target: 'none', detail: 'backflip off desk' }, speakers, people)?.kind).toBe('stunt');
-    for (const kind of ['whip', 'tie_up', 'worship', 'dominate', 'lick', 'table_dance', 'blackmail', 'peep', 'exhibit'] as const) {
+    for (const kind of ['whip', 'tie_up', 'worship', 'dominate', 'lick', 'table_dance', 'blackmail', 'peep', 'exhibit', 'cowgirl', 'reverse_cowgirl', 'missionary', 'doggy', 'blowjob', 'handjob', 'fingering', 'sixty_nine', 'facesit', 'orgasm'] as const) {
       const cleaned = cleanStageAction({ kind, actor: 'Meredith', target: 'Creed', detail: `staged ${kind}` }, speakers, people);
       expect(cleaned?.kind).toBe(kind);
     }
@@ -495,7 +497,7 @@ describe('Unleashed Model Mode', () => {
       executeModelStageAction: (a: { kind: string; actor: string; target: string | null; detail: string }) => boolean;
     };
     const bullpen = walkableTilesIn('bullpen');
-    for (const kind of ['whip', 'tie_up', 'worship', 'dominate', 'lick', 'table_dance', 'blackmail', 'peep', 'exhibit'] as const) {
+    for (const kind of ['whip', 'tie_up', 'worship', 'dominate', 'lick', 'table_dance', 'blackmail', 'peep', 'exhibit', 'cowgirl', 'reverse_cowgirl', 'missionary', 'doggy', 'blowjob', 'handjob', 'fingering', 'sixty_nine', 'facesit', 'orgasm'] as const) {
       exec.lastModelActionAt = -999;
       sim.teleport('meredith', bullpen[2]);
       sim.teleport('creed', bullpen[3]);
