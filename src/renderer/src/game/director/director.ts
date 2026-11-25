@@ -13,6 +13,7 @@
 // ever asks the sim to do things through its public surface.
 
 import type { Brain, DelegateTone, DirectiveRequest, DirectiveResult, InterpretResult, MindResult, PersonBrief, ReportResult, SceneDelegation, SceneLine, SceneRequest, SceneResult, SceneTrigger, StageAction, StoryReportInfo, StoryTheme } from '@/game/brain/api';
+import { saysNo } from '@/game/brain/clean';
 import { isNegatedDirective, isStopCommand, normalizeDelegatedCommand, splitCompoundDirective } from '@/game/brain/instinct';
 import { detectChaos, storyThemeOf } from '@/game/brain/instinctRules';
 import type { ScriptLine } from '@/game/story/types';
@@ -43,6 +44,12 @@ export interface DirectorOptions {
   summonStay?: (room: RoomId) => number | undefined;
   /** Story mode: typed orders and whispers are read carefully (the model may not escalate mild words). */
   carefulOrders?: () => boolean;
+  /**
+   * Story mode: today's chapter stages this whisper or order itself (Episode 3: told to take the tape,
+   * they fetch it from whoever has it). The thought still shows and sticks, but nothing else is staged
+   * from the sentence: the model is not asked, and there is no theft and no scene.
+   */
+  ownsOrder?: (who: CharId, text: string, kind: 'whisper' | 'cue') => boolean;
   /** Story mode: what the office is talking about right now (plain sentences). Small talk may pick from these. */
   storyTopics?: () => string[];
   /** Story mode: today's chapter may replace a scene's change in feeling (return the delta to apply). */
@@ -306,6 +313,11 @@ export class Director {
     this.drives.set(who, { nextAt: this.api.time + 30 + this.api.rng() * 15, acts: 0 });
     this.api.remember([who], `A thought came into your head from nowhere, and it feels like your own: "${thought}"`, 2.5);
     this.api.narrate(`You whisper to ${p.name}: "${thought}"`, { kind: 'overseer', icon: 'whisper', room: p.room });
+    // Today's chapter stages this one itself: whatever they were doing before stops, and nothing else is read into it.
+    if (this.opts.ownsOrder?.(who, text, 'whisper')) {
+      this.directives.cancelActor(who, true);
+      return;
+    }
     const steps = splitCompoundDirective(thought);
     const first = steps[0] ?? thought;
     if (steps.length > 1) this.directives.queueChain(who, steps.slice(1), 'whisper', true);
@@ -414,10 +426,9 @@ export class Director {
     if (parsed.verb === 'social' || parsed.verb === 'go_to' || (parsed.verb === 'recover' && parsed.item === 'stop')) {
       return null;
     }
-    const targets = addressed.length
-      ? addressed.slice(0, 4)
-      : [...new Set([...fallbackGroup.filter((id) => isCastId(id)), ...presentCast.map((p) => p.id)])];
-    const finalTargets = targets.length ? targets : presentCast.map((p) => p.id);
+    // "Everyone, ..." is decided by the people seen talking about it, never by the whole office: someone who
+    // says nothing (or is in another room) must not be staged carrying it out.
+    const finalTargets = addressed.length ? addressed.slice(0, 4) : fallbackGroup.filter((id) => isCastId(id)).slice(0, 4);
     if (!finalTargets.length) return null;
     const tone: DelegateTone = /\bi\s+dare\b/i.test(clean)
       ? 'dare'
@@ -572,6 +583,11 @@ export class Director {
     const named = this.api.people().filter((o) => o.id !== who && o.present && mentions(withoutRooms(what), o.name)).map((o) => o.id).slice(0, 2);
     const people = [who, ...(named.length ? named : this.companions(p, 1))];
     this.focusOn(people, 10);
+    // Today's chapter stages this one itself: whatever they were doing before stops, and nothing else is read into it.
+    if (this.opts.ownsOrder?.(who, instruction, 'cue')) {
+      this.directives.cancelActor(who, true);
+      return;
+    }
     const steps = splitCompoundDirective(what);
     const first = steps[0] ?? what;
     if (steps.length > 1) this.directives.queueChain(who, steps.slice(1), 'cue', true);
@@ -683,6 +699,10 @@ export class Director {
     for (const ask of this.sim.takeSceneAsks()) this.enqueue(this.withStoryTopic(ask), false);
     // While a story scene plays nothing else may start, so what is waiting does not go stale meanwhile.
     if (this.scripts.length) for (const q of this.queue) q.at = Math.min(now, q.at + dt);
+    // The same for a reaction to something the player did, while another one the player caused is playing
+    // (a slow model takes most of a minute over one) or the model is busy on the player's behalf: two
+    // knockouts a few seconds apart each get their scene, in turn.
+    else if (this.running?.fromPlayer || this.sideN > 0) for (const q of this.queue) if (q.fromPlayer) q.at = Math.min(now, q.at + dt);
     this.pruneQueue(now);
     this.guests.update(dt);
     this.directives.update(dt);
@@ -1432,8 +1452,14 @@ export class Director {
       const nextDepth = (del.depth ?? 0) + 1;
       const nextAllowDelegate = nextDepth <= 1;
       const cmd = del.command || del.action;
+      // Only someone who spoke in this scene and did not refuse in their own words goes along with it:
+      // the reply may name people who never said a word, or contradict what they said.
+      const agreed = (id: CharId): boolean => {
+        const own = res?.lines.filter((l) => l.who === id) ?? [];
+        return own.length > 0 && !own.some((l) => saysNo(l.say));
+      };
       if (del.executor === 'asker') {
-        if (res?.complies && del.asker !== 'loudspeaker') {
+        if (res?.complies && del.asker !== 'loudspeaker' && agreed(del.target)) {
           const askerId = del.asker;
           const askerPerson = this.api.person(askerId);
           if (askerPerson && askerPerson.present && !this.api.hasStatus(askerId, 'eliminated') && !this.api.hasStatus(askerId, 'quit')) {
@@ -1462,12 +1488,14 @@ export class Director {
           }
         }
       } else {
-        const rawCompliers = del.targets && del.targets.length > 1
-          ? (res?.compliers ?? (res?.complies ? [del.target] : []))
-          : (res?.complies ? [del.target] : []);
+        const rawCompliers = res?.complies === false
+          ? []
+          : del.targets && del.targets.length > 1
+            ? (res?.compliers ?? (res?.complies ? [del.target] : []))
+            : (res?.complies ? [del.target] : []);
         const compliers = [...new Set(rawCompliers)].filter((tid) => {
           const tp = this.api.person(tid);
-          return !!tp && tp.present && !this.api.hasStatus(tid, 'eliminated') && !this.api.hasStatus(tid, 'quit');
+          return !!tp && tp.present && agreed(tid) && !this.api.hasStatus(tid, 'eliminated') && !this.api.hasStatus(tid, 'quit');
         });
         if (compliers.length) {
           // Mutual two-person act ("tell Jim and Pam to kiss"): Jim walks up and kisses Pam rather than both acting at thin air.

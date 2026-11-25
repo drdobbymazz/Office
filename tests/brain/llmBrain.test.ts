@@ -290,14 +290,15 @@ describe('createBrain', () => {
     expect(rec.verb).toBe('recover');
     expect(rec.item).toBe('dress');
 
-    // 4. interpret retains heuristic base.power when model returns power: "none"
+    // 4. interpret keeps the model's own power, "none" included: the plain words decide only when the
+    // reply has no power at all (anythingBox.test.ts has the live cases)
     reply = JSON.stringify({
       title: 'Dragon in the Office', emoji: '🐉', room: 'shop', fact: 'A dragon breathes flames in the shop.',
       vibe: 'dangerous', intensity: 3, reaction: 'flee', look: 'smoke', moves: true, kind: 'creature',
       name: 'Dragon', power: 'none', skin: 'green', hair: 'black', outfit: 'red', trim: 'gold', style: 'suit'
     });
     const interp = await b.interpret({ id: 'i1', text: 'a dragon breathing flames', rooms: [{ id: 'shop', name: 'the Shop Floor', people: ['Fern'] }] });
-    expect(interp.power).toBe('fire');
+    expect(interp.power).toBe('none');
 
     // 5. scene parses group delegation compliers cleanly
     reply = JSON.stringify({

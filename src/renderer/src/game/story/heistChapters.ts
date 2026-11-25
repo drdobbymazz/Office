@@ -535,7 +535,10 @@ const LAND_AFTER = 2;
 const WATCHFUL = 15;
 /** Near misses allowed: the next one loses the case. */
 const NEAR_MISSES = 2;
-const TAPE_RE = /\b(take|get|grab|fetch|collect|pick up|bring|carry|hold|keep|swap|switch)\b[^.?!]*\btapes?\b|\btapes?\b[^.?!]*\bfrom\b/i;
+// "Steal the tape" is the same hand-over: everyone is in on the caper, so the holder simply passes it on.
+const TAPE_RE = /\b(take|get|grab|fetch|collect|pick up|bring|carry|hold|keep|swap|switch|steal|snatch|swipe)\b[^.?!]*\btapes?\b|\btapes?\b[^.?!]*\bfrom\b/i;
+const TAPE_WORD_RE = /\btapes?\b/i;
+const TAPE_FROM_RE = /\btapes?\b[^.?!]*\b(from|off)\b/i;
 const WAIT_RE = /\b(wait|conference|meeting room|door|stand by|outside)\b/i;
 const SWAP_RE = /\b(swap|switch|change)\b/i;
 /** Standing at her case while she watches: after this long she sends them away (sim seconds). */
@@ -570,7 +573,7 @@ class TapeSwitch {
   nearMisses = 0;
   private wasHeld: CharId | null = null;
   private landings: { who: CharId; at: number }[] = [];
-  private fetchers = new Map<CharId, { until: number; wait: boolean }>();
+  private fetchers = new Map<CharId, { until: number; then: 'wait' | 'case' | null }>();
   private lastPos: { x: number; y: number } | null = null;
   private lingered = 0;
   private holdAt = 0;
@@ -763,7 +766,8 @@ class TapeSwitch {
       if (h && onFloor(s, p) && onFloor(s, h) && dist(p, h) <= HAND_REACH) {
         this.fetchers.delete(who);
         this.handOver(who);
-        if (f.wait) this.c.after(1.5, () => this.sendTo(who, 'wait'));
+        const then = f.then;
+        if (then) this.c.after(1.5, () => this.sendTo(who, then));
         continue;
       }
       if (h && onFloor(s, p) && p.available && !p.sceneId && !(p.doing ?? '').startsWith('going to get the tape')) {
@@ -799,8 +803,23 @@ class TapeSwitch {
       return;
     }
     if (!isCastId(a.who) || !TAPE_RE.test(a.text)) return;
-    this.fetchers.set(a.who, { until: s.time + FETCH_FOR, wait: WAIT_RE.test(a.text) });
+    // Once they have it, the rest of the sentence decides where they go, as it does for the holder.
+    const then = SWAP_RE.test(a.text) ? 'case' : WAIT_RE.test(a.text) ? 'wait' : null;
+    this.fetchers.set(a.who, { until: s.time + FETCH_FOR, then });
     s.narrate(SWITCH.fetch(nameOf(a.who), nameOf(this.holder)), { icon: 'whisper', room: s.person(a.who)?.room });
+  }
+
+  /**
+   * True when this whisper or order is the chapter's to stage, so the director must not read anything
+   * more into it. "Take the tape from Michael" means fetch it from whoever has it, never a theft. The
+   * holder told to wait with the tape or swap the tapes goes where the chapter sends them, and told to
+   * take it from someone they already have it. Only sentences about the tape count: "take the tape to
+   * the annex" and anything else is staged as usual.
+   */
+  claims(a: PlayerAction): boolean {
+    if ((a.kind !== 'whisper' && a.kind !== 'cue') || !a.who || !a.text || !this.holder) return false;
+    if (a.who !== this.holder) return isCastId(a.who) && TAPE_RE.test(a.text);
+    return (!this.wrong && TAPE_WORD_RE.test(a.text) && (SWAP_RE.test(a.text) || WAIT_RE.test(a.text))) || TAPE_FROM_RE.test(a.text);
   }
 
   /** Send whoever has the tape to wait outside the conference room door, or straight to the case. */
@@ -1138,6 +1157,10 @@ class SwitchRun implements ChapterRun {
   onAction(a: PlayerAction): void {
     if ((a.kind === 'whisper' || a.kind === 'cue') && a.who) this.vane.noteSent(a.who);
     this.job.onAction(a);
+  }
+
+  ownsOrder(a: PlayerAction): boolean {
+    return this.job.claims(a);
   }
 
   onChaosStart(e: ChaosStartInfo): void {
@@ -1589,6 +1612,10 @@ class ScreeningRun implements ChapterRun {
       this.c.sim.feel(a.who, 'determined', 0.6, 20);
     }
     this.job?.onAction(a);
+  }
+
+  ownsOrder(a: PlayerAction): boolean {
+    return this.job?.claims(a) ?? false;
   }
 
   onChaosStart(e: ChaosStartInfo): void {

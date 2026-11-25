@@ -21,13 +21,28 @@ export function lineKey(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// Where a text field runs on into the reply format itself. Seen live in a spoken line,
+// `...HACKED!」「feel":"excited","to":"all","act":"cheer"},{`, and at the end of an order's summary, `...over his {`.
+const REPLY_KEY = 'who|say|feel|to|act|lines|summary|shifts|plans|stageAction|rumor|complies|compliers|verb|targetPerson|targetRoom|power|item|delegatedAction';
+const FORMAT_LEAK = new RegExp(`[「」『』]|"\\s*[,:]\\s*"(?:${REPLY_KEY})"\\s*:|\\b(?:${REPLY_KEY})"\\s*:|\\s*[{}\\[]+\\s*$`);
+
+/** The text before any leak of the reply format into it. cut: something was taken off, so the text may now stop mid-phrase. */
+export function beforeFormatLeak(raw: string): { text: string; cut: boolean } {
+  const m = FORMAT_LEAK.exec(raw);
+  if (!m) return { text: raw, cut: false };
+  return { text: raw.slice(0, m.index).replace(/["\s,;:-]+$/, ''), cut: true };
+}
+
+/** Most words a scene line keeps: the prompt asks for 40 or fewer, and a longer line is trimmed to whole sentences. */
+export const LINE_WORDS = 45;
+
 /**
  * Tidy one spoken line. Returns '' when nothing usable is left.
- * maxWords: lines longer than this are cut at a sentence end where possible.
+ * maxWords: lines longer than this are trimmed back to whole sentences where possible.
  */
 export function cleanSay(raw: unknown, maxWords = 22, isName?: (s: string) => boolean): string {
   if (typeof raw !== 'string') return '';
-  let s = raw.replace(/\r?\n+/g, ' ').trim();
+  let s = beforeFormatLeak(raw.replace(/\r?\n+/g, ' ')).text.trim();
   // "Marcus: Hello" -> "Hello" (only when the prefix is someone's name).
   const prefix = /^([A-Z][A-Za-z' .-]{1,24}):\s+(?=\S)/.exec(s);
   if (prefix && isName?.(prefix[1])) s = s.slice(prefix[0].length);
@@ -52,20 +67,104 @@ export function cleanSay(raw: unknown, maxWords = 22, isName?: (s: string) => bo
   return cutWords(s, maxWords);
 }
 
+/** Where each sentence in `s` ends (just after its closing mark and any closing quote). */
+function sentenceEnds(s: string): number[] {
+  const ends: number[] = [];
+  const re = /[.!?…]+["'”’)]*(?=\s|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) ends.push(m.index + m[0].length);
+  return ends;
+}
+
+const wordCount = (s: string): number => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+/**
+ * Keep a line to whole sentences. A line within the limit is left alone. A longer one keeps as many
+ * whole sentences as fit; when that would leave only a word or two, one more finished sentence a
+ * little over the limit is kept rather than chopped. Failing that it ends at the last clause break,
+ * and only a run-on with no break at all trails off with dots.
+ */
 function cutWords(s: string, maxWords: number): string {
   const words = s.split(' ');
   if (words.length <= maxWords) return s;
+  const ends = sentenceEnds(s);
+  // A line the writer finished itself ends where it ends, even without a full stop.
+  if (ends[ends.length - 1] !== s.length) ends.push(s.length);
+  let whole = '';
+  for (const e of ends) {
+    const head = s.slice(0, e);
+    if (wordCount(head) > maxWords) break;
+    whole = head;
+  }
+  if (wordCount(whole) < 4) {
+    const next = ends.find((e) => e > whole.length && wordCount(s.slice(0, e)) <= Math.ceil(maxWords * 1.5));
+    if (next) whole = s.slice(0, next);
+  }
+  if (whole) return whole.trim();
+  // Too long and nothing finished within reach: end at the last comma or semicolon, as a sentence.
   const head = words.slice(0, maxWords).join(' ');
-  // Last sentence end within the limit, if it leaves a decent line.
-  let cut = -1;
-  const re = /[.!?](?=\s|$)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(head))) cut = m.index + 1;
-  if (cut > 0 && head.slice(0, cut).split(' ').length >= 4) return head.slice(0, cut);
+  const brk = Math.max(head.lastIndexOf(','), head.lastIndexOf(';'), head.lastIndexOf(':'));
+  if (brk > 0 && wordCount(head.slice(0, brk)) >= 6) return `${head.slice(0, brk).trim()}.`;
   const cap = maxWords <= 22 ? Math.min(maxWords, 18) : Math.min(maxWords, maxWords - 2);
   const short = words.slice(0, cap).join(' ').replace(/[,;:]$/, '');
   return `${short}...`;
 }
+
+/**
+ * A field that is meant to be one or two finished sentences (a scene's summary, a rumour), which
+ * is stored as people's memory and shown in later prompts. maxChars is the reply format's cap: text
+ * that reaches it was cut off while being written, so it is trimmed back to its last finished
+ * sentence, or failing that its last finished clause, and ended with a full stop. Returns '' when
+ * nothing complete is left (the caller then writes its own).
+ */
+export function cleanSentence(raw: unknown, maxChars: number): string {
+  if (typeof raw !== 'string') return '';
+  const cut = raw.length >= maxChars;
+  let s = cleanText(raw, Number.MAX_SAFE_INTEGER);
+  if (!s) return '';
+  if (cut || s.length > maxChars) {
+    const room = s.slice(0, maxChars);
+    const ends = sentenceEnds(room);
+    const last = ends[ends.length - 1];
+    if (last) s = room.slice(0, last);
+    else {
+      // The last clause break, leaving out the clause that was cut off.
+      const brk = Math.max(room.lastIndexOf(';'), room.lastIndexOf(','), room.lastIndexOf(':'));
+      if (brk < 20) return '';
+      s = room.slice(0, brk);
+    }
+  }
+  s = s.trim().replace(/[,;:\s]+$/, '');
+  return /[.!?…]["'”’)]*$/.test(s) ? s : `${s}.`;
+}
+
+/**
+ * True when a spoken line plainly turns something down ("No way am I punching anyone", "I will not",
+ * "Absolutely not"). Used to keep someone who refused out loud from being staged doing it anyway,
+ * whatever the rest of the reply said.
+ */
+export function saysNo(text: string): boolean {
+  return REFUSAL.test(text.replace(/[’‘]/g, "'"));
+}
+
+const REFUSAL = new RegExp(
+  [
+    // "No.", "Nope", "Never." to open with; not "No way!" (often delight) or "No problem".
+    "^(?:no|nope|nah|never)\\b(?!\\s*(?:way\\s*[!?]|problem|worries|doubt|question|kidding|joke))",
+    "\\b(?:absolutely|definitely|certainly|hell)\\s+not\\b",
+    "\\bhell\\s+no\\b",
+    "\\bno\\s+way\\s+(?:am\\s+i|i'm|i\\s+am|i'll|i\\s+will|i'd|in\\s+hell)\\b",
+    "\\b(?:no|not\\s+a)\\s+chance\\b",
+    "\\bnot\\s+happening\\b",
+    "\\bforget\\s+it\\b",
+    "\\bcount\\s+me\\s+out\\b",
+    "\\bi\\s+refuse\\b",
+    "\\bi\\s+will\\s+not\\b",
+    "\\bi\\s+won't\\s+(?:do|be|go)\\b",
+    "\\bi(?:'m|\\s+am)\\s+not\\s+(?:doing|going\\s+to|gonna|about\\s+to)\\b"
+  ].join('|'),
+  'i'
+);
 
 /** Short plain text field (summary, about, title). */
 export function cleanText(raw: unknown, maxChars: number): string {
@@ -106,13 +205,15 @@ export interface LineContext {
   seen: Set<string>;
 }
 
-/** One raw line object -> a valid SceneLine, or null. Adds it to ctx.seen. */
+/**
+ * One raw line object -> a valid SceneLine, or null. Adds it to ctx.seen.
+ */
 export function cleanLine(raw: unknown, ctx: LineContext): SceneLine | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const who = ctx.speakers.resolve(r.who);
   if (!who) return null;
-  const say = cleanSay(r.say, 120, (n) => ctx.speakers.resolve(n) !== null);
+  const say = cleanSay(r.say, LINE_WORDS, (n) => ctx.speakers.resolve(n) !== null);
   if (!say) return null;
   const key = lineKey(say);
   if (!key || ctx.seen.has(key)) return null;

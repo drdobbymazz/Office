@@ -147,6 +147,12 @@ export interface ChapterRun {
   onSceneDone?(e: SceneDoneInfo): void;
   onPickedUp?(who: CharId): void;
   onAction?(a: PlayerAction): void;
+  /**
+   * The chapter stages this whisper or order itself (Episode 3: someone told to take the tape fetches
+   * it from whoever has it), so nothing else may be staged from the sentence: no theft, no scene.
+   * Asked just before the action happens; onAction still follows as usual. Must have no side effects.
+   */
+  ownsOrder?(a: PlayerAction): boolean;
   accuse?(who: CharId): void;
   accuseUi?(): { triesLeft: number; accused: CharId[]; label: string } | null;
   /** Held where they are by the story: announcements do not move them. */

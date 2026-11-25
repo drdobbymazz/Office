@@ -132,7 +132,8 @@ function sentence(text: string): string {
   const t = text.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
   if (!t) return '';
   const body = t.charAt(0).toUpperCase() + t.slice(1);
-  return /[!?]$/.test(body) ? body : `${body}.`;
+  // One that ends in a quotation ("...in any capacity.'") is already finished.
+  return /[.!?]["'”’)]*$/.test(body) ? body : `${body}.`;
 }
 
 export class Guests {

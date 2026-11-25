@@ -81,14 +81,14 @@ describe('cleanLines', () => {
     expect(cleanSay(fortyWords).endsWith('...')).toBe(true);
   });
 
-  it('preserves an 80-word natural speech line without cutting off', () => {
+  it('trims an 80-word run-on line to the scene line limit (it has no sentence or clause to end at)', () => {
     const line80 = Array.from({ length: 80 }, (_, i) => `word${i}`).join(' ') + '.';
     const cleaned = cleanLine(
       { who: 'Fern', say: line80, feel: 'angry', to: 'none', act: 'none' },
       { speakers, maxLines: 2, seen: new Set([lineKey('other')]) }
     );
-    expect(cleaned?.say).toBe(line80);
-    expect(cleaned?.say.endsWith('...')).toBe(false);
+    expect(cleaned?.say.split(' ').length).toBeLessThanOrEqual(45);
+    expect(cleaned?.say.endsWith('...')).toBe(true);
   });
 });
 

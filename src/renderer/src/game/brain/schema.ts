@@ -28,6 +28,15 @@ function dedupe(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
+/**
+ * Caps on a scene's summary and rumour, enforced while the model writes, so a string that reaches one
+ * stops where it stands; the cleaning trims anything that reaches them back to whole sentences.
+ * A spoken line has no character cap: the prompt asks for 40 words or fewer and the cleaning keeps a
+ * longer line to whole sentences, so a line is never chopped at a character count.
+ */
+export const SCENE_SUMMARY_CHARS = 200;
+export const SCENE_RUMOR_CHARS = 110;
+
 export interface SceneSchemaInput {
   /** First names of the speakers. */
   speakers: string[];
@@ -38,7 +47,7 @@ export interface SceneSchemaInput {
   minLines: number;
   maxLines: number;
   hasDelegation?: boolean;
-  /** First names of targets when 2+ people are asked/ordered together. */
+  /** First names of the people asked together who speak in this scene: the only ones the model decides for. */
   delegationTargets?: string[];
   /** Adds stageAction, rumor, and shift notes when playing with Unleashed Model Mode. */
   unleashed?: boolean;
@@ -54,7 +63,7 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
     lines: arr(
       obj({
         who: oneOf(speakers),
-        say: str(640),
+        say: str(),
         feel: oneOf(EMOTIONS),
         to: oneOf([...speakers, 'all', 'none']),
         act: oneOf(LINE_ACTS)
@@ -62,7 +71,7 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
       s.minLines,
       s.maxLines
     ),
-    summary: str(200),
+    summary: str(SCENE_SUMMARY_CHARS),
     shifts: arr(shiftObj, 0, s.unleashed ? 3 : 2),
     plans: arr(
       obj({
@@ -82,10 +91,10 @@ export function sceneSchema(s: SceneSchemaInput): JsonSchema {
       target: oneOf([...people, 'none']),
       detail: str(60)
     });
-    props.rumor = str(110);
+    props.rumor = str(SCENE_RUMOR_CHARS);
   }
   if (s.hasDelegation) props.complies = { type: 'boolean' };
-  if (s.hasDelegation && s.delegationTargets && s.delegationTargets.length > 1) {
+  if (s.hasDelegation && s.delegationTargets && s.delegationTargets.length > 0) {
     props.compliers = arr(oneOf(s.delegationTargets), 0, s.delegationTargets.length);
   }
   return obj(props);

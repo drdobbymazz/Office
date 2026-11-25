@@ -498,14 +498,23 @@ describe('physical directive execution', () => {
       expect(sim.hasStatus('angela', 'naked')).toBe(false);
     }
 
-    // 2. Group delegation ("tell everyone in the bullpen to strip naked")
+    // 2. Group delegation ("tell everyone in the bullpen to strip naked"): only people who answered in the
+    //    scene can go along with it, so the rest of the room (Meredith, unless she spoke) does not strip.
     {
-      const { sim, director, advanceAsync } = makeOffice(62);
+      const { sim, director, brain, advanceAsync } = makeOffice(62);
+      const spoke = new Set<string>();
+      const origScene = brain.scene.bind(brain);
+      brain.scene = async (req, cb) => {
+        const res = await origScene(req, cb);
+        if (req.delegation) for (const l of res.lines) spoke.add(l.who);
+        return res;
+      };
       sim.teleport('meredith', { x: 10, y: 14 });
       sim.teleport('angela', { x: 11, y: 14 });
       director.cue('michael', 'tell everyone in the bullpen to strip naked');
-      await advanceAsync(45, () => sim.hasStatus('meredith', 'naked'));
-      expect(sim.hasStatus('meredith', 'naked')).toBe(true);
+      await advanceAsync(45);
+      expect(spoke.size).toBeGreaterThan(0);
+      for (const p of sim.people()) if (sim.hasStatus(p.id, 'naked')) expect(spoke.has(p.id)).toBe(true);
       expect(sim.hasStatus('angela', 'naked')).toBe(false);
     }
 
@@ -545,16 +554,30 @@ describe('physical directive execution', () => {
       expect(sim.hasStatus('angela', 'naked')).toBe(false);
     }
 
-    // 6. Loudpeaker general demand ("Everyone strip naked!")
+    // 6. Loudpeaker general demand ("Everyone strip naked!"): it is put to the people seen talking about it,
+    //    and nobody else (Meredith and Creed included, unless they are among them) strips.
     {
-      const { sim, director, advanceAsync } = makeOffice(69);
+      const { sim, director, brain, advanceAsync } = makeOffice(69);
+      const asked: string[][] = [];
+      const spoke = new Set<string>();
+      const origScene = brain.scene.bind(brain);
+      brain.scene = async (req, cb) => {
+        const res = await origScene(req, cb);
+        if (req.delegation) {
+          asked.push(req.delegation.targets ?? [req.delegation.target]);
+          for (const l of res.lines) spoke.add(l.who);
+        }
+        return res;
+      };
       sim.teleport('meredith', { x: 10, y: 14 });
       sim.teleport('creed', { x: 12, y: 14 });
       sim.teleport('angela', { x: 13, y: 14 });
       sim.teleport('pam', { x: 14, y: 14 });
       director.announce('Everyone strip naked!');
-      await advanceAsync(35, () => sim.hasStatus('meredith', 'naked') || sim.hasStatus('creed', 'naked'));
-      expect(sim.hasStatus('meredith', 'naked') || sim.hasStatus('creed', 'naked')).toBe(true);
+      await advanceAsync(35);
+      expect(asked).toHaveLength(1);
+      expect(asked[0].length).toBeLessThanOrEqual(4);
+      for (const p of sim.people()) if (sim.hasStatus(p.id, 'naked')) expect(spoke.has(p.id)).toBe(true);
       expect(sim.hasStatus('angela', 'naked')).toBe(false);
       expect(sim.hasStatus('pam', 'naked')).toBe(false);
     }

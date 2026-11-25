@@ -207,6 +207,8 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
       summonStay: (room) => (mode === 'story' ? day?.summonStay(room) : undefined),
       // The story's days are puzzles: a whisper is read by its plain words, and the model may not escalate it.
       carefulOrders: () => mode === 'story',
+      // Today's chapter may stage a whisper or order itself (Episode 3: told to take the tape, they fetch it, never steal it).
+      ownsOrder: (who, text, kind) => (mode === 'story' && day ? day.ownsOrder({ kind, who, text }) : false),
       // What the office is talking about in Story or Endless Saga right now (small talk picks it up).
       storyTopics: () => (mode === 'story' && day ? day.topics() : mode === 'saga' && sagaDay ? sagaDay.topics() : []),
       // Classic Story may adjust a scene's change in feeling while counting progress; Saga leaves shifts raw.

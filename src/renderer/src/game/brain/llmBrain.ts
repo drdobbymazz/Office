@@ -25,15 +25,19 @@ import {
   GUEST_SKINS, GUEST_STYLES
 } from './api';
 import type { CustomPower } from './api';
-import { cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanShifts, cleanStageAction, cleanText, lineKey } from './clean';
+import { beforeFormatLeak, cleanEmotion, cleanLine, cleanPlan, cleanPlans, cleanSay, cleanSentence, cleanShifts, cleanStageAction, cleanText, lineKey } from './clean';
 import type { LineContext } from './clean';
-import { InstinctBrain, inferDelegateTone, isNegatedDirective, stripRoomPhrases } from './instinct';
+import {
+  InstinctBrain, NEEDS_PERSON, absentStaffNamed, inferDelegateTone, isNegatedDirective, isVisitor, namesPerson, passesOnOrder,
+  stripRoomPhrases
+} from './instinct';
 import type { LooseBank } from './instinct';
+import { plainlyBurning } from './instinctRules';
 import { ArrayItemStream, parseLoose } from './jsonStream';
 import { NameMap } from './names';
 import { PromptBook } from './prompts';
 import type { RequestKind } from './prompts';
-import { directiveSchema, interpretSchema, mindsSchema, reportSchema, sagaEpisodeSchema, sceneSchema } from './schema';
+import { directiveSchema, interpretSchema, mindsSchema, reportSchema, sagaEpisodeSchema, SCENE_RUMOR_CHARS, SCENE_SUMMARY_CHARS, sceneSchema } from './schema';
 import type { JsonSchema } from './schema';
 import { BrainError, isAbort } from './transports/common';
 import type { TransportOptions, TransportProgress } from './transports/common';
@@ -339,25 +343,30 @@ export class LlmBrain implements Brain {
       if (line) emit(line);
     };
     const delTargets = req.delegation?.targets && req.delegation.targets.length > 1 ? req.delegation.targets : undefined;
+    // Of the people asked together, the model decides only for those it writes lines for.
+    const askedHere = delTargets?.filter((id) => names.has(id));
     const resolveTargetId = (raw: unknown): CharId | null => names.resolve(raw) ?? (typeof raw === 'string' ? this.index.idForName(raw) : null);
-    const delegationTargetNames = delTargets
-      ? delTargets.map((id) => (names.has(id) ? names.name(id) : this.index.nameOf(id)))
-      : undefined;
 
     const build = (value: Record<string, unknown> | null): SceneResult => {
       let complies: boolean | undefined;
       let compliers: CharId[] | undefined;
       if (req.delegation) {
         if (delTargets) {
+          // Only someone who actually spoke in the scene can have agreed to it, and a "complies": false
+          // outweighs any names listed beside it.
+          const spoke = delTargets.filter((id) => lines.some((l) => l.who === id));
           const parsed: CharId[] = [];
           if (Array.isArray(value?.compliers)) {
             for (const raw of value.compliers) {
               const id = resolveTargetId(raw);
-              if (id && delTargets.includes(id) && !parsed.includes(id)) parsed.push(id);
+              if (id && spoke.includes(id) && !parsed.includes(id)) parsed.push(id);
             }
           }
-          if (!Array.isArray(value?.compliers) || (value?.complies === true && parsed.length === 0)) {
-            compliers = delTargets.filter((id) => this.instinct.decideComplianceFor(req, id, lines));
+          if (value?.complies === false) {
+            compliers = [];
+          } else if (!Array.isArray(value?.compliers) || (value?.complies === true && parsed.length === 0)) {
+            // No usable answer (the reply was cut short): the written rules read what each speaker said.
+            compliers = spoke.filter((id) => this.instinct.decideComplianceFor(req, id, lines));
           } else {
             compliers = parsed;
           }
@@ -367,10 +376,10 @@ export class LlmBrain implements Brain {
         }
       }
       const stageAction = req.unleashed ? cleanStageAction(value?.stageAction, names, people) : undefined;
-      const rumor = req.unleashed ? cleanText(value?.rumor, 110) : '';
+      const rumor = req.unleashed ? cleanSentence(value?.rumor, SCENE_RUMOR_CHARS) : '';
       return {
         lines: lines.slice(),
-        summary: cleanText(value?.summary, 200) || this.instinct.summarise(req, lines, names),
+        summary: cleanSentence(value?.summary, SCENE_SUMMARY_CHARS) || this.instinct.summarise(req, lines, names),
         shifts: cleanShifts(value?.shifts, names, people),
         plans: cleanPlans(value?.plans, names, people, this.rooms),
         ...(complies !== undefined ? { complies } : {}),
@@ -381,7 +390,8 @@ export class LlmBrain implements Brain {
       };
     };
 
-    const baseTokens = (delTargets ? 170 : req.delegation ? 140 : 120) + 95 * maxLines;
+    // A line of up to 200 characters is about 50 tokens, plus about 25 for its JSON: 75 a line.
+    const baseTokens = (delTargets ? 150 : req.delegation ? 140 : 120) + 95 * maxLines;
     return this.run<SceneResult>({
       kind: 'scene',
       user: this.book.sceneUser(req, names),
@@ -392,7 +402,7 @@ export class LlmBrain implements Brain {
         minLines: req.minLines,
         maxLines,
         hasDelegation: !!req.delegation,
-        ...(delegationTargetNames ? { delegationTargets: delegationTargetNames } : {}),
+        ...(askedHere?.length ? { delegationTargets: askedHere.map((id) => names.name(id)) } : {}),
         ...(req.unleashed ? { unleashed: true } : {})
       }),
       temperature: this.temp(req.chaos),
@@ -487,28 +497,40 @@ export class LlmBrain implements Brain {
       parse: (text) => {
         const v = parseLoose(text)?.value;
         if (!v) return null;
-        const title = cleanText(v.title, 40);
-        const fact = cleanText(v.fact, 160);
+        const title = cleanText(untangle(v.title).text, 40);
+        const rawFact = untangle(v.fact);
+        const fact = endFact(
+          cleanText(rawFact.text, FACT_MAX),
+          rawFact.cut || (typeof v.fact === 'string' && v.fact.trim().length >= FACT_MAX)
+        );
         if (!title || !fact) return null;
         const base = this.instinct.interpretNow(req);
         const room = typeof v.room === 'string' && (v.room === 'everywhere' || roomIds.includes(v.room)) ? v.room : base.room;
         const intensity = Number(v.intensity);
         const oneOf = <T extends string>(list: readonly T[], raw: unknown, dflt: T): T =>
           typeof raw === 'string' && (list as readonly string[]).includes(raw.trim().toLowerCase()) ? (raw.trim().toLowerCase() as T) : dflt;
-        const rawPower = (CUSTOM_POWERS as readonly string[]).includes(String(v.power)) ? (v.power as CustomPower) : base.power;
-        const power = rawPower === 'none' && base.power !== 'none' ? base.power : rawPower;
+        // The model's power stands, "none" included: it reads "Michael flames Toby in an email" as an
+        // email where the plain words see a fire. The words decide only when the reply has no power at all.
+        let power = (CUSTOM_POWERS as readonly string[]).includes(String(v.power)) ? (v.power as CustomPower) : base.power;
+        // The model reads a real fire as a fire drill, even when its own fact says the flames are spreading.
+        // When the typed text plainly says a place or thing is burning, it is a fire.
+        if ((power === 'fireDrill' || power === 'none') && plainlyBurning(req.text)) power = 'fire';
+        const kind = oneOf(CUSTOM_KINDS, v.kind, base.kind);
+        // Only something with a body gets a name from the plain words, which take any capitalised word:
+        // a wedding is not called "Jim", nor an angry email "Toby".
+        const name = cleanText(untangle(v.name).text, 30) || (kind === 'character' || kind === 'creature' ? base.name : '');
         return {
           title,
           emoji: firstEmoji(v.emoji),
           room: room as TargetRoomId | 'everywhere',
-          fact: /[.!?]$/.test(fact) ? fact : `${fact}.`,
+          fact,
           vibe: oneOf(CUSTOM_VIBES, v.vibe, base.vibe),
           intensity: intensity === 1 || intensity === 2 || intensity === 3 ? intensity : base.intensity,
           reaction: oneOf(CUSTOM_REACTIONS, v.reaction, base.reaction),
           look: oneOf(CUSTOM_LOOKS, v.look, base.look),
           moves: typeof v.moves === 'boolean' ? v.moves : base.moves,
-          kind: oneOf(CUSTOM_KINDS, v.kind, base.kind),
-          name: cleanText(v.name, 30) || base.name,
+          kind,
+          name,
           power,
           guest: {
             skin: oneOf(GUEST_SKINS, v.skin, base.guest.skin),
@@ -529,21 +551,18 @@ export class LlmBrain implements Brain {
     base: DirectiveResult,
     names: NameMap,
     roomIds: string[],
-    rawText: string,
-    allowDelegate = true,
-    actorName = '',
-    careful = false
+    req: DirectiveRequest
   ): DirectiveResult {
+    const rawText = req.text;
+    const allowDelegate = req.allowDelegate !== false;
+    const careful = req.careful === true;
     const cleanRaw = stripRoomPhrases(rawText);
-    const isMentionedInClean = (id: CharId): boolean => {
-      const fullName = names.name(id);
-      const firstName = fullName.split(/\s+/)[0] || fullName;
-      return [fullName, firstName]
-        .filter((s) => s.length >= 2)
-        .some((part) => new RegExp(`\\b${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(cleanRaw));
-    };
+    // The full name as the game knows it ("Jim Halpert", "The Inspector"), so the first real word is
+    // matched and never "the" or "Mr" on their own.
+    const fullName = (id: CharId): string => req.people.find((p) => p.id === id)?.name ?? names.name(id);
+    const isMentionedInClean = (id: CharId): boolean => namesPerson(cleanRaw, fullName(id));
 
-    if (isNegatedDirective(rawText, actorName)) {
+    if (isNegatedDirective(rawText, req.actor.name)) {
       return {
         verb: 'social',
         targetPerson: base.targetPerson,
@@ -591,15 +610,20 @@ export class LlmBrain implements Brain {
     }
     const rawResolved = v.targetPerson && v.targetPerson !== 'none' ? names.resolve(v.targetPerson) : null;
     const resolvedPerson = rawResolved && isMentionedInClean(rawResolved) ? rawResolved : null;
-    let targetPerson = resolvedPerson ?? base.targetPerson;
+    // Someone the player named who is not here ("punch Toby" while Toby is out).
+    const absent = base.targetPerson || resolvedPerson ? null : absentStaffNamed(rawText, this.index.world.people, req.people);
+    // When the words name nobody here, the model's reading of who is meant stands: a surname
+    // ("punch Halpert"), a typo ("slap Dwigt"), a pronoun ("kiss her"), another language. Only for
+    // members of staff who are here: a visitor must still be named in the text. And never when the
+    // player named someone who is not here: then nobody else is hit in their place.
+    const modelChoice = !resolvedPerson && !base.targetPerson && !absent && rawResolved && rawResolved !== req.actor.id && !isVisitor(rawResolved)
+      ? rawResolved
+      : null;
+    let targetPerson = resolvedPerson ?? base.targetPerson ?? modelChoice;
     // Never let the model turn a delegated request into an action by the speaker.
     if (allowDelegate && base.verb === 'delegate') {
       verb = 'delegate';
       targetPerson = base.targetPerson ?? resolvedPerson;
-    }
-    // Do not let the model invent a coworker target when the player ordered a solo expose/perform/recover stunt.
-    if ((verb === 'expose' || verb === 'perform' || verb === 'recover') && base.targetPerson === null && resolvedPerson) {
-      if (!isMentionedInClean(resolvedPerson)) targetPerson = null;
     }
     const rawRoom = typeof v.targetRoom === 'string' && v.targetRoom !== 'none' ? v.targetRoom : '';
     const resolvedRoom = rawRoom ? (roomIds.includes(rawRoom) ? rawRoom : this.rooms(rawRoom)) : null;
@@ -611,6 +635,30 @@ export class LlmBrain implements Brain {
     if (verb === 'delegate' && !delegatedText) {
       verb = base.verb !== 'delegate' ? base.verb : 'social';
     }
+    // With passing orders on switched off (the far end of a chain), "tell Kevin to slap Dwight" is talk
+    // with Kevin. The person told to pass it on never does it themselves, whatever the model reads.
+    if (!allowDelegate && passesOnOrder(rawText, req.actor.name)) verb = 'social';
+    // A solo stunt (expose, perform, recover) never gains a partner the player did not name.
+    if ((verb === 'expose' || verb === 'perform' || verb === 'recover') && targetPerson && targetPerson === modelChoice) {
+      targetPerson = null;
+    }
+    // Nobody stands in for someone who is not here: with no one else named, it stays talk.
+    if (absent && !targetPerson && !base.targetAll && NEEDS_PERSON.has(verb)) verb = 'social';
+    // The summary is what the Log, the memories and the aftermath scene say happened. It is the model's
+    // only when the act and the person are the model's own reading, and only when it names nobody but
+    // the actor and that person: "Kevin punches Jim" must never be printed over a punch on Toby.
+    // A summary that reached the reply format's cap, or ran on into the format itself, stops mid-phrase
+    // ("...sending him stumbling backward over his {"). It goes back to its last finished clause, or is not used.
+    const rawSummary = typeof v.summary === 'string' ? v.summary : '';
+    const leak = beforeFormatLeak(rawSummary);
+    let modelSummary = cleanText(leak.text, 120);
+    if (modelSummary && (leak.cut || rawSummary.length >= 120) && !/[.!?]$/.test(modelSummary)) {
+      const brk = Math.max(modelSummary.lastIndexOf(', '), modelSummary.lastIndexOf('; '));
+      modelSummary = brk >= 20 ? modelSummary.slice(0, brk) : '';
+    }
+    const ownReading = verb === v.verb && (!rawResolved || rawResolved === targetPerson);
+    const namesSomeoneElse = verb !== 'delegate' && req.people.some((p) => p.id !== targetPerson && p.id !== req.actor.id && namesPerson(modelSummary, p.name));
+    const summary = modelSummary && ownReading && !namesSomeoneElse ? modelSummary : base.summary;
     const item = base.verb === 'recover' ? (base.item || cleanText(v.item, 32)) : (base.item.includes(' ') ? base.item : (cleanText(v.item, 32) || base.item));
     return {
       verb,
@@ -622,7 +670,7 @@ export class LlmBrain implements Brain {
       targetRoom,
       power: power === 'none' && base.power !== 'none' ? base.power : power,
       item,
-      summary: cleanText(v.summary, 120) || base.summary,
+      summary,
       ...(delegatedText ? { delegatedText } : {}),
       source: 'model'
     };
@@ -632,7 +680,6 @@ export class LlmBrain implements Brain {
     const base = this.instinct.interpretDirectiveNow(req);
     const names = new NameMap(req.people.map((p) => ({ id: p.id, name: p.name })));
     const roomIds = req.rooms.map((r) => r.id as string);
-    const allowDelegate = req.allowDelegate !== false;
     return this.run<DirectiveResult>({
       kind: 'directive',
       user: this.book.directiveUser(req, names),
@@ -643,7 +690,7 @@ export class LlmBrain implements Brain {
       parse: (text) => {
         const v = parseLoose(text)?.value;
         if (!v) return null;
-        return this.normalizeDirective(v, base, names, roomIds, req.text, allowDelegate, req.actor.name, req.careful === true);
+        return this.normalizeDirective(v, base, names, roomIds, req);
       },
       fallback: () => base
     });
@@ -743,4 +790,79 @@ export function firstEmoji(raw: unknown): string {
   }
   const m = /\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}]*/u.exec(s);
   return m ? m[0] : '';
+}
+
+// ── Cleaning a typed event's text fields ────────────────────────────────────
+
+/** The longest fact the reply format allows (schema.ts interpretSchema). A fact this long was probably cut off. */
+const FACT_MAX = 160;
+const REPLY_KEYS = 'title|emoji|room|fact|vibe|intensity|reaction|look|moves|kind|name|power|skin|hair|outfit|trim|style';
+// Where a text field runs on into the reply format itself: the corner brackets the model sometimes uses as
+// quotes, braces, `":"`, `"}`, or a key name glued on (`power":`). Seen live: `Inspector」「power":"meeting」}`.
+const FORMAT_LEAK = new RegExp(`[「」『』{}]|"\\s*:\\s*"|"\\s*\\}|\\b(?:${REPLY_KEYS})"\\s*:`, 'i');
+// Letters of another script glued onto the end of Latin text ("counting the翊"). Group 1 is the last good character.
+const STRAY_TAIL = /([\p{Script=Latin}\p{P}])[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]+[\s\p{P}\p{S}]*$/u;
+const LATIN = /\p{Script=Latin}/u;
+
+/**
+ * A text field of the reply, cut where the reply format leaks into it and without stray letters of another
+ * script on its end. cut: something was taken off, so the text may now stop mid-sentence.
+ */
+function untangle(raw: unknown): { text: string; cut: boolean } {
+  if (typeof raw !== 'string') return { text: '', cut: false };
+  let text = raw;
+  let cut = false;
+  const leak = FORMAT_LEAK.exec(text);
+  if (leak) {
+    text = text.slice(0, leak.index);
+    cut = true;
+  }
+  for (let k = 0; k < 4; k++) {
+    const stray = STRAY_TAIL.exec(text);
+    const at = stray ? stray.index + stray[1].length : -1;
+    // Only on otherwise Latin text: a name written wholly in another script is left alone.
+    if (at < 0 || !LATIN.test(text.slice(0, at))) break;
+    text = text.slice(0, at);
+    cut = true;
+  }
+  return { text: text.replace(/[\s,;:([“‘-]+$/u, ''), cut };
+}
+
+const SENTENCE_END = /[.!?]["'”’)]*$/;
+const DANGLING_WORDS = /(?:\s+(?:a|an|the|and|or|but|of|to|with|that|which|who|in|on|at|for|by|from|as|his|her|their|its|my|your|our|is|are|was|were))+$/i;
+
+/** A quote opened in the text and never closed gets its closing mark. */
+function closeQuotes(t: string): string {
+  if ((t.match(/"/g) ?? []).length % 2) return `${t}"`;
+  const opened = (t.match(/(?:^|[\s(])'(?=\w)/g) ?? []).length;
+  const closed = (t.match(/[\w.!?,]'(?=[\s.,!?;:)]|$)/g) ?? []).length;
+  return opened > closed ? `${t}'` : t;
+}
+
+/**
+ * A fact that ends properly. The player reads it and every later scene is given it, so one that was cut
+ * off goes back to its last complete sentence (or, with only one, to its last complete clause) before it
+ * gets its full stop: "...Just a lonely candle. It will" becomes "...Just a lonely candle."
+ */
+function endFact(fact: string, cut: boolean): string {
+  let t = fact.trim();
+  if (!t) return '';
+  const finished = SENTENCE_END.test(t) || (/["'”’]$/.test(t) && closeQuotes(t) === t);
+  if (cut && !finished) {
+    let end = -1;
+    for (const m of t.matchAll(/[.!?]["'”’)]*(?=\s)/g)) {
+      const at = (m.index ?? 0) + m[0].length;
+      // "Dr. Phil" is not a sentence.
+      if (t.slice(0, at).split(/\s+/).length >= 4) end = at;
+    }
+    if (end > 0) t = t.slice(0, end);
+    else {
+      const clause = Math.max(t.lastIndexOf(', '), t.lastIndexOf('; '), t.lastIndexOf(': '), t.lastIndexOf(' - '));
+      // Without a clause to go back to, the last word goes: it may be half a word ("on-s").
+      t = clause > t.length / 3 ? t.slice(0, clause) : t.replace(/\s+\S+$/, '');
+      t = t.replace(DANGLING_WORDS, '').replace(/[\s,;:-]+$/, '');
+    }
+  }
+  if (!SENTENCE_END.test(t)) t += '.';
+  return closeQuotes(t);
 }

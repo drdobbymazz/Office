@@ -320,6 +320,17 @@ export class StoryDay {
     }
   }
 
+  /** The chapter stages this whisper or order itself, so the director stages nothing from it (see ChapterRun.ownsOrder). */
+  ownsOrder(a: PlayerAction): boolean {
+    if (this.disposed) return false;
+    try {
+      return this.run.ownsOrder?.(a) === true;
+    } catch (err) {
+      console.error('[story] ownsOrder failed', err);
+      return false;
+    }
+  }
+
   accuse(who: CharId): void {
     if (this.disposed || this.resolvedAt5) return;
     this.run.accuse?.(who);

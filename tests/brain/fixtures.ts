@@ -153,7 +153,14 @@ export interface MockServer {
   port: number;
   url: string;
   requests: { method: string; path: string; body: Record<string, unknown>; headers: Record<string, string>; at: number }[];
-  set(o: { tps?: number; load?: number; apiKey?: string }): void;
+  set(o: {
+    tps?: number; load?: number; apiKey?: string;
+    /** POST /api/show: 'missing' answers 404 like an old server, 'nocaps' leaves out the capabilities list. */
+    show?: 'normal' | 'missing' | 'nocaps';
+    showDelay?: number;
+    /** Report these capabilities for every model instead of the usual ones. */
+    capabilities?: string[] | null;
+  }): void;
   unload(): void;
   close(): Promise<void>;
 }

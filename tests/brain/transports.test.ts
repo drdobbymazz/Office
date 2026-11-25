@@ -18,7 +18,7 @@ afterAll(async () => {
   await mock.close();
 });
 afterEach(() => {
-  mock.set({ tps: 4000, load: 0, apiKey: '' });
+  mock.set({ tps: 4000, load: 0, apiKey: '', show: 'normal', showDelay: 0, capabilities: null });
 });
 
 const schema = sceneSchema({ speakers: ['Fern', 'Basil'], people: ['Fern', 'Basil'], rooms: ['shop'], minLines: 2, maxLines: 3 });
@@ -186,6 +186,111 @@ describe('Ollama transport', () => {
     const t = new OllamaTransport(settings({ baseUrl: '/ollama' }));
     const e = await rejects(t.chat(req()));
     expect(e.message).toContain('/ollama');
+  });
+});
+
+// A model that can reason out loud spends a first reply's whole token cap on hidden reasoning unless
+// think:false is sent, so the transport asks the server what the model can do before the first chat.
+describe('Ollama transport: knowing up front whether the model reasons', () => {
+  const since = (n: number, path: string) => mock.requests.slice(n).filter((r) => r.path === path);
+  const chats = (n: number) => since(n, '/api/chat').map((r) => r.body as Record<string, unknown>);
+
+  it('a thinking-capable model gets think:false on its very first chat, and the server is asked once', async () => {
+    const n = mock.requests.length;
+    const t = ollama('mock-thinker');
+    expect((await t.status()).ok).toBe(true);
+    const seen: string[] = [];
+    const r1 = await t.chat(req({ onText: (s) => seen.push(s) }));
+    expect(chats(n)[0].think).toBe(false);
+    // It never reasoned, so the reply is all answer.
+    expect(r1.text.startsWith('{')).toBe(true);
+    expect(seen.every((s) => !s.includes('<think>'))).toBe(true);
+    expect(t.thinkMode).toBe('false');
+    await t.status();
+    await t.chat(req());
+    expect(chats(n).map((b) => b.think)).toEqual([false, false]);
+    expect(since(n, '/api/show')).toHaveLength(1);
+  });
+
+  it('asks before the first chat when the status was never checked (the real box lists "thinking")', async () => {
+    mock.set({ capabilities: ['completion', 'tools', 'thinking'] });
+    const n = mock.requests.length;
+    const t = ollama('artemis-custom');
+    await t.chat(req());
+    expect(chats(n)[0].think).toBe(false);
+    // The check sends the model's name and nothing else: no options that could make Ollama reload it.
+    expect(since(n, '/api/show').map((r) => r.body)).toEqual([{ model: 'artemis-custom' }]);
+  });
+
+  it('a model without the capability gets no think field', async () => {
+    const n = mock.requests.length;
+    const t = ollama('artemis-custom');
+    await t.status();
+    await t.chat(req());
+    await t.chat(req());
+    expect(chats(n).every((b) => !('think' in b))).toBe(true);
+    expect(t.thinkMode).toBe('omit');
+    expect(since(n, '/api/show')).toHaveLength(1);
+  });
+
+  it('a server without /api/show behaves as before: the first reply shows the reasoning, then think:false', async () => {
+    mock.set({ show: 'missing' });
+    const n = mock.requests.length;
+    const t = ollama('mock-thinker');
+    await t.status();
+    const seen: string[] = [];
+    const r1 = await t.chat(req({ onText: (s) => seen.push(s) }));
+    expect(chats(n)[0]).not.toHaveProperty('think');
+    expect(r1.text.startsWith('{')).toBe(true);
+    expect(seen.every((s) => !s.includes('<think>'))).toBe(true);
+    expect(t.thinkMode).toBe('false');
+    await t.chat(req());
+    expect(chats(n)[1].think).toBe(false);
+    // A 404 is an answer: it is not asked again.
+    expect(since(n, '/api/show')).toHaveLength(1);
+  });
+
+  it('a server that does not list capabilities behaves as before', async () => {
+    mock.set({ show: 'nocaps' });
+    const n = mock.requests.length;
+    const t = ollama('mock-thinker');
+    await t.chat(req());
+    await t.chat(req());
+    expect(chats(n).map((b) => b.think)).toEqual([undefined, false]);
+  });
+
+  it('a slow check never holds up a chat, and its answer is used once it comes', async () => {
+    mock.set({ showDelay: 2200, capabilities: ['completion', 'thinking'] });
+    const n = mock.requests.length;
+    const t = ollama('artemis-custom');
+    const t0 = Date.now();
+    await t.chat(req());
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(chats(n)[0]).not.toHaveProperty('think');
+    await new Promise((r) => setTimeout(r, 1000));
+    await t.chat(req());
+    expect(chats(n)[1].think).toBe(false);
+  });
+
+  it('a check that gets no answer never fails a chat, and is tried at most twice', async () => {
+    mock.set({ showDelay: 400, capabilities: ['completion', 'thinking'] });
+    const n = mock.requests.length;
+    const t = ollama('artemis-custom', { statusTimeoutMs: 100 });
+    for (let i = 0; i < 3; i++) expect(parseLoose((await t.chat(req())).text)).toBeTruthy();
+    expect(chats(n).every((b) => !('think' in b))).toBe(true);
+    expect(since(n, '/api/show')).toHaveLength(2);
+  });
+
+  it('still drops think when the server rejects it, even after the server said the model can think', async () => {
+    mock.set({ capabilities: ['completion', 'thinking'] });
+    const n = mock.requests.length;
+    const t = ollama('mock-nothink');
+    const r1 = await t.chat(req());
+    expect(parseLoose(r1.text)).toBeTruthy();
+    expect(t.thinkMode).toBe('never');
+    expect(chats(n).map((b) => 'think' in b)).toEqual([true, false]);
+    await t.chat(req());
+    expect(chats(n)[2]).not.toHaveProperty('think');
   });
 });
 

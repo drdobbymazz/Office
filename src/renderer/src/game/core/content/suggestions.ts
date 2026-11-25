@@ -89,7 +89,8 @@ export const SUGGESTIONS: Suggestions = {
     'Ask {other} out to lunch.',
     'Apologise to {other} for something you did years ago.',
     'Start a rumour about {other}.',
-    'Challenge {other} to a dance-off.',
+    // Not "dance-off": the written parser reads "off" with a person as getting rid of them.
+    'Challenge {other} to a dance contest.',
     'Give {other} a heartfelt compliment.',
     'Hide {other}\'s stapler.',
     'Convince {other} that the building is haunted.',

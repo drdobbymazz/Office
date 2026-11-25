@@ -2,9 +2,12 @@
 //
 // We send only what we must. Options such as num_ctx or num_gpu make Ollama
 // reload the model (a minute for a 16 GB model at the laptop), so they are
-// never sent. `think` is not sent either, until a reply shows that the model
-// reasons out loud: from then on we send think:false, and drop it again if the
-// server says it does not understand it.
+// never sent. `think` is sent as false only for a model that can reason out
+// loud: otherwise a first reply spends its whole token cap on hidden reasoning
+// and comes back empty. We ask the server once (POST /api/show lists the
+// model's "capabilities"); if it cannot say (an old server, no answer in time),
+// we learn it from the first reply that shows reasoning instead. Either way,
+// think is dropped again if the server says it does not understand it.
 
 import type { BrainSettings, ChatRequest, ChatResponse, ChatTransport, TransportStatus } from '../api';
 import { stripThink } from '../jsonStream';
@@ -28,6 +31,11 @@ export function sameModel(a: string, b: string): boolean {
   const n = (s: string): string => s.trim().toLowerCase().replace(/:latest$/, '');
   return n(a) === n(b);
 }
+
+/** A chat waits at most this long for the capability check; after that it goes ahead without it. */
+const SHOW_WAIT_MS = 1500;
+/** The capability check is tried at most this many times when the server does not answer it. */
+const SHOW_TRIES = 2;
 
 function modelMissing(model: string): BrainError {
   return new BrainError('model', `That server has no model called ${model}. On the laptop run: ollama pull ${model}`);
@@ -62,6 +70,10 @@ export class OllamaTransport implements ChatTransport {
   /** Has any call produced a token yet? Until then the model may still be loading. */
   private warm = false;
   private think: 'omit' | 'false' | 'never' = 'omit';
+  /** The server has answered the capability check (whatever it said), so it is not asked again. */
+  private showAnswered = false;
+  private showTries = 0;
+  private showing: Promise<void> | null = null;
   /** Ollama before 0.5 takes only the word "json" as a format, not a schema. Found out by asking. */
   private plainJson = false;
   private readonly t: typeof DEFAULT_TIMEOUTS;
@@ -84,6 +96,8 @@ export class OllamaTransport implements ChatTransport {
       if (!models.some((m) => sameModel(m, this.settings.model))) {
         return { ok: false, models, error: modelMissing(this.settings.model).message };
       }
+      // The game asks for the status before play: a good moment to find out whether the model reasons.
+      void this.checkThinking();
       return { ok: true, models };
     } catch (e) {
       return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) };
@@ -91,6 +105,7 @@ export class OllamaTransport implements ChatTransport {
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
+    await this.waitForThinking(req.signal);
     const body: Record<string, unknown> = {
       model: this.settings.model,
       messages: req.messages,
@@ -220,6 +235,58 @@ export class OllamaTransport implements ChatTransport {
       text: stripThink(content),
       stats: { ms, firstTokenMs, promptTokens: f.prompt_eval_count, outputTokens, tokPerSec }
     };
+  }
+
+  /**
+   * Ask the server whether the model can reason out loud (POST /api/show lists its "capabilities").
+   * A model that can gets think:false from its very first chat. Any answer at all is final for this
+   * transport, including "no such page" from an old server; no answer (down, or too slow) may be
+   * tried once more later. Never throws: the replies still teach us whatever this cannot.
+   */
+  private checkThinking(): Promise<void> {
+    if (this.showAnswered || this.think !== 'omit') return Promise.resolve();
+    if (this.showing) return this.showing;
+    if (this.showTries >= SHOW_TRIES) return Promise.resolve();
+    this.showTries += 1;
+    const url = joinUrl(this.settings.baseUrl, '/api/show');
+    const init: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: this.settings.model }) };
+    this.showing = (async () => {
+      try {
+        const res = await fetchQuick(url, init, this.t.statusTimeoutMs);
+        // A 5xx is the server (or a proxy in front of it) in trouble, not an answer: ask again later.
+        if (res.status < 500) this.showAnswered = true;
+        if (!res.ok) {
+          await res.text().catch(() => '');
+          return;
+        }
+        const j = (await res.json().catch(() => null)) as { capabilities?: unknown } | null;
+        const caps = j?.capabilities;
+        if (this.think === 'omit' && Array.isArray(caps) && caps.includes('thinking')) this.think = 'false';
+      } catch {
+        // No answer this time: a later status check or chat may ask again.
+      } finally {
+        this.showing = null;
+      }
+    })();
+    return this.showing;
+  }
+
+  /** Before a chat, give a capability check that is under way a moment to land. It never holds a chat up for long. */
+  private async waitForThinking(signal?: AbortSignal): Promise<void> {
+    const check = this.checkThinking();
+    if (!this.showing || signal?.aborted) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stop = (): void => undefined;
+    await Promise.race([
+      check,
+      new Promise<void>((resolve) => {
+        stop = (): void => resolve();
+        timer = setTimeout(stop, SHOW_WAIT_MS);
+        signal?.addEventListener('abort', stop, { once: true });
+      })
+    ]);
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
   }
 
   private noteThinking(content: string, thinking: string): void {

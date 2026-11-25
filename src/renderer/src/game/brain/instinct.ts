@@ -300,7 +300,7 @@ export function orderWords(text: string, actorName: string, otherFirstNames: rea
     const first = words.split(/\s+/)[0] ?? '';
     const opener = first.replace(/[^a-z']/g, '');
     const aboutOther = others.has(opener.replace(/'s$/, ''))
-      || /^(?:this|that|these|those|the|a|an|my|your|his|her|their|our|its|he|she|it|they|everyone|everybody|someone|somebody|anyone|anybody|all|both|corporate|there)$/.test(opener)
+      || /^(?:this|that|these|those|the|a|an|my|your|his|her|their|our|its|he|she|it|they|everyone|everybody|someone|somebody|anyone|anybody|all|both|corporate|there|mr|mrs|ms|miss|dr)$/.test(opener)
       || /'s$/.test(opener)
       || (/ing$/.test(opener) && opener.length > 4);
     if (aboutOther && AUX.test(words)) continue;
@@ -359,6 +359,18 @@ export function meansQuitting(text: string): boolean {
   return false;
 }
 
+/**
+ * Leaving for the rest of the day: "go home", "go home for the day", "head home", "leave the office",
+ * "leave work early", "clock out". Not "go big or go home", "leave the report on my desk" or "leave
+ * the office supplies alone": after "leave the office" only a word about when or how may follow.
+ */
+export function meansGoingHome(text: string): boolean {
+  const t = text.replace(/\bgo\s+big\s+or\s+go\s+home\b/gi, ' ');
+  if (/\b(?:go(?:es|ing)?|head(?:s|ing)?(?:\s+off)?)\s+(?:straight\s+|back\s+)?home\b/i.test(t)) return true;
+  if (/\bclock(?:s|ing)?\s+(?:out|off)\b/i.test(t)) return true;
+  return /\bleav(?:e|es|ing)\s+(?:(?:the\s+)?(?:office|building|branch)|work|for\s+the\s+day)(?=\s*(?:$|[.,!?;:]|(?:now|early|right|immediately|at|for|today|tonight|and|then|before|after|by|on|quietly|without|this|once|already|straight|forever)\b))/i.test(t);
+}
+
 export function stripRoomPhrases(text: string): string {
   return text
     .replace(
@@ -367,6 +379,98 @@ export function stripRoomPhrases(text: string): string {
     )
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Words that are never a name on their own: "the" in "The Inspector", "Mr" in "Mr Figgis". */
+const NOT_A_NAME = /^(?:the|a|an|mr|mrs|ms|miss|mx|dr|sir|dame|lady|lord|prof|professor)\.?$/i;
+
+/** The first word of a name that is really a name: "The Inspector" -> "Inspector", "Mr Figgis" -> "Figgis". */
+export function callName(name: string): string {
+  const full = name.trim();
+  return full.split(/\s+/).find((w) => !NOT_A_NAME.test(w)) ?? full;
+}
+
+/**
+ * The parts of a name that may be matched in typed text: the whole name and its first real word.
+ * "punch the temp" must not find "The Inspector" through the word "the".
+ */
+export function nameParts(name: string): string[] {
+  return [...new Set([name.trim(), callName(name)])].filter((s) => s.length >= 2);
+}
+
+/** Does the text name this person (whole name or first real word, as a whole word)? */
+export function namesPerson(text: string, name: string): boolean {
+  return nameParts(name).some((part) => new RegExp(`\\b${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text));
+}
+
+/** Readings that act on somebody. With nobody named, the stage picks whoever is nearest. */
+export const NEEDS_PERSON: ReadonlySet<DirectiveVerb> = new Set<DirectiveVerb>(['eliminate', 'knockout', 'shove', 'drag', 'steal', 'romance', 'chase', 'follow', 'delegate']);
+
+/**
+ * A member of staff the text names who is not here right now ("punch Toby" while Toby is at home),
+ * or null. Visitors in the world list do not count, and room names ("Michael's office") are not people.
+ */
+export function absentStaffNamed(text: string, world: readonly { id: string; name: string }[], here: readonly { id: string }[]): string | null {
+  const clean = stripRoomPhrases(text);
+  const found = world.find((p) => !isVisitor(p.id) && !here.some((h) => h.id === p.id) && namesPerson(clean, p.name));
+  return found ? found.id : null;
+}
+
+/**
+ * Quoted words someone is told to say are speech, not an order: in `say "I will kill you" to Dwight`
+ * or `tell Kevin "Angela is going to kill you"` nobody is killed. The quote after a speaking verb is
+ * taken out before the verbs and the target are read; the rest of the sentence is read as usual, so
+ * `punch Jim and shout "take that"` is still a punch.
+ */
+const SPEAKING = String.raw`(?:say|says|said|saying|tell|tells|told|telling|shout|shouts|shouting|yell|yells|yelling|scream|screams|screaming|whisper|whispers|whispering|mutter|mutters|muttering|announce|announces|ask|asks|reply|replies|answer|answers|cry|cries|call\s+out|exclaim|exclaims|declare|declares|text|texts|write|writes|email|emails|sing|sings)`;
+const QUOTED = String.raw`(?:"[^"]*"|“[^”]*”|(?<=[\s:,])'.*?'(?=[\s.,!?;:]|$))`;
+const SAID_ALOUD = new RegExp(String.raw`(\b${SPEAKING}\b(?:\s+[\w']+){0,4}?)\s*[:,]?\s*${QUOTED}`, 'gi');
+
+export function withoutQuotedSpeech(text: string): string {
+  return text.replace(SAID_ALOUD, '$1').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * "tell Kevin to slap Dwight", "ask Pam to dance", "order Jim not to": an order passed on to
+ * someone else. Whatever happens, the person told to pass it on does not do it themselves.
+ * Told to "tell Jim and Pam to kiss", Jim is one of the two, so for him it is not passed on.
+ */
+const PASS_ON_RE =
+  /^(?:please\s+)?(?:(?:go|walk|run|head|step|come)\s+(?:over\s+|up\s+)?(?:to\s+)?(?:\w+\s+and\s+)?|go\s+and\s+)?(?:tell|ask|order|command|dare|convince|persuade|beg|urge|instruct|remind)\s+((?:(?:the|mr|mrs|ms|dr)\.?\s+)?[a-z][\w'-]*(?:\s+and\s+[a-z][\w'-]*)?)(?:\s+(?:to|not\s+to|never\s+to|that)\b|\s*:)/i;
+
+export function passesOnOrder(text: string, actorName = ''): boolean {
+  const m = PASS_ON_RE.exec(text.trim());
+  if (!m) return false;
+  const me = callName(actorName).toLowerCase();
+  return !me || !m[1].toLowerCase().split(/\s+and\s+/).includes(me);
+}
+
+/**
+ * Encouragement in front of an order is not a "don't" for the order: "Don't be shy, kiss Pam",
+ * "stop being a coward and punch Jim", "don't hesitate to ask her out". The encouragement is taken
+ * off and what follows is the order. "don't punch Jim" and "do not under any circumstances kiss Pam"
+ * are untouched: they really forbid it.
+ */
+const ENCOURAGEMENT =
+  /^(?:(?:don'?t|do\s+not)\s+(?:be\s+(?:so\s+|such\s+a\s+|a\s+)?(?:shy|afraid|scared|nervous|timid|coy|silly|modest|soft|chicken|coward|wimp|baby|prude|bashful)|hesitate|worry|chicken\s+out|wimp\s+out|hold\s+back)|(?:stop|quit)\s+(?:being\s+(?:so\s+|such\s+a\s+|a\s+)?[a-z]+|hesitating|stalling|dithering|dawdling|messing\s+(?:about|around))|no\s+need\s+to\s+be\s+(?:shy|scared|afraid|nervous))\b[\s,.;:!-]*(?:(?:and|but|so|just|now|then|go\s+on|come\s+on)\b[\s,.!]*)*(?:to\s+)?/i;
+
+export function withoutEncouragement(text: string): string {
+  return text.replace(/[’‘]/g, "'").replace(ENCOURAGEMENT, '').trim();
+}
+
+/**
+ * An order taken back at the end: "Punch Jim. Just kidding, don't.", "kiss Pam... never mind",
+ * "smash the printer, scratch that", "on second thought, don't". Only the last clause counts,
+ * and there must be something before it to take back.
+ */
+const TAKE_BACK = /^(?:(?:just\s+)?(?:kidding|joking)|jk|j\/k|never\s*mind|scratch\s+that|forget\s+(?:it|that|i\s+said\s+(?:that|anything))|ignore\s+(?:that|me)|disregard\s+that|cancel\s+that|or\s+not|(?:(?:on\s+)?second\s+thoughts?|actually|wait|no)?\s*(?:don'?t|do\s+not)(?:\s+(?:do\s+(?:it|that)|bother))?)$/i;
+
+export function isTakenBack(text: string): boolean {
+  const clauses = withoutQuotedSpeech(text.replace(/[’‘]/g, "'"))
+    .split(/[.!?;,…]+|\s+-+\s+/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+  return clauses.length >= 2 && TAKE_BACK.test(clauses[clauses.length - 1]);
 }
 
 /** Strip optional leading actor address ("Meredith, strip naked") or polite wrappers ("please"). */
@@ -391,9 +495,16 @@ export function isStopCommand(text: string, actorName?: string): boolean {
   return /^(?:stop|stop\s+it|stop\s+that|stop\s+doing\s+that|cancel(?:\s+that)?|never\s*mind|forget\s+it|stand\s+down|knock\s+it\s+off|cut\s+it\s+out|calm\s+down|chill(?:\s+out)?|hold\s+on|stay\s+put|abort)$/i.test(t);
 }
 
-/** True when an imperative is negated ("don't strip", "never hit jim", "stop punching toby"). */
+/**
+ * True when an imperative is negated ("don't strip", "never hit jim", "stop punching toby") or taken
+ * back at the end ("Punch Jim. Just kidding, don't."). Encouragement in front of an order
+ * ("Don't be shy, kiss Pam") does not negate it.
+ */
 export function isNegatedDirective(text: string, actorName?: string): boolean {
-  const t = stripLeadingActor(text, actorName);
+  const lead = stripLeadingActor(text, actorName);
+  if (!lead) return false;
+  if (isTakenBack(lead)) return true;
+  const t = withoutEncouragement(lead);
   if (!t) return false;
   if (/^(?:don'?t|do\s+not|never)\s+stop\b/i.test(t)) return false;
   if (/^(?:tell|ask|order|command|dare|convince|persuade|beg|urge|force|make|have|get)\s+(?:[a-z][a-z' -]{1,22}(?:\s+and\s+[a-z][a-z' -]{1,22})?|everyone|everybody|someone|anyone|anybody)\s+(?:not\s+to|to\s+not|never\s+to|to\s+never|don'?t)\b/i.test(t)) {
@@ -406,6 +517,8 @@ export function isNegatedDirective(text: string, actorName?: string): boolean {
 export function isConversationalInner(inner: string): boolean {
   const t = inner.trim().toLowerCase();
   if (!t) return true;
+  // "tell Kevin: "Angela is going to kill you"": words to pass on, not an act.
+  if (/^["“']/.test(t)) return true;
   return /^(?:to\s+)?(?:fuck\s+off|screw\s+off|piss\s+off|bugger\s+off|sod\s+off|shut\s+up|shut\s+the\s+fuck\s+up|be\s+quiet|quiet\s+down|hush|go\s+to\s+hell|get\s+lost|buzz\s+off|drop\s+dead|calm\s+down|relax|chill(?:\s+out)?|listen(?:\s+up)?|apologiz\w*|say\s+sorry|say\s+hello|say\s+hi|say\s+goodbye|thank\b|talk\s+(?:to|about)\b|chat\s+with\b|gossip\b|tell\s+\w+\s+(?:about|that|the\s+truth)|explain\b|confess\b|admit\b|forgive\b|leave\s+.+\s+alone|mind\s+(?:your|his|her|their)\s+own\s+business|stop\s+talking|get\s+back\s+to\s+work|do\s+(?:your|his|her|their)\s+job|check\s+(?:your|his|her|their)\s+email|smile|cheer\s+up)\b/i.test(t);
 }
 
@@ -417,6 +530,8 @@ export function splitCompoundDirective(text: string): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
   if (DELEGATE_HEAD_RE.test(trimmed)) return [trimmed];
+  // An order taken back at the end ("punch Jim; never mind") is read whole, so its first part is not acted on alone.
+  if (isTakenBack(trimmed)) return [trimmed];
   const rawParts = trimmed
     .split(/(?:,\s*then\s+|\s+and\s+then\s+|\s+then\s+|;\s*|\s+after\s+that[,\s]+)/i)
     .map((p) => p.trim())
@@ -1353,7 +1468,9 @@ export class InstinctBrain implements Brain, Reflexes {
 
   interpretDirectiveNow(req: DirectiveRequest): DirectiveResult {
     const raw = req.text.trim();
-    const text = stripLeadingActor(raw, req.actor.name) || raw;
+    const lead = stripLeadingActor(raw, req.actor.name) || raw;
+    // "Don't be shy, kiss Pam" is read as "kiss Pam" (see withoutEncouragement).
+    const text = withoutEncouragement(lead) || lead;
     const roomIds = req.rooms.map((r) => r.id);
     const pickRoom = (candidate: string): DirectiveResult['targetRoom'] =>
       (roomIds.includes(candidate) ? candidate : null) as DirectiveResult['targetRoom'];
@@ -1376,9 +1493,8 @@ export class InstinctBrain implements Brain, Reflexes {
       const matches: { id: CharId; index: number; bystander: boolean }[] = [];
       for (const p of req.people) {
         if (p.id === actorId) continue;
-        const parts = [p.name, p.name.split(/\s+/)[0]].filter((s) => s.length >= 2);
         let earliest = Infinity;
-        for (const part of parts) {
+        for (const part of nameParts(p.name)) {
           const esc = part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const m = new RegExp(`\\b${esc}\\b`, 'i').exec(clean);
           if (m && m.index < earliest) earliest = m.index;
@@ -1428,7 +1544,7 @@ export class InstinctBrain implements Brain, Reflexes {
       if (!q || q.length < 2) return undefined;
       return req.people.find((p) => {
         if (p.id === req.actor.id) return false;
-        const first = p.name.split(/\s+/)[0].toLowerCase();
+        const first = callName(p.name).toLowerCase();
         return p.name.toLowerCase() === q || first === q || p.id.toLowerCase() === q;
       });
     };
@@ -1534,8 +1650,7 @@ export class InstinctBrain implements Brain, Reflexes {
       for (const p of req.people) {
         if (p.id === req.actor.id) continue;
         const targetPron = pronounOf(p);
-        const parts = [p.name, p.name.split(/\s+/)[0]].filter((s) => s.length >= 2);
-        for (const part of parts) {
+        for (const part of nameParts(p.name)) {
           const esc = part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const appPron = `(?:go|walk|run|head|step|find|approach)\\s+(?:over\\s+|up\\s+)?(?:to\\s+)?${esc}\\s+and\\s+(?:ask|beg)\\s+(?:him|her|them|${esc})`;
 
@@ -1678,13 +1793,30 @@ export class InstinctBrain implements Brain, Reflexes {
       }
     }
 
-    const cleanPersonText = stripRoomPhrases(text);
-    const targetPerson = findPrimaryTarget(text, req.actor.id);
-    const targetName = (req.people.find((p) => p.id === targetPerson)?.name ?? '').split(/\s+/)[0];
-    const hasPersonTarget = !!targetPerson || /\b(someone|somebody|anyone|anybody|him|her|them)\b/i.test(cleanPersonText);
-    const targetRoom = resolveRoomIn(text);
+    // Words to pass on to someone, when passing orders on is switched off (the far end of a chain) or
+    // the person is not here to be asked: talk with them, never something this person does themselves.
+    // "tell Kevin to slap Dwight" must not become a slap on Kevin.
+    if (passesOnOrder(text, req.actor.name)) {
+      return {
+        verb: 'social',
+        targetPerson: findPrimaryTarget(withoutQuotedSpeech(text), req.actor.id),
+        targetRoom: null,
+        power: 'none',
+        item: '',
+        summary: toThirdPersonAction(text, req.actor.name).slice(0, 120),
+        source: 'instinct'
+      };
+    }
 
-    const itemMatch = text.toLowerCase().match(
+    // From here on the act is read without any quoted words someone is told to say (see withoutQuotedSpeech).
+    const plain = withoutQuotedSpeech(text);
+    const cleanPersonText = stripRoomPhrases(plain);
+    const targetPerson = findPrimaryTarget(plain, req.actor.id);
+    const targetName = callName(req.people.find((p) => p.id === targetPerson)?.name ?? '');
+    const hasPersonTarget = !!targetPerson || /\b(someone|somebody|anyone|anybody|him|her|them)\b/i.test(cleanPersonText);
+    const targetRoom = resolveRoomIn(plain);
+
+    const itemMatch = plain.toLowerCase().match(
       /\b(stapler|mug|coffee|chair|printer|fax|copier|laptop|computer|monitor|desk|scissors|knife|bat|broom|mop|wrench|extinguisher|keyboard|phone|fridge|vending|plant|box|papers?|chili|cat|purse|wallet|glasses|keys)\b/
     );
     let item = itemMatch ? itemMatch[1] : '';
@@ -1692,7 +1824,7 @@ export class InstinctBrain implements Brain, Reflexes {
     if (possItem && !/^(office|room|ass|butt|lap|face|neck|ear|lip|hand|chest|boobs|crotch)$/i.test(possItem[1].trim())) {
       item = possItem[1].trim();
     } else if (!item) {
-      const stealObj = /\b(?:steal|swipe|snatch|rob|nick|confiscate|take|pour|dump|spill|splash)\s+(?:the\s+|a\s+|an\s+|some\s+|his\s+|her\s+|their\s+|my\s+)?([a-z][a-z\s-]{1,26}?)(?=\s+(?:from|at|on|onto|over|in|into|of|to|and|then|$)|[.!?]|$)/i.exec(cleanPersonText);
+      const stealObj = /\b(?:steal|swipe|snatch|rob|nick|confiscate|take|pour|dump|spill|splash)\s+(?:the\s+|a\s+|an\s+|some\s+|his\s+|her\s+|their\s+|my\s+)?([a-z][a-z\s-]{1,26}?)(?=\s+(?:from|off|at|on|onto|over|in|into|of|to|and|then|$)|[.!?]|$)/i.exec(cleanPersonText);
       if (stealObj) {
         const cand = stealObj[1].trim();
         if (!/^(him|her|them|it|me|you|someone|anyone|everyone|self)$/i.test(cand) && !resolveNamed(cand)) item = cand;
@@ -1700,11 +1832,33 @@ export class InstinctBrain implements Brain, Reflexes {
     }
 
     // Only words that can be an order or intention for this person decide the verb (see orderWords).
-    const vt = orderWords(text, req.actor.name, req.people.filter((p) => p.id !== req.actor.id).map((p) => p.name.split(/\s+/)[0]));
+    const vt = orderWords(plain, req.actor.name, req.people.filter((p) => p.id !== req.actor.id).map((p) => callName(p.name)));
     const power = orderPower(vt);
     const hasMachine = /\b(fax(?:\s+machine)?|printer|copier|coffee\s*(?:machine|maker)?|vending(?:\s+machine)?|fridge|microwave|computer|laptop|monitor|desk|router|wifi|phone)\b/i.test(vt);
     const inanimateTarget = !hasPersonTarget && /\b(wifi|power|lights?|internet|office|room|building)\b/i.test(vt);
-    const phrasalOff = /\b(take|strip|rip|pull|get|back|tell|turn|shut|cut|blow|jerk|jack|rub|whack|lay|keep|stay|run|walk|storm|piss|fuck|screw|show|cool|knock|head|send|set|drop|kick|push|shove|kiss|make)\s+(?:\w+\s+){0,2}off\b/i.test(vt);
+    // The person an act is done to, as it is written right after the verb: a pronoun or their name.
+    const named = targetName ? `|(?:(?:mr|mrs|ms|miss|dr)\\.?\\s+)?${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}` : '';
+    const person = `(?:him|her|them|someone|somebody${named})`;
+    const owner = `(?:his|her|their${named ? `${named}'s` : ''})`;
+    const anyone = `(?:him|her|them|someone|somebody|everyone|everybody|the\\s+lot\\s+of\\s+them${named})`;
+    const victim = `${anyone}\\b`;
+    // "off" kills only as a verb with a person as its object: "off Toby", "off him", "off the lot of them".
+    // A "dance-off", a "face-off with Dwight", "tell Jim off", "show off to Pam", "see Pam off", "set him
+    // off", "take the day off", "hands off Pam", "back off" and "get the tape off Dwight" kill nobody.
+    const offed =
+      new RegExp(`(?:^|[.!?,;:]\\s*|\\b(?:and|then|to|just|gonna|should|will|must|could|would|might|can|i|we|you|let's|go|please|now|i'll|we'll|you'll)\\s+)off\\s+${victim}`, 'i').test(vt) ||
+      new RegExp(`\\bwhack(?:s|ing)?\\s+${victim}`, 'i').test(vt);
+    // "get the tape off Dwight", "take his stapler off him": a taking.
+    const takenOff = new RegExp(`\\b(?:tak(?:e|ing)|get(?:ting)?|grab(?:bing)?|snatch(?:ing)?|nick(?:ing)?)\\s+(?!off\\b)[\\w' -]{1,30}?\\s+off\\s+${victim}`, 'i').test(vt);
+    // "lock Dwight in the annex", "lock him in", "lock Jim and Pam up": a person shut in somewhere.
+    // "pick the lock", "the lock on the briefcase", "lock the door" and "lock your screen" shut nobody in.
+    const lockedIn = new RegExp(`\\b(?:lock|seal|bolt)(?:s|ed|ing)?\\s+(?:${anyone}(?:\\s+and\\s+[a-z]+)?\\s+(?:in|inside|up|away)\\b|up\\s+${victim})`, 'i').test(vt);
+    // "knock Dwight out", "beat him to a pulp", "knock his lights out": the person sits inside the phrase.
+    // Only a person counts, so "knock it out of the park" and "beat the deadline" stay mild.
+    const beatenUp = new RegExp(
+      `\\b(?:knock(?:s|ing)?\\s+${person}\\s+(?:out|unconscious|senseless|cold)|knock(?:s|ing)?\\s+${owner}\\s+(?:lights|block|teeth|head)\\s+(?:out|off|in)|beat(?:s|ing)?\\s+${person}\\s+(?:up|to\\s+a\\s+pulp|senseless|unconscious|black\\s+and\\s+blue)|beat(?:s|ing)?\\s+the\\s+(?:crap|hell|shit|stuffing|living\\s+daylights)\\s+out\\s+of)\\b`,
+      'i'
+    ).test(vt);
     const clothingWord = /\b(clothes|shirt|pants|dress|skirt|bra|underwear|trousers|blouse|boxers|panties)\b/i.test(vt);
 
     const isDress = /\b(get\s+dressed|put\s+(?:(?:your|his|her|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|trousers|underwear|bra)\s+(?:back\s+)?on|put\s+on\s+(?:(?:your|his|her|their|my)\s+)?(?:clothes|shirt|pants|dress|skirt|trousers)|cover\s+(?:yourself|himself|herself|up|\w+\s+up)|dress\s+(?:yourself|\w+)|give\s+\w+\s+(?:clothes|a\s+robe|a\s+coat|a\s+shirt)|hand\s+\w+\s+a\s+(?:robe|coat|shirt|towel))\b/i.test(vt);
@@ -1738,11 +1892,12 @@ export class InstinctBrain implements Brain, Reflexes {
       finalItem = 'sleep';
     } else if (
       (/\b(kill(?:ing)?|murder(?:ing)?|assassinate|execut(?:e|ing)|strangl(?:e|ing)|stabb?(?:ing)?|shoot(?:ing)?|poison(?:ing)?|slay(?:ing)?)\b/i.test(vt) && !inanimateTarget && (hasPersonTarget || /\b(everyone|everybody|them\s+all|you\s+all)\b/i.test(vt))) ||
-      (/\b(whack|off)\b/i.test(vt) && hasPersonTarget && !inanimateTarget && !phrasalOff) ||
+      (offed && !inanimateTarget) ||
       (hasPersonTarget && !hasMachine && directObjectIsPerson(vt, /(?:eliminat(?:e|ing)|finish(?:ing)?|destroy(?:ing)?|end(?:ing)?)/, targetName))
     ) {
       verb = 'eliminate';
     } else if (
+      beatenUp ||
       (/\b(knock(?:ing)?\s*out|punch(?:ing)?|hitt?(?:ing)?(?!\s+on)|tackl(?:e|ing)|beat(?:ing)?\s+up|chok(?:e|ing)|slapp?(?:ing)?(?!\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty))|smack(?:ing)?(?!\s+(?:\w+'s\s+|his\s+|her\s+|their\s+|my\s+)?(?:ass|butt|booty))|bonk(?:ing)?|clobber(?:ing)?|deck(?:ing)?|attack(?:ing)?|fight(?:ing)?|brawl(?:ing)?|kick(?:ing)?|headbutt(?:ing)?|dropkick(?:ing)?|suplex(?:ing)?|body\s*slam(?:ming)?|chair\s*slam(?:ming)?|elbow(?:ing)?|uppercut(?:ting)?|karate\s+chop(?:ping)?|roundhouse|pepper\s+spray(?:ing)?|tas(?:e|ing)|taser|mac(?:e|ing))\b/i.test(vt) ||
         (/\bbit(?:e|ing)\b/i.test(vt) && !isRomance) ||
         (/\bsmash(?:ing)?\b/i.test(vt) && hasPersonTarget && !hasMachine))
@@ -1754,9 +1909,10 @@ export class InstinctBrain implements Brain, Reflexes {
       (/\bbring(?:ing)?\b/i.test(vt) && hasPersonTarget && !!targetRoom && !finalItem)
     ) {
       verb = 'drag';
-    } else if (/\b(lock(?:\s+in|\s+\w+\s+in)?|barricad(?:e|ing)|trapp?(?:ing)?|seal(?:ing)?|bolt(?:ing)?|lock\s+the\s+door)\b/i.test(vt)) {
+    } else if (lockedIn || /\b(barricad(?:e|ing)|trapp?(?:ing)?)\b/i.test(vt)) {
       verb = 'lock_in';
-    } else if (meansQuitting(vt)) {
+    } else if (meansQuitting(vt) || meansGoingHome(vt)) {
+      // Quitting, or leaving for the rest of the day ("go home for the day", "clock out early").
       verb = 'walk_out';
     } else if (
       /\b(shov(?:e|ing)|push(?:ing)?|tripp?(?:ing)?|yeet(?:ing)?|splash(?:ing)?|drench(?:ing)?|soak(?:ing)?|squirt(?:ing)?)\b/i.test(vt) ||
@@ -1771,7 +1927,7 @@ export class InstinctBrain implements Brain, Reflexes {
       verb = 'sabotage';
     } else if (power !== 'none') {
       verb = 'trigger_power';
-    } else if (/\b(steal(?:ing)?|swip(?:e|ing)|snatch(?:ing)?|thiev(?:e|ing)|robb?(?:ing)?|nick(?:ing)?|confiscat(?:e|ing))\b/i.test(vt) || (/\btak(?:e|ing)\b/i.test(vt) && /\bfrom\b/i.test(vt) && hasPersonTarget)) {
+    } else if (/\b(steal(?:ing)?|swip(?:e|ing)|snatch(?:ing)?|thiev(?:e|ing)|robb?(?:ing)?|nick(?:ing)?|confiscat(?:e|ing))\b/i.test(vt) || (/\btak(?:e|ing)\b/i.test(vt) && /\bfrom\b/i.test(vt) && hasPersonTarget) || takenOff) {
       verb = 'steal';
     } else if (isExpose) {
       verb = 'expose';
@@ -1788,6 +1944,10 @@ export class InstinctBrain implements Brain, Reflexes {
     } else if (targetRoom && /\b(go(?:ing)?\s+to|walk(?:ing)?\s+to|run(?:ning)?\s+to|head(?:ing)?\s+to|hid(?:e|ing)\s+in|wait(?:ing)?\s+in|stay(?:ing)?\s+in|get(?:ting)?\s+to)\b/i.test(vt)) {
       verb = 'go_to';
     }
+
+    // Someone is named who is not here ("punch Toby" while Toby is out): nobody else is hit in their
+    // place (the stage would pick whoever is nearest). It stays talk.
+    if (!targetPerson && NEEDS_PERSON.has(verb) && absentStaffNamed(plain, this.index.world.people, req.people)) verb = 'social';
 
     return {
       verb,
@@ -1977,7 +2137,7 @@ export function storyHeadline(change: string | undefined, goal: string, won: boo
 }
 
 /** Someone from outside the office (a visitor on the floor, a guest from the Anything power). */
-function isVisitor(id: string): boolean {
+export function isVisitor(id: string): boolean {
   return id.includes(':');
 }
 

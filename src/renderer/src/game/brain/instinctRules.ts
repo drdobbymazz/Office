@@ -313,8 +313,66 @@ const CHARACTER_RE = /\b(man|woman|guy|girl|lady|gentleman|person|hero|superhero
 /** Things that happen rather than appear. */
 const HAPPENING_RE = /\b(fire|flames?|lava|storm|thunder|lightning|tornado|whirlwind|rain|snow|fog|smell|stench|noise|music|silence|heatwave|cold snap|darkness|earthquake|flood)\b/i;
 
+// ── A real fire, in plain words ─────────────────────────────────────────────
+
+// "the building is on fire", "Michael's office is in flames", "the kitchen is burning": something with a
+// determiner in front ("the", "a", "his", "Michael's") and a verb before the burning words. "Kevin is on
+// fire today" has a bare name in front, so it never matches. Group 1 is the thing that burns. The words in
+// between never join two clauses: in "Kevin sets a new record and is on fire" nothing called "a new record and" burns.
+const NOT_A_JOINER = String.raw`(?!(?:and|or|but|so|then|while|because|is|are|was|were|he|she|they|it|who|which|that)\b)`;
+const BURN_SUBJECT = String.raw`(?:\b(?:the|a|an|this|that|these|those|his|her|their|our|my|your|its|every|[a-z]+'s)\s+(?:${NOT_A_JOINER}[a-z'-]+\s+){0,3}?${NOT_A_JOINER}([a-z-]+)|\b(everything|everywhere|something))`;
+const BURN_VERB = String.raw`(?:\s+(?:is|are|was|were|goes|go|went|has\s+gone|have\s+gone|is\s+going|bursts?|bursting|erupts?|erupted|seems|looks|appears)|'s)`;
+const BURN_ADVERBS = String.raw`(?:\s+(?:now|just|still|up|already|[a-z]+ly))*`;
+const BURN_STATE = String.raw`(?:on\s+fire|in\s+flames|into\s+flames|ablaze|alight|burning(?!\s+(?:with|up|through|the\s+midnight|daylight|calories|bridges|cds?|dvds?|a\s+(?:cd|dvd|disc|hole))\b))`;
+const SAID_OF_A_THING = new RegExp(
+  `${BURN_SUBJECT}${BURN_VERB}${BURN_ADVERBS}\\s+${BURN_STATE}\\b(?!\\s*,?\\s*(?:today|tonight|lately|this\\s+(?:week|month|quarter|year|season))\\b|\\s+with\\b)`,
+  'gi'
+);
+/** Things whose burning is a figure of speech or a feeling ("his career went up in flames", "my mouth is on fire"). */
+const FIGURATIVE_BURNERS = /^(?:sales|numbers|stats|team|squad|crowd|career|marriage|relationship|reputation|plans?|hopes|dreams|deal|streak|game|playlist|mixtape|ears?|cheeks?|face|eyes?|mouth|tongue|throat|lungs?|legs?|arms?|muscles?|chest|heart|skin|feet|soul)$/i;
+/** Small flames that are meant to burn ("a candle is burning"): no office fire. */
+const TAME_BURNERS = /^(?:candles?|wicks?|incense|cigarettes?|cigars?|pipe|match(?:es)?|lighters?|fireplace|campfire|bonfire|torch(?:es)?|sparklers?|logs?)$/i;
+const FIRE_WORDS: readonly RegExp[] = [
+  // "a fire breaks out", "fires spread through the annex"
+  /\bfires?\s+(?:(?:has|have|is|just|suddenly|now|already)\s+)*(?:breaks?\s+out|broke\s+out|breaking\s+out|starts?|started|starting|spreads?|spreading|spread|rages?|raging|erupts?|erupted|erupting|blazes?|blazing|engulfs?|engulfed|sweeps?|swept)\b/i,
+  // "the printer catches fire"
+  /\b(?:catch(?:es|ing)?|caught)\s+(?:on\s+)?fire\b/i,
+  // "Dwight sets the curtains on fire", "sets fire to the bin" (not "sets the world on fire", and not
+  // "sets a new record and is on fire")
+  /\bset(?:s|ting)?\s+(?:fire\s+to\b|(?!(?:the\s+)?(?:world|dance\s+floor|stage|internet|charts)\b)(?:(?!(?:is|are|was|were|and|but|so|he|she|they|i|we)\b)[\w'-]+\s+){1,5}?(?:on\s+fire|ablaze|alight)\b)/i,
+  // "the warehouse burns down", "burns the office down"
+  /\bburn(?:s|ed|t|ing)?\s+(?:(?:the|his|her|their|our|my|this|that|it|[a-z]+'s)\s+(?:[\w'-]+\s+){0,2})?down\b/i,
+  // "the copier on fire!", "Kitchen on fire": the whole text is a thing on fire (a bare name is not enough)
+  /^\s*(?:(?:the|a|an|[a-z]+'s)\s+(?:[\w'-]+\s+){0,2}(?!(?:sales|team|numbers|career)\b)[\w'-]+|(?:[\w'-]+\s+)?(?:kitchen|office|building|annex|bullpen|warehouse|room|desk|printer|copier|reception|roof|bathroom|car))\s+on\s+fire[\s!.]*$/i,
+  // "Fire!"
+  /^\s*fire[\s!.]*$/i
+];
+// "there is a fire in the kitchen", "a small fire at the reception desk" (not the one in the fireplace).
+const FIRE_IN_A_PLACE = /(?:^|\b(?:a|the)\s+)(?:(?:big|huge|small|little|massive|raging|real|kitchen|grease|electrical|paper|bin|trash|office)\s+)?fire\s+(?:in|at|on|inside)\s+(?:the|this|his|her|their|our|my|[a-z]+'s)\b(?!\s+(?:eyes|belly|heart|soul)\b)/i;
+const HEARTH = /\b(?:fireplace|campfire|bonfire|fire\s*pit|barbecue|bbq|grill|hearth)\b/i;
+
+/**
+ * The typed text plainly says a place or thing is burning: "the building is on fire", "a fire breaks out
+ * in the kitchen", "the printer catches fire", "🔥" on its own. Used to correct a model that reads a real
+ * fire as a fire drill. Figures of speech about people never count ("Kevin is on fire today", "Michael
+ * flames Toby in an email", "fired up", "Michael fires Toby"), and nor do tame flames ("a candle is burning").
+ */
+export function plainlyBurning(text: string): boolean {
+  const t = String(text ?? '').trim();
+  if (!t) return false;
+  if (/^(?:\u{1F525}\u{FE0F}?[\s!.]*)+$/u.test(t)) return true; // a fire emoji on its own
+  for (const m of t.matchAll(SAID_OF_A_THING)) {
+    const what = (m[1] ?? m[2] ?? '').toLowerCase();
+    if (!FIGURATIVE_BURNERS.test(what) && !TAME_BURNERS.test(what)) return true;
+  }
+  if (FIRE_WORDS.some((re) => re.test(t))) return true;
+  return FIRE_IN_A_PLACE.test(t) && !HEARTH.test(t);
+}
+
 const POWER_RULES: readonly [RegExp, CustomPower][] = [
-  [/\b(dragons?|flames?|lava|volcano|arson|on fire)\b/i, 'fire'],
+  // A fire needs words that say something burns (see plainlyBurning, checked first): "flames Toby in an
+  // email" and "on fire today" are not fires.
+  [/\b(dragons?|lava|volcano|arson)\b/i, 'fire'],
   [/\b(flood(s|ed|ing)?|burst pipe|tsunami|sharks?)\b/i, 'flood'],
   [/\b(power cut|blackout|eclipse|lights go out)\b/i, 'blackout'],
   [/\b(earthquake|quake|stampede|meteor|asteroid|explosion|explodes)\b/i, 'quake'],
@@ -369,6 +427,7 @@ export function guestLookFor(text: string): GuestLookWords {
 }
 
 export function powerFor(text: string): CustomPower {
+  if (plainlyBurning(text)) return 'fire';
   return POWER_RULES.find(([re]) => re.test(text))?.[1] ?? 'none';
 }
 

@@ -4,7 +4,7 @@
 
 import type { CustomPower, DelegateTone, DirectiveResult, DirectiveVerb } from '@/game/brain/api';
 import { CUSTOM_POWERS } from '@/game/brain/api';
-import { normalizeDelegatedCommand, normalizePermissionCommand, toThirdPersonAction } from '@/game/brain/instinct';
+import { meansGoingHome, meansQuitting, namesPerson, normalizeDelegatedCommand, normalizePermissionCommand, toThirdPersonAction } from '@/game/brain/instinct';
 import type { SfxId } from '@/game/audio/api';
 import type { AnimId, ChaosId, CharId, EmotionId, HeldProp, RoomId, TargetRoomId, Tile } from '@/game/core/types';
 import { isCastId } from '@/game/core/types';
@@ -862,6 +862,14 @@ export class Directives {
       case 'walk_out': {
         this.focusPeople([actor]);
         this.pendingChains.delete(actor);
+        // "go home for the day" leaves for the rest of the day without quitting: no box, no "I quit".
+        if (meansGoingHome(rawText) && !meansQuitting(rawText)) {
+          sim.say(actor, "I'm calling it a day.", { kind: 'say', emotion: 'tired' });
+          sim.narrate(`${a.name} calls it a day and heads home early.`, { kind: 'event', icon: 'door', room: a.room, beat: true });
+          sim.remember('all', `${a.name} went home early.`, 2);
+          sim.leaveEarly(actor, 'heading home early');
+          return true;
+        }
         sim.setProp(actor, 'box');
         sim.feel(actor, 'angry', 0.85, 12);
         sim.say(actor, "That's it. I quit.", { kind: 'shout', emotion: 'angry' });
@@ -1131,7 +1139,7 @@ export class Directives {
     }
 
     if (d.verb === 'shove') {
-      const phrase = formatAction(d.summary, d.rawText, a.name);
+      const phrase = this.phraseAbout(d, a, t);
       const raw = d.rawText.trim().replace(/\s+/g, ' ').slice(0, 120);
       const isSplash = /\b(splash|pour|dump|spill|drench|soak|spray|squirt|coffee|water|tea|soda|soup|chili|beer|wine|vodka|drink|juice|milk|slime)\b/i.test(d.rawText);
       if (isSplash) {
@@ -1908,6 +1916,17 @@ export class Directives {
     });
   }
 
+  /**
+   * The wording of what happened (the model's summary or the typed order), but only when it is about
+   * this target. A phrase that names somebody else would tell the Log, the memories and the aftermath
+   * scene about a different event, so the plain line is used instead.
+   */
+  private phraseAbout(d: ActiveDirective, a: SimPerson, t: SimPerson): string {
+    const phrase = formatAction(d.summary, d.rawText, a.name);
+    const aboutSomeoneElse = this.ctx.sim.people().some((p) => p.id !== a.id && p.id !== t.id && namesPerson(phrase, p.name));
+    return aboutSomeoneElse ? '' : phrase;
+  }
+
   private finishScuffle(d: ActiveDirective, a: SimPerson, t: SimPerson): void {
     const sim = this.ctx.sim;
     if (d.scuffleId) sim.removeEffect(d.scuffleId);
@@ -1917,7 +1936,7 @@ export class Directives {
 
     const roomName = roomDef(t.room).name;
     const raw = d.rawText.trim().replace(/\s+/g, ' ').slice(0, 120);
-    const phrase = formatAction(d.summary, d.rawText, a.name);
+    const phrase = this.phraseAbout(d, a, t);
     const witnesses = sim
       .peopleNear(t.x, t.y, 150)
       .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
@@ -1981,11 +2000,13 @@ export class Directives {
     sim.shake(0.25, 350);
     if (t.id !== a.id) sim.shiftBond(t.id, a.id, -40);
     sim.bumpChaos(14);
+    // One tense, and always the person who is really on the floor: "Kevin punches Jim. Jim is out cold
+    // in the annex!" The memory says plainly what happened.
     const koHeadline = phrase && !/\bknock/i.test(phrase)
-      ? `${a.name} ${phrase} and knocked ${t.name} out cold in ${roomName}!`
-      : `${a.name} knocked ${t.name} out cold in ${roomName}!`;
+      ? `${a.name} ${phrase}. ${t.name} is out cold in ${roomName}!`
+      : `${a.name} knocks ${t.name} out cold in ${roomName}!`;
     sim.narrate(koHeadline, { kind: 'event', icon: 'chaos', room: t.room, beat: true });
-    sim.remember('all', `${a.name} ${phrase || `knocked ${t.name} out cold`} in ${roomName}.`, 3);
+    sim.remember('all', `${a.name} knocked ${t.name} out cold in ${roomName}.`, 3);
     for (const w of witnesses.slice(0, 2)) {
       sim.feel(w.id, 'surprised', 0.85, 8);
       sim.emote(w.id, 'alert');
@@ -1996,7 +2017,7 @@ export class Directives {
         people: speakers,
         room: t.room,
         trigger: 'aftermath',
-        why: `${a.name} just physically ${phrase || `knocked ${t.name} out cold`} in ${roomName} (action: "${raw}"). ${t.name} is knocked out cold on the floor.`,
+        why: `In ${roomName}, ${a.name} ${phrase || `knocks ${t.name} out cold`} (action: "${raw}"). ${t.name} is out cold on the floor.`,
         priority: 10,
         minLines: 1,
         maxLines: witnesses.length ? 3 : 2,
