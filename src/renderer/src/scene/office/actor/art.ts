@@ -554,7 +554,7 @@ export function composeActor(sprite: string, s: FrameSpec): Buf {
 }
 
 /** The 18 x 28 portrait bust with a face (portraitArt's composer with expression hooks). */
-export function composePortrait(sprite: string, faceK: number): Buf {
+export function composePortrait(sprite: string, faceK: number, naked = false): Buf {
   const face: Face = unpackFace(faceK, { brow: 0, eyes: 0, mouth: 0, fx: 0 });
-  return compose(recipeFor(sprite), faceHooks(face, 0));
+  return compose(recipeFor(sprite), faceHooks(face, 0), naked);
 }

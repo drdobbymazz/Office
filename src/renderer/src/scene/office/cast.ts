@@ -95,6 +95,7 @@ export async function paintCastPortrait(
   ctx: CanvasRenderingContext2D,
   name: OfficeCharacterName,
   scale = 2,
+  naked = false,
 ): Promise<void> {
-  paintPortrait(ctx, name, scale);
+  paintPortrait(ctx, name, scale, naked);
 }

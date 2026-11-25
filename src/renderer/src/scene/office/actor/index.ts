@@ -19,13 +19,13 @@ export const createActorView: CreateActorView = (id, sprite) => new Actor(id, sp
 const portraitCache = new Map<string, string>();
 const PORTRAIT_INTENSITY = 0.8;
 
-export const portraitUrl: PortraitUrl = (sprite: string, emotion: EmotionId, scale: number): string => {
+export const portraitUrl: PortraitUrl = (sprite: string, emotion: EmotionId, scale: number, naked = false): string => {
   const s = Math.max(1, Math.round(scale || 1));
-  const key = `${sprite}|${emotion}|${s}`;
+  const key = `${sprite}|${emotion}|${s}|${naked ? 'nude' : 'dressed'}`;
   const hit = portraitCache.get(key);
   if (hit) return hit;
   const face = emotionFace(emotion, PORTRAIT_INTENSITY, { brow: 0, eyes: 0, mouth: 0, fx: 0 });
-  const buf = composePortrait(sprite, faceKey(face));
+  const buf = composePortrait(sprite, faceKey(face), naked);
   const stage = document.createElement('canvas');
   stage.width = PORTRAIT_W; stage.height = PORTRAIT_H;
   const sctx = stage.getContext('2d')!;

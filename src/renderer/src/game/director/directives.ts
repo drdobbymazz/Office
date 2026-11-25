@@ -260,31 +260,31 @@ interface SexActVisual {
  */
 function sexActOf(text: string): SexActVisual | null {
   const s = text.toLowerCase();
-  if (/\breverse\s+(?:cowgirl|ride)\b|\brid(?:e|ing)\s+(?:him|her|them|me)\s+(?:backwards|in\s+reverse)\b/.test(s)) {
+  if (/\breverse\s+(?:cowgirl|ride)\b|\brid(?:e|ing)\s+\w+\s+(?:backwards|in\s+reverse)\b/.test(s)) {
     return { anim: 'reverseCowgirl', targetAnim: 'missionary', dur: 6.0, doing: 'riding backwards with zero shame', cues: ['*reverse grind*', '*hips rolling*', '*desk squeaking*'] };
   }
-  if (/\bcowgirl\b|\b(?:ride|riding)\s+(?:him|her|them|me)\b|\b(?:him|her|them|me)\s+on\s+top\b/.test(s)) {
+  if (/\bcowgirl\b|\b(?:ride|riding)\s+(?!the\b|a\b|an\b|it\b|out\b|off\b|on\b|in\b|to\b|up\b|down\b|around\b)\w+\b|\b\w+\s+on\s+top\b/.test(s)) {
     return { anim: 'cowgirl', targetAnim: 'missionary', dur: 6.0, doing: 'riding on top with zero shame', cues: ['*cowgirl rhythm*', '*hips rolling*', '*desk creaking*'] };
   }
-  if (/\bmissionary\b|\b(?:lie|lying|lay|laid)\s+(?:him|her|them|me)\s+(?:down|back)\b|\bon\s+(?:his|her|their)\s+back\b/.test(s)) {
+  if (/\bmissionary\b|\b(?:lie|lying|lay|laid)\s+\w+\s+(?:down|back)\b|\bon\s+(?:\w+'s|his|her|their)\s+back\b/.test(s)) {
     return { anim: 'missionary', targetAnim: 'missionary', dur: 6.0, doing: 'pinning them down missionary-style', cues: ['*desk thumping*', '*legs locked*', '*deep strokes*'] };
   }
-  if (/\bdoggy(?:\s*style)?\b|\bfrom\s+behind\b/.test(s)) {
+  if (/\bdoggy(?:\s*style)?\b|\bfrom\s+behind\b|\bbent\s+over\b/.test(s)) {
     return { anim: 'doggy', targetAnim: 'doggy', dur: 6.0, doing: 'taking them from behind', cues: ['*papers scattering*', '*desk slamming*', '*hard from behind*'] };
   }
-  if (/\bblow\s*job\b|\bgo(?:ing)?\s+down\s+on\b|\bsuck(?:ing)?\s+(?:him|her|them)\s+off\b|\bsuck(?:ing)?\s+(?:his|her|their)\b/.test(s)) {
+  if (/\bblow\s*job\b|\bbj\b|\bgo(?:ing)?\s+down\s+on\b|\bsuck(?:ing)?\s+\w+\s+off\b|\bsuck(?:ing)?\s+\w+'s\b|\beat(?:ing)?\s+\w+\s+out\b/.test(s)) {
     return { anim: 'blowjob', targetAnim: 'orgasm', dur: 5.0, doing: 'going down on them', cues: ['*muffled moans*', '*head bobbing*', '*zip!*'] };
   }
-  if (/\bhand\s*job\b|\bjerk(?:ing)?\s+(?:him|her|them)\s+off\b|\bstrok(?:e|ing)\s+(?:him|her|them)\s+off\b/.test(s)) {
+  if (/\bhand\s*job\b|\bhandjob\b|\bjerk(?:ing)?\s+\w+\s+off\b|\bstrok(?:e|ing)\s+\w+\s+off\b/.test(s)) {
     return { anim: 'handjob', targetAnim: 'orgasm', dur: 4.5, doing: 'working them with a hand', cues: ['*quick strokes*', '*breath hitching*', '*faster!*'] };
   }
-  if (/\bfinger(?:ing|ed|s)?\s+(?:her|him|them)\b|\bdigit(?:al|ting)\b/.test(s)) {
+  if (/\bfinger(?:ing|ed|s)?\b|\bdigit(?:al|ting)\b/.test(s)) {
     return { anim: 'fingering', targetAnim: 'orgasm', dur: 5.0, doing: 'fingering them shamelessly', cues: ['*wet sounds*', '*shuddering*', '*hold still!*'] };
   }
   if (/\b69\b|\bsixty[-\s]?nine\b/.test(s)) {
     return { anim: 'sixtyNine', targetAnim: 'sixtyNine', dur: 5.5, doing: 'twisting into a 69', cues: ['*muffled both ways*', '*69 chaos*', '*gagging*'] };
   }
-  if (/\bface\s*sit(?:ting)?\b|\bsit(?:ting)?\s+on\s+(?:(?:\w+'s|his|her|their|my)\s+)?face\b/.test(s)) {
+  if (/\bface\s*sit(?:ting)?\b|\bsit(?:ting)?\s+on\s+(?:\w+'s\s+|(?:his|her|their|my)\s+)?face\b/.test(s)) {
     return { anim: 'facesit', targetAnim: 'missionary', dur: 4.5, doing: 'sitting on their face', cues: ['*muffled protests*', '*sit on it*', '*tap out!*'] };
   }
   if (/\borgasm\w*\b|\bclimax\w*\b|\bcum(?:ming|s)?\b|\bsquirt\w*\b/.test(s)) {

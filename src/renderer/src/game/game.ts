@@ -156,7 +156,7 @@ export async function createGame(host: HTMLElement, parts: GameParts): Promise<G
 
   const avatar = (who: CharId, emotion: EmotionId = 'neutral'): string => {
     try {
-      return parts.portraitUrl(who, emotion, 3);
+      return parts.portraitUrl(who, emotion, 3, sim.hasStatus(who, 'naked'));
     } catch {
       return '';
     }

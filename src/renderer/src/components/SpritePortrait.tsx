@@ -9,13 +9,16 @@ export interface SpritePortraitProps {
   character: OfficeCharacterName;
   scale?: number; // integer
   background?: string;
+  /** Draw the uncensored bare bust (used when the character is naked). */
+  naked?: boolean;
 }
 
 /** Static standing portrait of an Office cast member (recolored LimeZu sprite). */
 export function SpritePortrait({
   character,
   scale = 2,
-  background = 'transparent'
+  background = 'transparent',
+  naked = false
 }: SpritePortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -31,9 +34,9 @@ export function SpritePortrait({
       ctx.fillStyle = background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-    paintCastPortrait(ctx, character, scale).catch(() => { /* asset load race */ });
+    paintCastPortrait(ctx, character, scale, naked).catch(() => { /* asset load race */ });
     return () => { cancelled = true; void cancelled; };
-  }, [character, scale, background]);
+  }, [character, scale, background, naked]);
 
   return (
     <canvas

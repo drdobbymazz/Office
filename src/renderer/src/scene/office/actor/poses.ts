@@ -64,6 +64,20 @@ const side = (v: number) => v === VIEW.right || v === VIEW.left;
 const fdir = (v: number) => (v === VIEW.right ? 1 : v === VIEW.left ? -1 : 0);
 
 /**
+ * A body lying on its back points its head the way it is facing. When the view
+ * is front/back, fall back to a stable per-person choice so a couple in 69
+ * still ends up head-to-toe instead of both pointing the same way.
+ */
+function lyingFlip(st: PersonState, view: number): boolean {
+  const dir = fdir(view);
+  if (dir !== 0) return dir > 0;
+  const id = st.id;
+  let h = st.variant;
+  for (let i = 0; i < id.length; i++) h += id.charCodeAt(i);
+  return h % 2 === 1;
+}
+
+/**
  * Set the arms: `active` is the arm that does the gesture (the near arm when
  * seen from the side; the viewer's right arm from the front), `other` the rest.
  */
@@ -808,12 +822,13 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
     case 'missionary': {
       const pump = Math.sin(t * 6.5);
       const f = frame(t, 7, 2);
+      const flip = lyingFlip(st, view);
       both(spec, f ? ARM.belly : ARM.forwardUp);
       spec.legs = LEGS.spread;
       spec.view = VIEW.front;
       spec.headDy = f ? 1 : 0;
-      m.rot = -Math.PI / 2; m.py = 0;
-      m.x = 15 + pump * 1.1;
+      m.rot = flip ? Math.PI / 2 : -Math.PI / 2; m.py = 0;
+      m.x = (flip ? -15 : 15) + pump * (flip ? -1.1 : 1.1);
       m.y = -6 + pump * 0.4;
       m.sy = 1 + Math.abs(pump) * 0.02;
       o.eyes = f ? EYES.heart : EYES.shut;
@@ -889,11 +904,12 @@ export function pose(anim: AnimId, inp: PoseIn, spec: FrameSpec, m: Motion, o: F
     case 'sixtyNine': {
       const pump = Math.sin(t * 8);
       const f = frame(t, 8, 2);
+      const flip = lyingFlip(st, view);
       both(spec, f ? ARM.forward : ARM.mouth);
       spec.legs = LEGS.together;
       spec.view = VIEW.front;
-      m.rot = -Math.PI / 2; m.py = 0;
-      m.x = 15 + pump * 1.2;
+      m.rot = flip ? Math.PI / 2 : -Math.PI / 2; m.py = 0;
+      m.x = (flip ? -15 : 15) + pump * (flip ? -1.2 : 1.2);
       m.y = -6 + pump * 0.5;
       m.sy = 1 + Math.abs(pump) * 0.03;
       o.eyes = f ? EYES.shut : EYES.squeeze;

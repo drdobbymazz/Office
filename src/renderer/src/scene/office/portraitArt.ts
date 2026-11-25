@@ -660,10 +660,10 @@ export function defaultPants(r: Recipe): RGB {
 }
 
 /** Portrait bust: shoulders-height clothing + front head group. */
-export function compose(r: Recipe, hooks?: FaceHooks): Buf {
+export function compose(r: Recipe, hooks?: FaceHooks, naked = false): Buf {
   PX.w = PORTRAIT_W; PX.h = PORTRAIT_H; PX.ox = 0; PX.oy = 0;
   const buf = new Uint8ClampedArray(PORTRAIT_W * PORTRAIT_H * 4);
-  drawClothing(buf, r.cloth, r.c1, r.c2, r.tie, r.skin, r.heavy ?? false);
+  drawClothing(buf, r.cloth, r.c1, r.c2, r.tie, r.skin, r.heavy ?? false, naked);
   collarNeck(buf, r.skin);
   drawHeadGroup(buf, r, hooks);
   outlinePass(buf);
@@ -682,14 +682,15 @@ function composeScene(r: Recipe, phase: number, back: boolean): Buf {
 }
 
 // ─── public render ───────────────────────────────────────────────────────────
-const bufCache = new Map<OfficeCharacterName, Buf>();
+const bufCache = new Map<string, Buf>();
 const sceneCache = new Map<OfficeCharacterName, SceneFrames>();
 
-function getBuf(name: OfficeCharacterName): Buf {
-  let buf = bufCache.get(name);
+function getBuf(name: OfficeCharacterName, naked = false): Buf {
+  const key = naked ? `${name}:naked` : name;
+  let buf = bufCache.get(key);
   if (!buf) {
-    buf = compose(RECIPES[name] ?? RECIPES.jim);
-    bufCache.set(name, buf);
+    buf = compose(RECIPES[name] ?? RECIPES.jim, undefined, naked);
+    bufCache.set(key, buf);
   }
   return buf;
 }
@@ -711,8 +712,8 @@ export function sceneFrameBufs(name: OfficeCharacterName): SceneFrames {
 }
 
 /** Paint a character's procedural portrait onto `ctx`, nearest-neighbor at `scale`. */
-export function paintPortrait(ctx: CanvasRenderingContext2D, name: OfficeCharacterName, scale = 2): void {
-  const buf = getBuf(name);
+export function paintPortrait(ctx: CanvasRenderingContext2D, name: OfficeCharacterName, scale = 2, naked = false): void {
+  const buf = getBuf(name, naked);
   // Stage at 1× on an offscreen canvas, then blit scaled with smoothing off.
   const stage = document.createElement('canvas');
   stage.width = PORTRAIT_W; stage.height = PORTRAIT_H;

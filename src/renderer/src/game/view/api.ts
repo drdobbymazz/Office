@@ -102,7 +102,7 @@ export type CreateActorView = (id: CharId, sprite: string) => ActorView;
  * same pixel style as the existing cards. `scale` is the integer upscale of
  * the 18 x 28 portrait (3 -> 54 x 84 px). Exported by scene/office/actor/index.ts.
  */
-export type PortraitUrl = (sprite: string, emotion: EmotionId, scale: number) => string;
+export type PortraitUrl = (sprite: string, emotion: EmotionId, scale: number, naked?: boolean) => string;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Effects

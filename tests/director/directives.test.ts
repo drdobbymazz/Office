@@ -248,6 +248,7 @@ describe('physical directive execution', () => {
       ['ride creed cowgirl right here', 'cowgirl'],
       ['fuck creed doggy style right here', 'doggy'],
       ['give creed a blowjob right here', 'blowjob'],
+      ['finger creed right here', 'fingering'],
       ['sit on creed\'s face right here', 'facesit']
     ] as const;
 
@@ -263,6 +264,16 @@ describe('physical directive execution', () => {
       expect(sim.hasStatus('meredith', 'naked')).toBe(true);
       expect(sim.hasStatus('creed', 'naked')).toBe(true);
     });
+
+    // Solo orgasm stays solo: perform, never pulling in the nearest coworker.
+    {
+      const { sim, director, advance } = makeOffice(72);
+      const animOf = (id: string) => sim.frame().people.find((p) => p.id === id)?.anim;
+      director.cue('meredith', 'orgasm');
+      advance(4, () => animOf('meredith') === 'orgasm');
+      expect(animOf('meredith')).toBe('orgasm');
+      expect(sim.isSeized('creed')).toBe(false);
+    }
   });
 
   it('stages solo physical perform directives ("bark like a dog") visibly on screen', () => {
