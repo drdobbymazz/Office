@@ -85,6 +85,7 @@ export class SceneManager {
   }
 
   open(opts: OpenSceneOpts): SceneHandle | null {
+
     const core = this.core;
     if (!opts || !Array.isArray(opts.people)) return null;
     const ids = [...new Set(opts.people)];
@@ -106,6 +107,10 @@ export class SceneManager {
       openedAt: core.time, lastLineAt: core.time, anchor: anchor.id, speaker: null, speakerUntil: 0,
       handle: null as unknown as SceneHandle
     };
+    // In free play, a real scene supersedes small talk still queued for the same people.
+    if (core.sandbox) {
+      this.asks = this.asks.filter((q) => q.ask.trigger !== 'ambient' || !(q.ask.people ?? []).some((id) => ids.includes(id)));
+    }
     const self = this;
     rec.handle = {
       id: opts.id,
@@ -126,7 +131,9 @@ export class SceneManager {
     this.scenes.set(opts.id, rec);
 
     for (const p of people) {
-      // A plain settle is only finding a free tile; one with something to do (staying where the
+      p.lastSceneAt = core.time;
+      // Just talked to someone: in free play, do not immediately be pulled into ambient chatter again.
+      if (core.sandbox) p.ambientCooldownUntil = Math.max(p.ambientCooldownUntil, core.time + 20);      // A plain settle is only finding a free tile; one with something to do (staying where the
       // player put them) is picked up again after the talk.
       p.stash = p.job && (p.job.kind !== 'settle' || p.job.act) ? p.job : null;
       p.job = null;
@@ -282,6 +289,7 @@ export class SceneManager {
   }
 
   private finish(rec: SceneRec, broke: boolean): void {
+
     if (!rec.alive) return;
     rec.alive = false;
     void broke;

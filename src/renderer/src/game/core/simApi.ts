@@ -39,6 +39,11 @@ export interface SimPerson {
   readonly energy: number;
   /** 0..1 */
   readonly stress: number;
+  /** Current need deficits, 0 satisfied .. 1 urgent. */
+  readonly needs: {
+    readonly social: number; readonly stimulation: number; readonly hunger: number; readonly hygiene: number;
+    readonly calm: number; readonly focus: number; readonly desire: number;
+  };
   readonly statuses: readonly StatusEffect[];
   readonly plan: Plan | null;
   readonly thought: string;
@@ -48,6 +53,8 @@ export interface SimPerson {
   readonly doing: string;
   /** Id of the scene they are speaking in, if any. */
   readonly sceneId: string | null;
+  /** Sim time they were last part of a scene. */
+  readonly lastSceneAt: number;
   readonly speaking: boolean;
   /** Running from danger, fixing something, or sent somewhere by an event: not the moment for a chat. */
   readonly urgent: boolean;
@@ -129,6 +136,11 @@ export interface SceneAsk {
   maxLines?: number;
   /** Drop the request if it has not started within this many seconds. */
   staleAfter?: number;
+  /**
+   * What was said immediately before this scene, when the caller knows it better
+   * than the room history (a script whose speakers ended up in different rooms).
+   */
+  recent?: { who: string; say: string }[];
   /** Walk them together first. Default: yes, unless it is an announcement or one person. */
   gather?: boolean;
   /** (added) For trigger 'plan': the kind of plan that brought them together. */
@@ -256,6 +268,14 @@ export interface SimApi {
   narrate(text: string, opts?: { icon?: string; room?: RoomId; kind?: FeedKind; beat?: boolean; slow?: boolean }): void;
   /** Add a memory to people: a list of ids, everyone in a room, or 'all'. (added) weight 0.5 trivial .. 3 unforgettable, default 1. */
   remember(who: CharId[] | RoomId | 'all', text: string, weight?: number): void;
+  /** Remember something only among people who actually perceived it, and make it a spreadable rumor. */
+  rememberRumor(ids: CharId[], text: string, weight?: number, subject?: CharId): void;
+  /** Raise someone's long-lived scandal reputation (0..1). */
+  addNotoriety(who: CharId, amount: number): void;
+  /** Lower a need by amount (0..1). */
+  relieveNeed(who: CharId, key: 'social' | 'stimulation' | 'hunger' | 'hygiene' | 'calm' | 'focus' | 'desire', amount: number): void;
+  /** People who can plausibly perceive a point (awake, on the floor, nearby). */
+  witnessesNear(x: number, y: number, radius: number, exclude?: CharId[]): SimPerson[];
   /** Change how `who` feels about `about` by delta (-100..100 scale). */
   shiftBond(who: CharId, about: CharId, delta: number, why?: string): void;
   bumpChaos(amount: number): void;

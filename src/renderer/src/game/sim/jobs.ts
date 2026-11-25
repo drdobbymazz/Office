@@ -233,8 +233,8 @@ function finish(core: SimCore, p: Person, job: Job): void {
   if (job.finished) return;
   job.finished = true;
   if (p.job === job) p.job = null;
+  core.noteJobDone(p, job);
   job.then?.();
-  void core;
 }
 
 /** Advance this person's job. Returns false when they have no job. */

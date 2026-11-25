@@ -5,6 +5,7 @@ import type { CastId } from '@/game/core/types';
 import { isCastId } from '@/game/core/types';
 import type { BondEntry } from './bonds';
 import type { Memory } from './memory';
+import type { Rumor } from './knowledge';
 
 export const SAVE_VERSION = 1;
 
@@ -22,6 +23,13 @@ export interface SaveData {
   flings?: [CastId, CastId][];
   memories: Record<string, Memory[]>;
   takeaways: Record<string, string[]>;
+  /** Rumor board and who knows which rumor id. */
+  rumors?: Rumor[];
+  knowledge?: Record<string, string[]>;
+  /** Cast notoriety (0..1) from repeated scandals. */
+  notoriety?: Record<string, number>;
+  /** Needs are session-local; only saved to let a reload keep flavour. */
+  needs?: Record<string, Record<string, number>>;
   meters: {
     stock: number;
     stockHistory: number[];
@@ -50,6 +58,30 @@ export function cleanSave(raw: unknown): SaveData | null {
   const cleanFlings = Array.isArray(r.flings)
     ? r.flings.filter((p): p is [CastId, CastId] => Array.isArray(p) && p.length === 2 && isCastId(p[0]) && isCastId(p[1]) && p[0] !== p[1])
     : undefined;
+  const cleanRumors = Array.isArray(r.rumors)
+    ? r.rumors.filter((x): x is Rumor => !!x && typeof x === 'object' && typeof (x as Rumor).id === 'string' && typeof (x as Rumor).text === 'string')
+    : undefined;
+  const cleanKnowledge: Record<string, string[]> = {};
+  if (r.knowledge && typeof r.knowledge === 'object') {
+    for (const [who, ids] of Object.entries(r.knowledge)) {
+      if (Array.isArray(ids)) cleanKnowledge[who] = ids.filter((id): id is string => typeof id === 'string');
+    }
+  }
+  const cleanNotoriety: Record<string, number> = {};
+  if (r.notoriety && typeof r.notoriety === 'object') {
+    for (const [who, v] of Object.entries(r.notoriety)) {
+      if (typeof v === 'number' && Number.isFinite(v)) cleanNotoriety[who] = Math.max(0, Math.min(1, v));
+    }
+  }
+  const cleanNeeds: Record<string, Record<string, number>> = {};
+  if (r.needs && typeof r.needs === 'object') {
+    for (const [who, values] of Object.entries(r.needs)) {
+      if (!values || typeof values !== 'object') continue;
+      const row: Record<string, number> = {};
+      for (const [k, v] of Object.entries(values)) if (typeof v === 'number' && Number.isFinite(v)) row[k] = Math.max(0, Math.min(1, v));
+      if (Object.keys(row).length) cleanNeeds[who] = row;
+    }
+  }
   return {
     version: SAVE_VERSION,
     day: Math.max(1, Math.floor(num(r.day, 1))),
@@ -59,6 +91,10 @@ export function cleanSave(raw: unknown): SaveData | null {
     ...(cleanFlings ? { flings: cleanFlings } : {}),
     memories: r.memories && typeof r.memories === 'object' ? r.memories : {},
     takeaways: r.takeaways && typeof r.takeaways === 'object' ? r.takeaways : {},
+    ...(cleanRumors && cleanRumors.length ? { rumors: cleanRumors } : {}),
+    ...(Object.keys(cleanKnowledge).length ? { knowledge: cleanKnowledge } : {}),
+    ...(Object.keys(cleanNotoriety).length ? { notoriety: cleanNotoriety } : {}),
+    ...(Object.keys(cleanNeeds).length ? { needs: cleanNeeds } : {}),
     meters: {
       stock: Math.max(1, num(r.meters?.stock, 100)),
       stockHistory: Array.isArray(r.meters?.stockHistory) ? r.meters!.stockHistory.filter((v) => typeof v === 'number' && Number.isFinite(v)).slice(-60) : [],

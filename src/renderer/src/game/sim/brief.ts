@@ -8,6 +8,7 @@ import { VISITOR_VOICES } from '@/game/core/content/voices/visitors';
 import type { PersonBrief } from '@/game/brain/api';
 import type { Person } from './people';
 import type { SimCore } from './core';
+import { needWords } from './needs';
 
 export function statusWords(core: SimCore, s: StatusEffect): string | null {
   const t = s.target ? core.nameOf(s.target) : 'someone';
@@ -98,6 +99,7 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
     if (p.held) state.push('being held up in the air by an invisible hand');
     if (p.energy < 0.25) state.push('exhausted');
     if (p.stress > 0.75) state.push('very stressed');
+    if (p.notoriety > 0.5) state.push('notorious around the office after repeated scandals');
   }
   const feelings = others
     .filter((o) => o !== who)
@@ -124,6 +126,12 @@ export function briefFor(core: SimCore, who: CharId, others: readonly CharId[]):
     feelings,
     memories
   };
+  if (p) {
+    const wants = needWords(p);
+    if (wants.length) brief.needs = wants;
+    const known = core.knowledge.top(who, 3).map((k) => `${k.rumor.text}${k.confidence < 0.7 ? ' (heard second-hand)' : ''}`);
+    if (known.length) brief.rumors = known;
+  }
   if (isCastId(who) && p && (p.has('truth') || core.secretOut(who))) brief.secret = CAST[who].persona.secret;
   if (mindOf) brief.mindOf = mindOf;
   if (p?.conviction) brief.conviction = { text: p.conviction.text, since: formatClock(p.conviction.since) };

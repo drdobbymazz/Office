@@ -5,6 +5,7 @@
 import { anchor, deskOf, feetOf, getWorldLocation } from '@/game/core/world';
 import { ARRIVE_FROM, DAY_END, DAY_START, LUNCH_FROM, LUNCH_TO } from './clock';
 import { cancelJob, makeJob, reserve } from './jobs';
+import { newNeeds } from './needs';
 import { fallFrom } from './handling';
 import type { Person } from './people';
 import type { SimCore } from './core';
@@ -45,6 +46,10 @@ export function resetPersonForDay(core: SimCore, p: Person): void {
   p.energy = 1;
   p.stress = 0.15;
   p.mood = p.mood * 0.5 + 0.1;
+  p.notoriety = Math.max(0, p.notoriety * 0.85);
+  Object.assign(p.needs, newNeeds());
+  p.impulseCooldownUntil = 0;
+  p.lastSceneAt = -999;
   p.emotion = p.def ? p.def.baseline : 'neutral';
   p.intensity = 0.3;
   p.emotionUntil = 0;
@@ -68,6 +73,7 @@ export function startDay(core: SimCore, day: number): void {
   core.holdingId = null;
   core.dayLogLines.length = 0;
   core.recent.clear();
+  core.huddles.clear();
   core.removeAllVisitors();
   // Arrival order: shuffled, spread from 08:51 to about 09:04.
   const cast = core.list.filter((p) => p.isCast);

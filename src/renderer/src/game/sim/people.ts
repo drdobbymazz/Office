@@ -10,6 +10,7 @@ import { roomAt, tileAt } from '@/game/core/world';
 import type { PersonState } from '@/game/view/api';
 import type { SimPerson } from '@/game/core/simApi';
 import type { Job } from './jobs';
+import { newNeeds, type Needs } from './needs';
 
 export type MoveStyle = 'walk' | 'run' | 'panic' | 'brisk';
 export const SPEEDS: Record<MoveStyle, number> = { walk: 48, brisk: 62, run: 90, panic: 110 };
@@ -87,6 +88,10 @@ export class Person implements SimPerson {
   mood = 0.1;
   energy = 1;
   stress = 0.2;
+  /** What they want right now (0 satisfied .. 1 urgent). */
+  readonly needs: Needs = newNeeds();
+  /** Long-lived office reputation from repeated scandals (0..1). Persists across days. */
+  notoriety = 0;
   statuses: StatusEffect[] = [];
   plan: Plan | null = null;
   thought = '';
@@ -142,6 +147,10 @@ export class Person implements SimPerson {
   planTries = 0;
   ambientCooldownUntil = 0;
   nearSince = 0;
+  /** Last scene they were part of, so the director can rotate the spotlight. */
+  lastSceneAt = -999;
+  /** Needs-driven plans and interruptions do not fire constantly. */
+  impulseCooldownUntil = 0;
 
   // ── render ──
   readonly state: PersonState;

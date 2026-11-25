@@ -59,6 +59,9 @@ export interface SimDebugPerson {
   job: string | null;
   doing: string;
   anim: string;
+  /** Current need deficits (0 satisfied .. 1 urgent). */
+  needs: Record<string, number>;
+  notoriety: number;
 }
 
 export interface Sim extends DirectorSimApi {
@@ -112,7 +115,10 @@ export interface Sim extends DirectorSimApi {
 
   // ── debug ──
   debugPeople(): SimDebugPerson[];
-  readonly debugStats: { rescues: number; teleports: number; forcedHome: number; daysEnded: number; forcedLog: string[] };
+  readonly debugStats: {
+    rescues: number; teleports: number; forcedHome: number; daysEnded: number; forcedLog: string[];
+    interruptions?: number; gossip?: number; plans?: number; needActions?: number;
+  };
   blockedKeys(): string[];
 }
 
@@ -141,7 +147,10 @@ class SimImpl extends SimCore implements Sim {
     return this.meterState.stockDayStart;
   }
 
-  get debugStats(): { rescues: number; teleports: number; forcedHome: number; daysEnded: number; forcedLog: string[] } {
+  get debugStats(): {
+    rescues: number; teleports: number; forcedHome: number; daysEnded: number; forcedLog: string[];
+    interruptions?: number; gossip?: number; plans?: number; needActions?: number;
+  } {
     return this.stats;
   }
 
@@ -195,7 +204,9 @@ class SimImpl extends SimCore implements Sim {
       stuckFor: p.stuckFor,
       job: p.job ? p.job.kind : null,
       doing: p.seized ? p.seizes[p.seizes.length - 1].doing : p.doing,
-      anim: p.state.anim
+      anim: p.state.anim,
+      needs: { ...p.needs },
+      notoriety: p.notoriety
     }));
   }
 }

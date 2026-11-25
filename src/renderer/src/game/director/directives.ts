@@ -185,6 +185,12 @@ function safeRoom(roomId: string | null | undefined): TargetRoomId {
   return 'bullpen';
 }
 
+/** Only people in the same room who are awake and actually able to notice. */
+function visibleWitnesses(sim: DirectorSimApi, x: number, y: number, radius: number, room: RoomId, exclude: readonly CharId[]): SimPerson[] {
+  return sim.witnessesNear(x, y, radius, [...exclude])
+    .filter((p) => p.room === room && p.isCast && p.present && p.available);
+}
+
 function formatAction(summary: string, rawText: string, actorName: string): string {
   const first = actorName.split(/\s+/)[0] || actorName;
   let base = (summary || rawText).trim().replace(/^["“]+|["”]+$/g, '').replace(/\s+/g, ' ');
@@ -1500,9 +1506,7 @@ export class Directives {
       const tone: DelegateTone = d.delegateTone ?? (isPermission ? 'ask' : 'order');
       const st = delegateStagingFor(tone, isPermission);
       sim.feel(a.id, st.feel, 0.8, 8);
-      const witnesses = sim
-        .peopleNear(t.x, t.y, 180)
-        .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
+      const witnesses = visibleWitnesses(sim, t.x, t.y, 180, t.room, [a.id, t.id]);
       const treatYouAsTarget = /\b(?:if|whether)\s+(?:i|we)\s+/i.test(d.rawText);
       const effectiveCommand = isPermission ? normalizePermissionCommand(rawAction, t.name, treatYouAsTarget) : command;
       sim.narrate(
@@ -1604,9 +1608,7 @@ export class Directives {
         room: t.room,
         beat: true
       });
-      const witnesses = sim
-        .peopleNear(t.x, t.y, 180)
-        .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
+      const witnesses = visibleWitnesses(sim, t.x, t.y, 180, t.room, [a.id, t.id]);
       for (const w of witnesses.slice(0, 3)) {
         sim.face(w.id, a.id);
         sim.feel(w.id, 'surprised', 0.85, 8);
@@ -1678,9 +1680,7 @@ export class Directives {
       );
     }
 
-    const witnesses = sim
-      .peopleNear(a.x, a.y, 200)
-      .filter((p) => p.isCast && p.present && p.available && p.id !== a.id);
+    const witnesses = visibleWitnesses(sim, a.x, a.y, 200, a.room, [a.id]);
     for (const w of witnesses.slice(0, 4)) {
       sim.face(w.id, a.id);
       sim.feel(w.id, 'surprised', 0.9, 9);
@@ -1696,14 +1696,10 @@ export class Directives {
 
     const roomName = roomDef(a.room).name;
     const phrase = formatAction(d.summary, d.rawText, a.name);
-    const nearby = sim
-      .peopleNear(a.x, a.y, 220)
-      .filter((p) => p.isCast && p.present && p.available && p.id !== a.id);
+    const nearby = visibleWitnesses(sim, a.x, a.y, 220, a.room, [a.id]);
     const sceneWitnesses = nearby.length > 0
       ? nearby
-      : sim
-          .peopleNear(a.x, a.y, 380)
-          .filter((p) => p.isCast && p.present && p.available && p.id !== a.id);
+      : visibleWitnesses(sim, a.x, a.y, 380, a.room, [a.id]);
 
     const participants = [a.id, ...(t && t.id !== a.id ? [t.id] : []), ...sceneWitnesses.map((w) => w.id)];
     const uniqueParticipants = [...new Set(participants)];
@@ -1715,11 +1711,12 @@ export class Directives {
           sim.addStatus(w.id, 'aroused', 120, a.id);
         }
       }
-      sim.remember(
+      sim.rememberRumor(
         uniqueParticipants,
         `${a.name} briefly ${phrase} in ${roomName} in front of everyone.`,
         3
       );
+      sim.addNotoriety(a.id, sceneWitnesses.length ? 0.25 : 0.08);
       if (t && t.id !== a.id) {
         sim.shiftChemistry(a.id, t.id, 12);
         this.checkJealousy(a, t, sceneWitnesses, true);
@@ -1758,11 +1755,12 @@ export class Directives {
     }
     sim.setFact(`act:${a.id}`, `${a.name} just ${phrase} in ${roomName}.`);
     this.schedule(45, () => sim.setFact(`act:${a.id}`, null));
-    sim.remember(
+    sim.rememberRumor(
       uniqueParticipants,
       `${a.name} physically ${phrase} right in front of everyone in ${roomName}.`,
       2.5
     );
+    if (selfPleasure) sim.addNotoriety(a.id, sceneWitnesses.length ? 0.18 : 0.06);
     const people = [a.id, ...(t && t.id !== a.id ? [t.id] : []), ...sceneWitnesses.map((w) => w.id)]
       .filter((id, i, arr) => arr.indexOf(id) === i)
       .slice(0, 3);
@@ -1903,9 +1901,7 @@ export class Directives {
     const roomName = roomDef(t.room).name;
     const raw = d.rawText.trim().replace(/\s+/g, ' ').slice(0, 120);
     const phrase = formatAction(d.summary, d.rawText, a.name);
-    const witnesses = sim
-      .peopleNear(t.x, t.y, 180)
-      .filter((p) => p.isCast && p.present && p.available && p.id !== a.id && p.id !== t.id);
+    const witnesses = visibleWitnesses(sim, t.x, t.y, 180, t.room, [a.id, t.id]);
     sim.bumpChaos(tier === 'flirt' ? 3 : tier === 'blackmail' ? 10 : 6);
     if (t.id !== a.id) {
       let why = `${a.name} just walked up to ${t.name} in ${roomName} and shamelessly, physically ${phrase} right in front of everyone (action: "${raw}"). (${a.name} actually did this to ${t.name} - react directly to what ${a.name} just did.)`;
@@ -2018,7 +2014,13 @@ export class Directives {
       if (tier !== 'blackmail' && tier !== 'voyeur') {
         this.checkJealousy(a, t, witnesses, tier !== 'flirt' && witnesses.length >= 2);
       }
-      sim.remember([a.id, t.id, ...witnesses.map((w) => w.id)], `${a.name} ${tier === 'flirt' ? 'shamelessly' : 'physically'} ${phrase} in ${roomName}.`, 2.5);
+      sim.rememberRumor([a.id, t.id, ...witnesses.map((w) => w.id)], `${a.name} ${tier === 'flirt' ? 'shamelessly' : 'physically'} ${phrase} in ${roomName}.`, 2.5);
+      sim.relieveNeed(a.id, 'desire', tier === 'flirt' ? 0.35 : 0.75);
+      sim.relieveNeed(t.id, 'desire', tier === 'flirt' ? 0.25 : 0.75);
+      if (vis.publicSex) {
+        sim.addNotoriety(a.id, witnesses.length ? 0.16 : 0.05);
+        sim.addNotoriety(t.id, witnesses.length ? 0.12 : 0.04);
+      }
       const people = [a.id, t.id, ...witnesses.slice(0, 1).map((w) => w.id)];
       this.ctx.scene({
         people,
@@ -2031,12 +2033,11 @@ export class Directives {
         staleAfter: 35
       }, true);
     } else {
-      sim.remember([a.id, ...witnesses.map((w) => w.id)], `${a.name} physically ${phrase} in ${roomName}.`, 2.5);
+      sim.rememberRumor([a.id, ...witnesses.map((w) => w.id)], `${a.name} physically ${phrase} in ${roomName}.`, 2.5);
+      sim.relieveNeed(a.id, 'desire', 0.6);
       const sceneWitnesses = witnesses.length > 0
         ? witnesses
-        : sim
-            .peopleNear(a.x, a.y, 350)
-            .filter((p) => p.isCast && p.present && p.available && p.id !== a.id);
+        : visibleWitnesses(sim, a.x, a.y, 350, a.room, [a.id]);
       const people = [a.id, ...sceneWitnesses.slice(0, 2).map((w) => w.id)];
       this.ctx.scene({
         people,
@@ -2084,7 +2085,9 @@ export class Directives {
       room,
       beat: true
     });
-    sim.remember([a.id, t.id], `${a.name} and ${t.name} hooked up behind closed doors in ${roomName} and emerged with messy hair and untucked shirts.`, 3);
+    sim.rememberRumor([a.id, t.id], `${a.name} and ${t.name} hooked up behind closed doors in ${roomName} and emerged with messy hair and untucked shirts.`, 3);
+    sim.relieveNeed(a.id, 'desire', 0.7);
+    sim.relieveNeed(t.id, 'desire', 0.7);
     this.ctx.scene({
       people: [a.id, t.id],
       room,
@@ -2141,7 +2144,11 @@ export class Directives {
     const msg = `${walker.name} burst into ${roomName} and caught ${a.name} and ${t.name} half-undressed in the act!`;
     sim.narrate(msg, { kind: 'event', icon: 'rumour', room, beat: true });
     sim.setFact(`caught:${a.id}:${t.id}`, `${walker.name} walked in and caught ${a.name} and ${t.name} sneaking around and hooking up in ${roomName}.`, 90);
-    sim.remember('all', msg, 3.5);
+    sim.rememberRumor([a.id, t.id, walker.id], msg, 3.5);
+    sim.addNotoriety(a.id, 0.25);
+    sim.addNotoriety(t.id, 0.2);
+    sim.relieveNeed(a.id, 'desire', 0.6);
+    sim.relieveNeed(t.id, 'desire', 0.6);
     this.checkJealousy(a, t, [walker], true);
     this.scandalHeat += 2;
     this.checkHrFallout(a, t);

@@ -9,6 +9,8 @@ import type { RenderFrame } from '@/game/view/api';
 import type { Meters, PersonDetail, PersonUi } from '@/game/app/gameApi';
 import type { Person } from './people';
 import type { SimCore } from './core';
+import { goalOf } from './brief';
+import { NEED_KEYS, NEED_NAME } from './needs';
 
 const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
 
@@ -148,6 +150,8 @@ export function personUi(core: SimCore, p: Person): PersonUi {
     intensity: p.intensity,
     statuses: p.statuses.map((s) => s.kind),
     doing,
+    intent: goalOf(core, p),
+    notoriety: p.notoriety,
     speaking: p.speaking,
     present: p.present && !p.hidden,
     busy: !p.available,
@@ -175,6 +179,8 @@ export function personDetail(core: SimCore, who: CharId, ages: Record<CastId, nu
       .sort((a, b) => Math.max(Math.abs(b.score), b.chemistry ?? 0) - Math.max(Math.abs(a.score), a.chemistry ?? 0))
     : [];
   const memories = [...core.memory.all(who)].reverse().map((m) => ({ day: m.day, clock: m.clock, text: m.text }));
+  const rumors = core.knowledge.top(who, 8).map((k) => ({ day: k.rumor.day, clock: k.rumor.clock, text: k.rumor.text, confidence: k.confidence }));
+  const needs = NEED_KEYS.map((k) => ({ key: k, label: NEED_NAME[k], value: p.needs[k] }));
   return {
     ...base,
     fullName: def ? def.fullName : base.name,
@@ -190,6 +196,8 @@ export function personDetail(core: SimCore, who: CharId, ages: Record<CastId, nu
     mood: p.mood,
     energy: p.energy,
     stress: p.stress,
+    needs,
+    rumors,
     bonds,
     memories
   };

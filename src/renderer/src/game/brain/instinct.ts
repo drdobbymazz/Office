@@ -4,7 +4,7 @@
 // and the fallback for every LlmBrain request that fails.
 
 import type { LooseVoiceBank, VoiceBank } from '@/game/core/content/types';
-import { CHAOS_IDS, PLAN_KINDS } from '@/game/core/types';
+import { CHAOS_IDS, CAST_IDS, PLAN_KINDS } from '@/game/core/types';
 import type { ChaosId, CharId, EmotionId, LineAct, Plan, PlanKind, RelationShift, TargetRoomId } from '@/game/core/types';
 import type {
   BarkKind, Brain, BrainStatus, CustomVibe, DelegateTone, DirectiveRequest, DirectiveResult, DirectiveVerb,
@@ -1352,8 +1352,10 @@ export class InstinctBrain implements Brain, Reflexes {
       (stateText.includes(`in love with ${askerFirst}`) ||
         feelingText.includes('hopelessly in love') ||
         (target?.mood === 'love' && tone === 'warm'));
-    if (smitten) return true;
-
+    const actText = `${del.action} ${del.command}`.toLowerCase();
+    // Being devoted to the asker is not consent to kiss whoever they name.
+    const namesThird = CAST_IDS.some((id) => id !== targetId && id !== del.asker && new RegExp(`\\b${id}\\b`, 'i').test(actText));
+    if (smitten && !namesThird) return true;
     const act = `${del.action} ${del.command}`.toLowerCase();
     const isRecover = /\b(get\s+dressed|put\s+(?:your|my|her|his|their|clothes).+\s+(?:back\s+)?on|cover\s+up|wake\s+up|help\s+.+\s+up|revive|calm\s+down|stop)\b/.test(act);
     if (isRecover && tone !== 'cold' && target?.mood !== 'angry') return true;
@@ -1383,10 +1385,7 @@ export class InstinctBrain implements Brain, Reflexes {
     // For romance requests ("tell jim and pam to kiss", "tell jim to kiss pam", "ask pam if you can massage her"),
     // also check whether target loves/fancies the partner or the asker asking them, plus chemistry & privacy.
     if (isRomance && target && (!hardRefuseMood || softRomanceOverride)) {
-      if (isAroused && tone !== 'cold') {
-        return true;
-      }
-      if (hasAsker && (askerFling || askerHighChem || /\b(in\s+love|adore|adores|crush|fancy|fancies|hopelessly\s+in\s+love|soulmate|sweet\s+on|devoted|besotted)\b/i.test(feelingText))) {
+      if (hasAsker && !namesThird && (askerFling || askerHighChem || /\b(in\s+love|adore|adores|crush|fancy|fancies|hopelessly\s+in\s+love|soulmate|sweet\s+on|devoted|besotted)\b/i.test(feelingText))) {
         return true;
       }
       if (hasAsker && askerCrush && (delTone !== 'order' || isPrivate || isPartyOrPark)) {
@@ -1418,8 +1417,9 @@ export class InstinctBrain implements Brain, Reflexes {
           (partnerCrush && (delTone !== 'order' || isPrivate || isPartyOrPark)) ||
           /\b(love|loves|crush|adore|adores|fancy|fancies|hopelessly in love|soulmate|sweet on|romantic|soft spot|devoted|besotted)\b/i.test(partnerFeeling) ||
           (target.mood === 'love' && toneOf(target, partnerId) === 'warm');
-        if (partnerSmitten) return true;
+        if (partnerSmitten || (isAroused && tone !== 'cold' && delTone !== 'order')) return true;
       }
+      if (!partnerId && isAroused && tone !== 'cold' && !namesThird) return true;
       if ((isPrivate || isPartyOrPark) && delTone !== 'order' && tone === 'warm') {
         return true;
       }

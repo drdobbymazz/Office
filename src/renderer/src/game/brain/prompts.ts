@@ -278,9 +278,11 @@ export class PromptBook {
       );
     }
     if (p.state.length) parts.push(sentence(p.state.join(', ')).replace(/^./, (c) => c.toUpperCase()));
+    if (p.needs?.length) parts.push(`Needs: ${sentence(p.needs.join('; '))}`);
     if (p.goal) parts.push(`Wants: ${sentence(p.goal)}`);
     for (const f of p.feelings) if (f.text) parts.push(`About ${this.nameFor(f.about, names)}: ${sentence(f.text)}`);
     if (p.memories.length) parts.push(`Remembers: ${p.memories.slice(0, 5).map((m) => m.trim().replace(/\.$/, '')).join('; ')}.`);
+    if (p.rumors?.length) parts.push(`Knows: ${p.rumors.slice(0, 3).map((m) => m.trim().replace(/\.$/, '')).join('; ')}.`);
     if (p.secret) parts.push(`Secret (it may slip out now): ${sentence(p.secret)}`);
     if (p.hidden) parts.push(`Hidden from everyone, shows only as nerves unless they cannot lie: ${sentence(p.hidden)}`);
     return parts.join(' ');

@@ -78,6 +78,8 @@ interface ScriptRun {
   lines: ScriptLine[];
   /** What has been said so far, "Name: "line"", for the model's carry-on. */
   said: string[];
+  /** Structured version of the same lines, for the carry-on request. */
+  recent: { who: string; say: string }[];
   /** Who has spoken (in order), for the carry-on. */
   people: CharId[];
   /** What voices with no body (the vice president on the phone) said: not in anyone's "said just before". */
@@ -1195,6 +1197,7 @@ export class Director {
     const room = ask.room ?? first.room;
 
     const id = nextId('scene');
+
     // An announcement is shouted across the room; everything else is a huddle.
     const handle = this.sim.openScene({ id, people: ids, gather: ask.gather ?? (ask.trigger !== 'announce' && ids.length > 1) });
     if (!handle) return false;
@@ -1299,7 +1302,7 @@ export class Director {
       scriptDone(opts);
       return;
     }
-    this.scripts.push({ lines: [...lines], said: [], people: [], phone: [], opts, nextAt: 0, started: false, startedAt: 0, handle: null });
+    this.scripts.push({ lines: [...lines], said: [], recent: [], people: [], phone: [], opts, nextAt: 0, started: false, startedAt: 0, handle: null });
   }
 
   private advanceScript(now: number): void {
@@ -1335,6 +1338,8 @@ export class Director {
     if (speech.text) this.storySaid.add(`${p.id}|${speech.text}`);
     if (!sc.people.includes(p.id)) sc.people.push(p.id);
     sc.said.push(`${p.name}: "${line.text}"`);
+    sc.recent.push({ who: p.name, say: line.text });
+    if (sc.recent.length > 10) sc.recent.shift();
     sc.nextAt = now + Math.max(1.2, speech.durationMs / 1000) + 0.5;
   }
 
@@ -1425,7 +1430,7 @@ export class Director {
       phone.length ? `On the phone: ${phone.join(' ')}` : '',
       'They carry on from what was just said, in their own words, without repeating it.'
     ].filter(Boolean).join(' ');
-    const ask: SceneAsk = { people, room: sc.opts.room, trigger: 'event', priority: 9, minLines: 2, maxLines: 3, staleAfter: 40, gather: false, why };
+    const ask: SceneAsk = { people, room: sc.opts.room, trigger: 'event', priority: 9, minLines: 2, maxLines: 3, staleAfter: 40, gather: false, recent: sc.recent.slice(-10), why };
     if (what) this.tagTopic(ask, what);
     else if (phone.length) this.tagTopic(ask, phone.join(' '));
     this.enqueue(ask, false);
@@ -1441,7 +1446,7 @@ export class Director {
       const onlookers = this.api.peopleIn(r.room).filter((p) => p.present && !r.people.includes(p.id)).map((p) => p.id);
       // Memories and feelings are for the staff: a guest from the Anything power comes and goes.
       if (res.summary) {
-        this.api.remember([...r.people, ...onlookers].filter((id) => isCastId(id)), res.summary);
+        this.api.rememberRumor([...r.people, ...onlookers].filter((id): id is CharId => isCastId(id)), res.summary, 1);
         if (r.ask.priority >= 8 || res.stageAction || res.rumor) this.rememberHeadline(res.summary);
       }
       for (const s of res.shifts) {
@@ -1674,7 +1679,7 @@ export class Director {
     if (getWorldLocation() === 'park') {
       facts.push('Everyone is outdoors at Scranton Community Park, away from the usual office rules.');
     }
-    const recent = this.sim.recentLines(room, modelActive ? 10 : 5);
+    const recent = ask.recent ?? this.sim.recentLines(room, modelActive ? 10 : 5);
     if (modelActive && recent.length < 3) {
       const seenLine = new Set(recent.map((l) => `${l.who}:${l.say}`));
       for (const id of ids) {

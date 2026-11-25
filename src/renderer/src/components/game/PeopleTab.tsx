@@ -242,6 +242,18 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
         <StatBar label="Mood" value={moodPct} color={d.mood >= 0 ? 'var(--cth-mint)' : 'var(--cth-coral)'} />
         <StatBar label="Energy" value={d.energy} color="var(--cth-lemon)" />
         <StatBar label="Stress" value={d.stress} color="var(--cth-coral)" />
+        {d.notoriety > 0.01 && <StatBar label="Notoriety" value={d.notoriety} color="var(--cth-lilac)" />}
+        {d.intent && d.intent !== d.doing && (
+          <div style={{ fontSize: 13, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>{cap(d.intent)}</div>
+        )}
+        {d.needs.some((n) => n.value > 0.3) && (
+          <div style={{ display: 'grid', gap: 4 }}>
+            <Label>NEEDS</Label>
+            {[...d.needs].sort((a, b) => b.value - a.value).slice(0, 4).map((n) => (
+              <StatBar key={n.key} label={n.label} value={n.value} color={n.value > 0.75 ? 'var(--cth-coral)' : 'var(--cth-sky)'} />
+            ))}
+          </div>
+        )}
         {d.statuses.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {d.statuses.map((s) => (
@@ -317,6 +329,23 @@ function Sheet({ id, onBack }: { id: CharId; onBack: () => void }) {
             <div key={i} style={{ display: 'flex', gap: 8, fontSize: 14, lineHeight: '17px' }}>
               <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 16, color: 'var(--cth-ink-500)', flexShrink: 0 }}>D{m.day} {formatClock(m.clock)}</span>
               <span>{m.text}</span>
+            </div>
+          ))}
+        </Section>
+      )}
+
+      {(!visitor || d.rumors.length > 0) && (
+        <Section title="KNOWS">
+          {d.rumors.length === 0 && <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>Nothing worth repeating.</div>}
+          {d.rumors.slice(0, 6).map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 14, lineHeight: '17px' }}>
+              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 16, color: 'var(--cth-ink-500)', flexShrink: 0 }}>
+                D{r.day} {formatClock(r.clock)}
+              </span>
+              <span>
+                {r.text}
+                {r.confidence < 0.7 && <span style={{ color: 'var(--cth-ink-500)' }}> (second-hand)</span>}
+              </span>
             </div>
           ))}
         </Section>

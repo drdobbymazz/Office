@@ -112,6 +112,10 @@ export interface PersonBrief {
   feelings: { about: CharId; text: string }[];
   /** Up to three things they remember that matter here. */
   memories: string[];
+  /** What they want right now, plain words ("starving", "desperate for company"). */
+  needs?: string[];
+  /** The juiciest things they currently know, including second-hand gossip. */
+  rumors?: string[];
   /** Their secret. Present only when it should come into play (truth serum, a leak). */
   secret?: string;
   /** Set when a mind swap is active: speak with THIS person's personality instead. */

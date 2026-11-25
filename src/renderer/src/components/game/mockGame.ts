@@ -211,6 +211,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       id: m.id, name: c.name, role: c.role, color: hex(c.color), avatar: avatar(m.id), room: m.room,
       roomName: ROOM_NAME[m.room] ?? m.room, emotion: m.emotion, intensity: m.intensity,
       statuses: m.statuses.map((s) => s.kind), doing: m.present ? m.doing : 'gone home', speaking: speaking.has(m.id),
+      intent: m.doing, notoriety: 0,
       present: m.present, busy: m.statuses.some((s) => s.kind === 'asleep' || s.kind === 'abducted' || s.kind === 'frozen')
     };
   }
@@ -484,7 +485,7 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
     if (!run || run.chapter !== 3 || run.stage === 'briefing' || run.stage === 'ending') return [];
     return [{
       id: FIGGIS, name: 'Mr Figgis', role: 'Owner, Figgis Hardware', color: '#8a6a3a', avatar: avatar('creed'), room: 'bullpen',
-      roomName: 'Reception', emotion: 'suspicious', intensity: 0.5, statuses: [], doing: 'waiting in reception', speaking: false, present: true, busy: false
+      roomName: 'Reception', emotion: 'suspicious', intensity: 0.5, statuses: [], doing: 'waiting in reception', intent: 'waiting for a straight answer', notoriety: 0, speaking: false, present: true, busy: false
     }];
   }
   function figgisDetail(): PersonDetail {
@@ -493,7 +494,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
       summary: "Owns Figgis Hardware, the branch's biggest customer. Here to decide whether to sign for another year.",
       wants: 'a straight answer and a fair price', fears: 'jokes, loud noise, being grabbed', quirk: 'loves dogs',
       secret: null, thought: 'Ten minutes. If nobody comes in ten minutes, I am leaving.', conviction: null, plan: null,
-      mood: -0.1, energy: 0.6, stress: 0.4, bonds: [], memories: [{ day: 3, clock: 630, text: 'Arrived at Munder Difflin. Nobody said hello.' }]
+      mood: -0.1, energy: 0.6, stress: 0.4,
+      needs: [{ key: 'social', label: 'Company', value: 0.3 }, { key: 'hunger', label: 'Food', value: 0.2 }, { key: 'calm', label: 'Calm', value: 0.5 }],
+      rumors: [], bonds: [], memories: [{ day: 3, clock: 630, text: 'Arrived at Munder Difflin. Nobody said hello.' }]
     };
   }
 
@@ -675,7 +678,9 @@ export function createMock(opts: { seed?: number; offline?: boolean; inArtifact?
         wants: c.persona.wants, fears: c.persona.fears, quirk: c.persona.quirk,
         secret: revealed.has(m.id) ? c.persona.secret : null, thought: m.thought, conviction: null,
         plan: { kind: 'coffee', target: 'kitchen', about: 'a third cup' },
-        mood: m.mood, energy: m.energy, stress: m.stress, bonds,
+        mood: m.mood, energy: m.energy, stress: m.stress,
+        needs: [{ key: 'social', label: 'Company', value: 0.32 }, { key: 'stimulation', label: 'Stimulation', value: 0.28 }, { key: 'hunger', label: 'Food', value: 0.18 }, { key: 'calm', label: 'Calm', value: 0.22 }],
+        rumors: [], bonds,
         memories: [
           { day: 3, clock: 610, text: 'There was a fire in the break room.' },
           { day: 3, clock: 560, text: 'Michael called a meeting about meetings.' },

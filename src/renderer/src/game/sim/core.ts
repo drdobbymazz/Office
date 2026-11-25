@@ -27,6 +27,8 @@ import { MeterState } from './meters';
 import { MemoryBook } from './memory';
 import { Bonds } from './bonds';
 import { ChemistryBook } from './chemistry';
+import { KnowledgeBook } from './knowledge';
+import { jobAddresses, needWords, relieve, relieveForJob, tickNeeds, topNeed, type NeedKey } from './needs';
 import { SceneManager } from './scenes';
 import { ChaosRegistry } from './chaosRegistry';
 import {
@@ -73,6 +75,7 @@ export class SimCore implements DirectorSimApi {
   readonly clockState: Clock;
   readonly meterState = new MeterState();
   readonly memory = new MemoryBook();
+  readonly knowledge = new KnowledgeBook();
   readonly bondsTable = new Bonds();
   readonly chemistryBook = new ChemistryBook();
   readonly scenes: SceneManager;
@@ -94,10 +97,15 @@ export class SimCore implements DirectorSimApi {
   readonly dayLogLines: string[] = [];
   readonly recent = new Map<RoomId, { who: string; say: string }[]>();
   readonly feedLog: FeedItem[] = [];
-  readonly stats = { rescues: 0, teleports: 0, forcedHome: 0, daysEnded: 0, forcedLog: [] as string[] };
+  readonly stats = { rescues: 0, teleports: 0, forcedHome: 0, daysEnded: 0, forcedLog: [] as string[], interruptions: 0, gossip: 0, plans: 0, needActions: 0 };
   private counter = 0;
   private ambientT = 0;
   private ambientGlobalUntil = 0;
+  private impulseT = 0;
+  private gossipT = 0;
+  private intimacyT = 0;
+  /** Scheduled huddles already held today. */
+  readonly huddles = new Set<number>();
   private daylight: EffectInstance & { kind: 'daylight' } = { id: 'daylight', kind: 'daylight', hour: 9 };
   /** Kept for RenderFrame (no per-frame garbage). */
   readonly frameState: RenderFrame = { time: 0, people: [], effects: this.effects, speeches: this.speeches, frozen: false };
@@ -119,6 +127,7 @@ export class SimCore implements DirectorSimApi {
       this.bondsTable.load(save.bonds);
       this.chemistryBook.load(save.chemistry, save.flings);
       this.memory.load(save);
+      this.knowledge.load(save.rumors, save.knowledge);
       this.meterState.stock = save.meters.stock;
       this.meterState.stockHistory = save.meters.stockHistory.length ? [...save.meters.stockHistory] : [save.meters.stock];
       this.meterState.morale = save.meters.morale;
@@ -128,6 +137,15 @@ export class SimCore implements DirectorSimApi {
       day = save.dayDone ? save.day + 1 : save.day;
     }
     startDay(this, day);
+    // startDay resets the day's needs and decays notoriety; a loaded save should
+    // keep the values it was saved with.
+    if (save) {
+      for (const p of this.list) {
+        if (save.notoriety && typeof save.notoriety[p.id] === 'number') p.notoriety = save.notoriety[p.id];
+        const n = save.needs?.[p.id];
+        if (n) for (const [k, v] of Object.entries(n)) if (k in p.needs && Number.isFinite(v)) (p.needs as unknown as Record<string, number>)[k] = v;
+      }
+    }
   }
 
   // ── small helpers used by the sub-systems ──────────────────────────────────
@@ -1047,6 +1065,14 @@ export class SimCore implements DirectorSimApi {
     for (const [k, v] of this.bondsTable.entries()) bonds[k] = v;
     const chemistry: Record<string, number> = {};
     for (const [k, v] of this.chemistryBook.entries()) chemistry[k] = v;
+    const knowledge = this.knowledge.serialize();
+    const notoriety: Record<string, number> = {};
+    const needs: Record<string, Record<string, number>> = {};
+    for (const p of this.list) {
+      if (!p.isCast) continue;
+      if (p.notoriety > 0) notoriety[p.id] = p.notoriety;
+      needs[p.id] = { ...p.needs };
+    }
     return {
       version: SAVE_VERSION,
       day: this.day,
@@ -1056,6 +1082,10 @@ export class SimCore implements DirectorSimApi {
       flings: this.chemistryBook.flings(),
       memories: mem.memories,
       takeaways: mem.takeaways,
+      ...(knowledge.rumors.length ? { rumors: knowledge.rumors } : {}),
+      ...(Object.keys(knowledge.known).length ? { knowledge: knowledge.known } : {}),
+      ...(Object.keys(notoriety).length ? { notoriety } : {}),
+      needs,
       meters: { stock: this.meterState.stock, stockHistory: [...this.meterState.stockHistory], morale: this.meterState.morale },
       incidentFreeDays: this.meterState.incidentFreeDays,
       incidentsTotal: this.meterState.incidentsTotal,
@@ -1097,6 +1127,7 @@ export class SimCore implements DirectorSimApi {
       this.ambientT = 0;
       this.ambient();
     }
+    this.socialTick(dt);
     this.updateMeters(dt);
     this.daylight.hour = this.clock / 60;
   }
@@ -1161,6 +1192,7 @@ export class SimCore implements DirectorSimApi {
     if (p.has('flustered')) return p.mood > 0.2 ? 'love' : 'embarrassed';
     if (p.has('spooked') || p.has('paranoid')) return 'nervous';
     if (p.has('asleep') || p.energy < 0.2) return 'tired';
+    if (p.notoriety > 0.65) return p.mood > 0.4 ? 'smug' : 'embarrassed';
     if (p.mood < -0.45) return 'sad';
     if (p.stress > 0.7) return 'nervous';
     if (p.mood > 0.6) return 'happy';
@@ -1168,6 +1200,7 @@ export class SimCore implements DirectorSimApi {
   }
 
   private updateFeelings(p: Person, dt: number): void {
+    tickNeeds(p, dt);
     if (this.time > p.emotionUntil) {
       const rest = this.restingMood(p);
       if (p.emotion !== rest) {
@@ -1183,6 +1216,10 @@ export class SimCore implements DirectorSimApi {
     // Mood drifts back toward a mild baseline; stress eases.
     p.mood += (0.1 - p.mood) * Math.min(1, dt * 0.004);
     p.stress = Math.max(0, p.stress - dt * 0.004);
+    if (p.notoriety > 0.2) {
+      p.stress = Math.min(1, p.stress + dt * (p.notoriety - 0.2) * 0.01);
+      p.mood = Math.max(-1, p.mood - dt * (p.notoriety - 0.2) * 0.002);
+    }
     if (this.isHazard(p.room)) p.stress = Math.min(1, p.stress + dt * 0.05);
     p.energy = Math.max(0, p.energy - dt * 0.0008);
     if (p.prop && this.time > p.propUntil) p.prop = null;
@@ -1217,6 +1254,7 @@ export class SimCore implements DirectorSimApi {
     }
     // A plan waiting to be carried out takes over from the routine.
     if (p.plan && !p.sceneId && !p.goingHome && (!p.job || p.job.kind === 'routine' || p.job.kind === 'settle')) this.replan(p);
+    this.maybeInterrupt(p);
     if (!p.job) this.nextJob(p);
     if (p.reaction) {
       if (this.time >= p.reaction.until) p.reaction = null;
@@ -1251,6 +1289,16 @@ export class SimCore implements DirectorSimApi {
 
   /** Nothing to do: the day, a scene or the routine decides what comes next. */
   private nextJob(p: Person): void {
+    // Resume the routine they were pulled away from once the urgent need has eased.
+    if (this.sandbox && p.stash && p.stash.kind === 'routine' && !p.stash.finished && !p.sceneId) {
+      const stashed = p.stash;
+      p.stash = null;
+      if (!topNeed(p, 0.55) && this.rng() < 0.65) {
+        restartJob(p, stashed);
+        this.stats.needActions++;
+        return;
+      }
+    }
     if (p.goingHome) this.sendHome(p);
     else if (p.sceneId) p.job = makeJob('gather', { kind: 'here' }, { act: idleAct('talking', Infinity) });
     else if (p.isCast) setJob(this, p, nextRoutine(this, p));
@@ -1258,6 +1306,62 @@ export class SimCore implements DirectorSimApi {
   }
 
   private ambient(): void {
+    if (!this.sandbox) { this.ambientLegacy(); return; }
+    if (this.clockState.phase !== 'working' || this.time < this.ambientGlobalUntil) return;
+    const idle = this.list.filter((p) => p.isCast && p.available && p.resting && !p.plan && p.ambientCooldownUntil <= this.time
+      && (!p.job || p.job.phase === 'act'));
+    for (const p of idle) {
+      if (p.nearSince === 0) p.nearSince = this.time;
+    }
+    for (const p of this.list) if (!idle.includes(p)) p.nearSince = 0;
+    const candidates: { a: Person; b: Person }[] = [];
+    for (let i = 0; i < idle.length; i++) {
+      for (let j = i + 1; j < idle.length; j++) {
+        const a = idle[i];
+        const b = idle[j];
+        if (a.room !== b.room || (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > 40 * 40) continue;
+        if (this.time - a.nearSince < 4 || this.time - b.nearSince < 4) continue;
+        candidates.push({ a, b });
+      }
+    }
+    if (candidates.length) {
+      // Rotate the spotlight: people who have not been in a scene for a while go first.
+      const tension = this.dramaTension();
+      candidates.sort((x, y) => (x.a.lastSceneAt + x.b.lastSceneAt) - (y.a.lastSceneAt + y.b.lastSceneAt) + (this.rng() - 0.5) * 20);
+      const { a, b } = candidates[0];
+      console.log("DBG AMB", a.id, b.id, a.ambientCooldownUntil, b.ambientCooldownUntil, this.time);
+      const where = a.doing.match(/ (at|by|in) (.+)$/);
+      // "at his desk" is somebody's desk: say whose ("at Oscar's desk"), not "both at his desk".
+      const place = where ? `${where[1]} ${where[2].replace(/^(his|her|their) /, `${a.name}'s `)}` : `in ${this.roomName(a.room)}`;
+      this.requestScene({
+        people: [a.id, b.id],
+        room: a.room,
+        trigger: 'ambient',
+        why: `${a.name} and ${b.name} run into each other ${place}.`,
+        priority: 1,
+        staleAfter: 15,
+        minLines: 2,
+        maxLines: 4
+      });
+      a.ambientCooldownUntil = this.time + 60;
+      b.ambientCooldownUntil = this.time + 60;
+      this.ambientGlobalUntil = this.time + 12 * (1.4 - tension * 0.6);
+      return;
+    }
+  }
+
+  /** 0 quiet morning .. 1 peak afternoon gossip hour. */
+  private dramaTension(): number {
+    const h = this.clock / 60;
+    if (h < 10.5) return 0.4;
+    if (h < 12) return 0.6;
+    if (h < 15) return 0.9;
+    if (h < 16) return 0.7;
+    return 0.3;
+  }
+
+  /** The authored story's original chance-meeting behaviour. */
+  private ambientLegacy(): void {
     if (this.clockState.phase !== 'working' || this.time < this.ambientGlobalUntil) return;
     const idle = this.list.filter((p) => p.isCast && p.available && p.resting && !p.plan && p.ambientCooldownUntil <= this.time
       && (!p.job || p.job.phase === 'act'));
@@ -1272,7 +1376,6 @@ export class SimCore implements DirectorSimApi {
         if (a.room !== b.room || (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > 40 * 40) continue;
         if (this.time - a.nearSince < 4 || this.time - b.nearSince < 4) continue;
         const where = a.doing.match(/ (at|by|in) (.+)$/);
-        // "at his desk" is somebody's desk: say whose ("at Oscar's desk"), not "both at his desk".
         const place = where ? `${where[1]} ${where[2].replace(/^(his|her|their) /, `${a.name}'s `)}` : `in ${this.roomName(a.room)}`;
         this.requestScene({
           people: [a.id, b.id],
@@ -1289,6 +1392,209 @@ export class SimCore implements DirectorSimApi {
         this.ambientGlobalUntil = this.time + 12;
         return;
       }
+    }
+  }
+
+  /** Needs-driven plans, gossip, chemistry drift and the huddle schedule. */
+  private socialTick(dt: number): void {
+    if (!this.sandbox) return;
+    this.impulseT += dt;
+    if (this.impulseT >= 3) {
+      this.impulseT = 0;
+      this.impulses();
+    }
+    this.gossipT += dt;
+    if (this.gossipT >= 4) {
+      this.gossipT = 0;
+      this.gossip();
+    }
+    this.intimacyT += dt;
+    if (this.intimacyT >= 8) {
+      this.intimacyT = 0;
+      this.intimacyDrift();
+    }
+    this.huddleTick();
+  }
+
+  /** Turn strong needs into explicit plans the player can see in the inspector. */
+  private impulses(): void {
+    for (const p of this.list) {
+      if (!p.isCast || !p.available || p.plan || p.sceneId || p.goingHome) continue;
+      if (p.job && p.job.kind !== 'routine') continue;
+      if (this.time < p.impulseCooldownUntil) continue;
+      const key = topNeed(p, 0.7);
+      if (!key) continue;
+      let planned = false;
+      if (key === 'desire') {
+        let best: Person | null = null;
+        let bestS = 28;
+        for (const o of this.list) {
+          if (o === p || !o.isCast || !o.available || o.goingHome) continue;
+          const mutual = this.chemistryBook.mutual(p.id, o.id);
+          const s = mutual + this.bond(p.id, o.id) * 0.2 + this.rng() * 10;
+          if (mutual >= 28 && s > bestS) { bestS = s; best = o; }
+        }
+        if (best) {
+          this.setPlan(p.id, { kind: 'flirt', target: best.id, about: '' });
+          planned = true;
+        }
+      } else if (key === 'social' && p.needs.social > 0.86) {
+        const near = this.list.filter((o) => o !== p && o.isCast && o.available && !o.goingHome && o.room === p.room);
+        const who = near.length ? near[Math.floor(this.rng() * near.length)] : null;
+        if (who) {
+          this.setPlan(p.id, { kind: 'talk', target: who.id, about: '' });
+          planned = true;
+        }
+      } else if (key === 'calm' && p.needs.calm > 0.88) {
+        this.setPlan(p.id, { kind: 'break', target: null, about: '' });
+        planned = true;
+      } else if (key === 'hunger' && p.needs.hunger > 0.9) {
+        this.setPlan(p.id, { kind: 'snack', target: null, about: '' });
+        planned = true;
+      }
+      if (planned) {
+        p.impulseCooldownUntil = this.time + 18;
+        this.stats.plans++;
+      }
+    }
+  }
+
+  /** If a routine act is not meeting a surging need, break it off (resumable). */
+  private maybeInterrupt(p: Person): void {
+    if (!this.sandbox) return;
+    const job = p.job;
+    if (!job || job.kind !== 'routine' || job.phase !== 'act' || p.sceneId || p.plan) return;
+    if (this.time < p.impulseCooldownUntil) return;
+    const key = topNeed(p, 0.8);
+    if (!key || jobAddresses(job, key)) return;
+    // Give the current act a couple of seconds before pulling them away.
+    if (job.act && job.left > job.act.seconds - 2.5) return;
+    p.stash = job;
+    p.job = null;
+    p.walk = null;
+    p.waiting = false;
+    p.impulseCooldownUntil = this.time + 10;
+    this.stats.interruptions++;
+  }
+
+  /** Relief when a job completes; called from jobs.ts. */
+  noteJobDone(p: Person, job: Job): void {
+    const before = topNeed(p, 0.55);
+    relieveForJob(p, job);
+    const after = topNeed(p, 0.55);
+    if (before && !after) this.stats.needActions++;
+  }
+
+  addNotoriety(who: CharId, amount: number): void {
+    const p = this.map.get(who);
+    if (!p || !Number.isFinite(amount)) return;
+    const before = p.notoriety;
+    p.notoriety = clamp01(p.notoriety + amount);
+    if (before < 0.5 && p.notoriety >= 0.5) {
+      this.narrate(`${p.name}'s scandalous reputation is starting to precede them around the office.`, { icon: 'warn', room: p.room });
+      this.feel(p.id, 'embarrassed', 0.7, 8);
+    }
+    if (before < 0.8 && p.notoriety >= 0.8) {
+      this.narrate(`${p.name} is now the office's favourite scandal. People are openly staring.`, { icon: 'rumour', room: p.room, beat: true });
+      this.addStatus(p.id, 'scandal', 180);
+      this.feel(p.id, 'embarrassed', 0.9, 12);
+    }
+  }
+
+  relieveNeed(who: CharId, key: NeedKey, amount: number): void {
+    const p = this.map.get(who);
+    if (p) relieve(p, key, amount);
+  }
+
+  /** Only people who could plausibly see/hear something at this spot. */
+  witnessesNear(x: number, y: number, radius: number, exclude: readonly CharId[] = []): Person[] {
+    const skip = new Set(exclude);
+    return this.peopleNear(x, y, radius)
+      .map((s) => this.map.get(s.id))
+      .filter((p): p is Person => !!p && p.onFloor && !skip.has(p.id) && !p.has('asleep') && !p.has('knockedOut'));
+  }
+
+  /** Remember something only among the people who actually perceived it. */
+  rememberRumor(ids: readonly CharId[], text: string, weight = 1, subject?: CharId): void {
+    const t = String(text ?? '').trim();
+    if (!t) return;
+    const cast: CharId[] = [];
+    for (const id of ids) if (isCastId(id) && !cast.includes(id)) cast.push(id);
+    if (!cast.length) return;
+    const rumor = this.knowledge.add(t, weight, this.day, Math.floor(this.clock), subject);
+    for (const id of cast) {
+      this.knowledge.tell(id, rumor, 1);
+      this.memory.add(id, { day: this.day, clock: Math.floor(this.clock), text: t, weight: clamp(weight, 0.1, 5) });
+    }
+  }
+
+  /** People trade what they know when they stand near each other. */
+  private gossip(): void {
+    const talkers = this.list.filter((p) => p.isCast && p.onFloor && p.available && !p.has('asleep') && !p.has('knockedOut') && !p.goingHome);
+    for (const a of talkers) {
+      const known = this.knowledge.knownBy(a.id).filter((k) => k.rumor.weight * k.confidence >= 0.45);
+      if (!known.length) continue;
+      for (const b of talkers) {
+        if (b === a || b.room !== a.room) continue;
+        if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 > 55 * 55) continue;
+        const pick = known.find((k) => !this.knowledge.knows(b.id, k.rumor.id));
+        if (!pick) continue;
+        if (this.rng() > 0.22) continue;
+        if (this.knowledge.share(a.id, b.id, pick.rumor.id)) {
+          this.memory.add(b.id, {
+            day: this.day, clock: Math.floor(this.clock),
+            text: `Heard from ${a.name}: ${pick.rumor.text}`,
+            weight: clamp(pick.rumor.weight * pick.confidence * 0.8, 0.1, 5)
+          });
+          this.stats.gossip++;
+        }
+        break;
+      }
+    }
+  }
+
+  /** Proximity quietly warms mutual chemistry. */
+  private intimacyDrift(): void {
+    const cast = this.list.filter((p) => p.isCast && p.onFloor && p.available && !p.has('asleep') && !p.has('knockedOut') && !p.goingHome);
+    for (let i = 0; i < cast.length; i++) {
+      for (let j = i + 1; j < cast.length; j++) {
+        const a = cast[i];
+        const b = cast[j];
+        if (a.room !== b.room) continue;
+        if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 > 60 * 60) continue;
+        const mutual = this.chemistryBook.mutual(a.id, b.id);
+        if (mutual < 30) continue;
+        if (this.rng() > 0.18) continue;
+        const warm = a.mood > 0.2 && b.mood > 0.2 ? 1 : 0;
+        if (warm) {
+          this.chemistryBook.shift(a.id, b.id, 1);
+          this.chemistryBook.shift(b.id, a.id, 1);
+        }
+      }
+    }
+  }
+
+  /** One short conference-room huddle in the morning and one in the afternoon. */
+  private huddleTick(): void {
+    if (this.clockState.phase !== 'working') return;
+    for (const slot of [10 * 60 + 30, 14 * 60 + 30]) {
+      if (this.clock < slot || this.clock > slot + 3 || this.huddles.has(slot)) continue;
+      const people = this.list
+        .filter((p) => p.isCast && p.available && !p.goingHome)
+        .sort((a, b) => a.lastSceneAt - b.lastSceneAt)
+        .slice(0, 3);
+      if (people.length < 2) continue;
+      this.huddles.add(slot);
+      this.requestScene({
+        people: people.map((p) => p.id),
+        room: 'meeting',
+        trigger: 'event',
+        why: `A quick ${slot < 12 * 60 ? 'morning' : 'afternoon'} huddle is being held in the conference room.`,
+        priority: 2,
+        minLines: 2,
+        maxLines: 3,
+        staleAfter: 20
+      });
     }
   }
 

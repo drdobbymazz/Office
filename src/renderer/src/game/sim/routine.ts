@@ -165,6 +165,43 @@ function nearFriend(core: SimCore, p: Person): Job | null {
   });
 }
 
+/** Someone they have chemistry with: drift over and hover, hoping something happens. */
+function romanceNear(core: SimCore, p: Person): Job | null {
+  let best: Person | null = null;
+  let bestS = 24;
+  for (const o of core.list) {
+    if (o === p || !o.isCast || !o.available || o.walk || o.sceneId) continue;
+    const mutual = core.chemistryBook.mutual(p.id, o.id);
+    const score = mutual + core.bond(p.id, o.id) * 0.2 + core.rng() * 12;
+    if (mutual >= 25 && score > bestS) { bestS = score; best = o; }
+  }
+  if (!best) return null;
+  const who = best;
+  return makeJob('routine', { kind: 'near', who: who.id }, {
+    doing: `drifting over to ${who.name}`,
+    act: { ...idleAct(`hovering near ${who.name}, working up the nerve`, core.rng.range(8, 14)), faceWho: who.id }
+  });
+}
+
+/** A quiet spot: low stimulation, lets the need for calm come down. */
+function quiet(core: SimCore, p: Person): Job {
+  const spots = ['spot.annex3', 'spot.meet15', 'stand.cooler', 'seat.spare2', 'spot.accounts4']
+    .filter((id) => { const a = findAnchor(id); return a && !core.isHazard(a.room); });
+  const id = spots.length ? core.rng.pick(spots) : 'stand.cooler';
+  return makeJob('routine', { kind: 'anchor', id }, {
+    doing: `looking for somewhere quiet`,
+    act: idleAct(`taking a quiet minute ${placePhrase(core, id)}`, core.rng.range(8, 16))
+  });
+}
+
+/** Splash water on their face / freshen up at the cooler. */
+function freshen(core: SimCore, p: Person): Job {
+  return makeJob('routine', { kind: 'anchor', id: 'stand.cooler' }, {
+    doing: 'going to freshen up',
+    act: { anim: 'operate', seated: false, face: 'up', doing: 'freshening up at the water cooler', seconds: core.rng.range(4, 7) }
+  });
+}
+
 function bossRoam(core: SimCore, p: Person): Job {
   // Find the spot in the bullpen or kitchen with the most people near it.
   const spots = ['spot.bullpen1', 'spot.bullpen2', 'spot.bullpen3', 'spot.bullpen4', 'spot.bullpen5', 'spot.bullpen8', 'spot.bullpen9', 'spot.kitchen1', 'spot.meetHead'];
@@ -245,22 +282,32 @@ export function nextRoutine(core: SimCore, p: Person): Job {
   if (p.routineSteps <= 1) return work(core, p);
 
   const park = getWorldLocation() === 'park';
+  // Authored story mode keeps its original pacing; free-play gets the full
+  // needs-driven utility mix.
+  const nx = core.sandbox ? 1 : 0;
   const opts: [number, () => Job | null][] = [
-    [1.2 + 3 * T.diligence, () => work(core, p)],
-    [0.5 + (1 - p.energy) * 1.5, () => (core.isHazard('kitchen') ? null : coffee(core, p))],
-    [0.25 + (def.id === 'kevin' ? 1.2 : 0), () => (core.isHazard('kitchen') ? null : snack(core, p))],
-    [0.25 + 0.5 * T.sociability, () => (core.isHazard('kitchen') ? null : cafe(core, p))],
-    [0.25, () => (core.isHazard('accounts') ? null : cooler(core, p))],
-    [0.4 + 1.1 * T.sociability, () => {
+    [1.2 + 3 * T.diligence + p.needs.focus * 1.3 * nx, () => work(core, p)],
+    [0.5 + (1 - p.energy) * 1.5 + p.needs.hunger * 1.5 * nx, () => (core.isHazard('kitchen') ? null : coffee(core, p))],
+    [0.25 + (def.id === 'kevin' ? 1.2 : 0) + p.needs.hunger * 2.4 * nx, () => (core.isHazard('kitchen') ? null : snack(core, p))],
+    [0.25 + 0.5 * T.sociability + (p.needs.social * 1.2 + p.needs.hunger * 0.5) * nx, () => (core.isHazard('kitchen') ? null : cafe(core, p))],
+    [0.25 + (p.needs.hunger * 0.7 + p.needs.hygiene * 0.4) * nx, () => (core.isHazard('accounts') ? null : cooler(core, p))],
+    [0.4 + 1.1 * T.sociability + p.needs.social * 0.8 * nx, () => {
       const ok = def.haunts.filter((id) => {
         const a = findAnchor(id);
         return a && !core.isHazard(a.room);
       });
       return ok.length ? hangAt(core, p, core.rng.pick(ok), core.rng.range(8, 15)) : null;
     }],
-    [0.6 * T.sociability, () => nearFriend(core, p)],
-    [0.2 + 0.5 * T.mischief, () => wander(core, p)]
+    [0.6 * T.sociability + p.needs.social * 1.7 * nx, () => nearFriend(core, p)],
+    [0.2 + 0.5 * T.mischief + p.needs.stimulation * 1.7 * nx, () => wander(core, p)]
   ];
+  if (nx) {
+    opts.push(
+      [p.needs.calm * 2.1 + p.notoriety * 0.8, () => quiet(core, p)],
+      [p.needs.hygiene * 2.3, () => freshen(core, p)],
+      [p.needs.desire * 1.4, () => romanceNear(core, p)]
+    );
+  }
   switch (def.job) {
     case 'boss':
       opts.push([3, () => bossRoam(core, p)]);

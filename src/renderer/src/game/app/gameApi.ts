@@ -209,6 +209,10 @@ export interface PersonUi {
   statuses: StatusKind[];
   /** A few words on what they are doing: "arguing with Rosa", "hiding in the loo". */
   doing: string;
+  /** Why: their plan or current need-driven intent. */
+  intent: string;
+  /** 0..1 long-lived scandal reputation. */
+  notoriety: number;
   speaking: boolean;
   /** In the building at all (false = gone home / not arrived / abducted). */
   present: boolean;
@@ -240,6 +244,10 @@ export interface PersonDetail extends PersonUi {
   energy: number;
   /** 0..1 */
   stress: number;
+  /** Current need deficits, 0 satisfied .. 1 urgent. */
+  needs: { key: string; label: string; value: number }[];
+  /** What they know, with confidence 1 = saw it, lower = gossip. */
+  rumors: { day: number; clock: number; text: string; confidence: number }[];
   /** How they feel about the others, strongest first. */
   bonds: { id: CastId; name: string; color: string; avatar: string; score: number; label: string; note: string; chemistry?: number; fling?: boolean }[];
   /** Newest first, plain sentences. */
